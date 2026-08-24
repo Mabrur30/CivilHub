@@ -1,7 +1,9 @@
 import { type NextFunction, type Response } from "express";
+import { type HydratedDocument } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
-import { Bid } from "../models/Bid.model";
-import { Project } from "../models/Project.model";
+import { Bid, type IBid } from "../models/Bid.model";
+import { Notification } from "../models/Notification.model";
+import { Project, type IProject } from "../models/Project.model";
 
 export interface SubmitBidRequestBody {
   projectId: string;
@@ -11,6 +13,25 @@ export interface SubmitBidRequestBody {
 
 interface BidError extends Error {
   statusCode: number;
+}
+
+interface BidParams {
+  bidId: string;
+}
+
+interface ClientBidResponse {
+  id: string;
+  engineerName: string;
+  amount: number;
+  message: string;
+  submittedDate: string;
+  status: "pending" | "accepted" | "declined";
+}
+
+interface ProjectBidsResponse {
+  projectId: string;
+  projectName: string;
+  bids: ClientBidResponse[];
 }
 
 const createBidError = (message: string, statusCode: number): BidError => {
@@ -77,6 +98,154 @@ export const submitBid = async (
       message: bid.message,
       status: bid.status,
     });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const getBidsForMyProjects = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createBidError("Client access required", 403);
+    }
+
+    const projects = await Project.find({ client: req.user.userId })
+      .select("_id title name")
+      .sort({ createdAt: -1 })
+      .exec();
+    const projectIds = projects.map((project) => project._id);
+    const bids = await Bid.find({ project: { $in: projectIds } })
+      .populate("engineer", "name")
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const bidsByProject = new Map<string, ClientBidResponse[]>();
+    bids.forEach((bid) => {
+      const engineer = bid.engineer as unknown as { name?: string };
+      const projectId = bid.project.toString();
+      const projectBids = bidsByProject.get(projectId) ?? [];
+      projectBids.push({
+        id: bid._id.toString(),
+        engineerName: engineer.name ?? "Unknown engineer",
+        amount: bid.amount,
+        message: bid.message,
+        submittedDate: bid.createdAt.toISOString(),
+        status: bid.status,
+      });
+      bidsByProject.set(projectId, projectBids);
+    });
+
+    const response: ProjectBidsResponse[] = projects
+      .map((project) => ({
+        projectId: project._id.toString(),
+        projectName: project.title ?? project.name ?? "Untitled project",
+        bids: bidsByProject.get(project._id.toString()) ?? [],
+      }))
+      .filter((project) => project.bids.length > 0);
+
+    res.status(200).json(response);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+const getOwnedBid = async (
+  req: AuthenticatedRequest,
+): Promise<{
+  bid: HydratedDocument<IBid>;
+  project: HydratedDocument<IProject>;
+}> => {
+  const { bidId } = req.params as unknown as BidParams;
+  const bid = await Bid.findById(bidId).exec();
+  if (!bid) {
+    throw createBidError("Bid not found", 404);
+  }
+
+  const project = await Project.findOne({
+    _id: bid.project,
+    client: req.user.userId,
+  }).exec();
+  if (!project) {
+    throw createBidError("You do not own this project", 403);
+  }
+
+  return { bid, project };
+};
+
+export const acceptBid = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createBidError("Client access required", 403);
+    }
+
+    const { bid, project } = await getOwnedBid(req);
+    if (bid.status !== "pending") {
+      throw createBidError("Only pending bids can be accepted", 409);
+    }
+    if (project.assignedEngineer || project.status !== "open_for_bids") {
+      throw createBidError(
+        "This project already has an assigned engineer",
+        409,
+      );
+    }
+
+    bid.status = "accepted";
+    await bid.save();
+    await Bid.updateMany(
+      { project: project._id, _id: { $ne: bid._id }, status: "pending" },
+      { $set: { status: "declined" } },
+    ).exec();
+    project.assignedEngineer = bid.engineer;
+    project.status = "in-progress";
+    await project.save();
+    await Notification.create({
+      recipient: bid.engineer,
+      type: "bid_accepted",
+      message: `Your bid for ${project.title ?? project.name ?? "this project"} was accepted.`,
+      project: project._id,
+      bid: bid._id,
+    });
+
+    res.status(200).json(project);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const declineBid = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createBidError("Client access required", 403);
+    }
+
+    const { bid, project } = await getOwnedBid(req);
+    if (bid.status !== "pending") {
+      throw createBidError("Only pending bids can be declined", 409);
+    }
+
+    bid.status = "declined";
+    await bid.save();
+    await Notification.create({
+      recipient: bid.engineer,
+      type: "bid_declined",
+      message: `Your bid for ${project.title ?? project.name ?? "this project"} was declined.`,
+      project: project._id,
+      bid: bid._id,
+    });
+
+    res.status(200).json({ id: bid._id.toString(), status: bid.status });
   } catch (error: unknown) {
     next(error);
   }

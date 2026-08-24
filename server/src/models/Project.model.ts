@@ -1,50 +1,83 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
 export interface IProject extends Document {
-  name: string;
-  clientName: string;
-  assignedEngineer?: Types.ObjectId;
-  status: "active" | "in-progress" | "completed" | "open_for_bids";
+  title?: string;
+  name?: string;
   description?: string;
+  category?: string;
+  budgetMin?: number;
+  budgetMax?: number;
   budgetRange?: string;
   location?: string;
+  targetStartDate?: Date;
+  targetCompletionDate?: Date;
+  client?: Types.ObjectId;
+  clientName?: string;
+  assignedEngineer?: Types.ObjectId | null;
+  status:
+    | "active"
+    | "in-progress"
+    | "completed"
+    | "open_for_bids"
+    | "cancelled";
   postedDate?: Date;
-  category?: string;
-  currentPhaseName: string;
-  progressPercentage: number;
-  nextMilestone: string;
-  nextMilestoneDueDate: Date;
+  currentPhaseName?: string;
+  progressPercentage?: number;
+  nextMilestone?: string;
+  nextMilestoneDueDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const projectSchema = new Schema<IProject>(
   {
+    title: {
+      type: String,
+      trim: true,
+    },
     name: {
       type: String,
-      required: true,
       trim: true,
+    },
+    client: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
     },
     clientName: {
       type: String,
-      required: true,
       trim: true,
     },
     assignedEngineer: {
       type: Schema.Types.ObjectId,
       ref: "User",
+      default: null,
       index: true,
     },
     status: {
       type: String,
-      enum: ["active", "in-progress", "completed", "open_for_bids"],
+      enum: [
+        "active",
+        "in-progress",
+        "completed",
+        "open_for_bids",
+        "cancelled",
+      ],
       required: true,
-      default: "active",
+      default: "open_for_bids",
       index: true,
     },
     description: {
       type: String,
       trim: true,
+    },
+    budgetMin: {
+      type: Number,
+      min: 0,
+    },
+    budgetMax: {
+      type: Number,
+      min: 0,
     },
     budgetRange: {
       type: String,
@@ -53,6 +86,12 @@ const projectSchema = new Schema<IProject>(
     location: {
       type: String,
       trim: true,
+    },
+    targetStartDate: {
+      type: Date,
+    },
+    targetCompletionDate: {
+      type: Date,
     },
     postedDate: {
       type: Date,
@@ -64,23 +103,19 @@ const projectSchema = new Schema<IProject>(
     },
     currentPhaseName: {
       type: String,
-      required: true,
       trim: true,
     },
     progressPercentage: {
       type: Number,
-      required: true,
       min: 0,
       max: 100,
     },
     nextMilestone: {
       type: String,
-      required: true,
       trim: true,
     },
     nextMilestoneDueDate: {
       type: Date,
-      required: true,
     },
   },
   { timestamps: true },

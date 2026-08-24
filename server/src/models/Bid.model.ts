@@ -1,6 +1,6 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
-export type BidStatus = "pending" | "accepted" | "rejected";
+export type BidStatus = "pending" | "accepted" | "declined";
 
 export interface IBid extends Document {
   engineer: Types.ObjectId;
@@ -38,7 +38,7 @@ const bidSchema = new Schema<IBid>(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "rejected"],
+      enum: ["pending", "accepted", "declined"],
       default: "pending",
       required: true,
     },

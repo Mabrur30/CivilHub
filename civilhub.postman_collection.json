@@ -83,6 +83,29 @@
               "path": ["api", "projects", "open"]
             }
           }
+        },
+        {
+          "name": "Create Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Northline By-Pass\",\n  \"description\": \"Upgrade the bypass corridor with drainage improvements and road widening for heavy freight access.\",\n  \"category\": \"Infrastructure\",\n  \"budgetMin\": 180000,\n  \"budgetMax\": 260000,\n  \"location\": \"Northline District, Brisbane\",\n  \"targetStartDate\": \"2026-09-15\",\n  \"targetCompletionDate\": \"2026-12-20\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/projects",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "projects"]
+            }
+          }
         }
       ]
     },
@@ -109,6 +132,45 @@
               "host": ["localhost"],
               "port": "5000",
               "path": ["api", "bids"]
+            }
+          }
+        },
+        {
+          "name": "My Projects Bids",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:5000/api/bids/my-projects-bids",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "bids", "my-projects-bids"]
+            }
+          }
+        },
+        {
+          "name": "Accept Bid",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "http://localhost:5000/api/bids/BID_OBJECT_ID/accept",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "bids", "BID_OBJECT_ID", "accept"]
+            }
+          }
+        },
+        {
+          "name": "Decline Bid",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "http://localhost:5000/api/bids/BID_OBJECT_ID/decline",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "bids", "BID_OBJECT_ID", "decline"]
             }
           }
         }

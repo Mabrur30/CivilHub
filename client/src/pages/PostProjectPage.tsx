@@ -4,6 +4,7 @@ import {
   type ReactElement,
   useState,
 } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface PostProjectForm {
   title: string;
@@ -15,7 +16,41 @@ interface PostProjectForm {
   targetStartDate: string;
   targetCompletionDate: string;
 }
+
 type FormErrors = Partial<Record<keyof PostProjectForm, string>>;
+
+interface CreateProjectRequestBody {
+  title: string;
+  description: string;
+  category: string;
+  budgetMin: number;
+  budgetMax: number;
+  location: string;
+  targetStartDate: string;
+  targetCompletionDate: string;
+}
+
+interface CreateProjectSuccessResponse {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  budgetMin: number;
+  budgetMax: number;
+  location: string;
+  targetStartDate: string;
+  targetCompletionDate: string;
+  client: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CreateProjectErrorResponse {
+  message?: string;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const initialForm: PostProjectForm = {
   title: "",
@@ -27,6 +62,7 @@ const initialForm: PostProjectForm = {
   targetStartDate: "",
   targetCompletionDate: "",
 };
+
 const categories = [
   "Residential",
   "Commercial",
@@ -36,10 +72,25 @@ const categories = [
   "Roads & transport",
 ];
 
+const getErrorMessage = (value: unknown): string => {
+  if (typeof value === "object" && value !== null) {
+    const response = value as CreateProjectErrorResponse;
+    if (typeof response.message === "string") {
+      return response.message;
+    }
+  }
+
+  return "Unable to submit your project right now. Please try again.";
+};
+
 export function PostProjectPage(): ReactElement {
+  const navigate = useNavigate();
   const [form, setForm] = useState<PostProjectForm>(initialForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
   const handleChange = (
     event: ChangeEvent<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -49,6 +100,7 @@ export function PostProjectPage(): ReactElement {
       ...current,
       [event.target.name]: event.target.value,
     }));
+
   const validate = (): FormErrors => {
     const next: FormErrors = {};
     const required: Array<keyof PostProjectForm> = [
@@ -61,32 +113,81 @@ export function PostProjectPage(): ReactElement {
       "targetStartDate",
       "targetCompletionDate",
     ];
+
     required.forEach((field) => {
       if (!form[field].trim()) next[field] = "This field is required.";
     });
+
     if (
       form.budgetMin &&
       form.budgetMax &&
       Number(form.budgetMin) >= Number(form.budgetMax)
-    )
+    ) {
       next.budgetMax = "Maximum budget must be greater than minimum.";
+    }
+
     if (
       form.targetStartDate &&
       form.targetCompletionDate &&
       form.targetCompletionDate <= form.targetStartDate
-    )
+    ) {
       next.targetCompletionDate = "Completion must be after the start date.";
+    }
+
     return next;
   };
-  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
     event.preventDefault();
     const next = validate();
     setErrors(next);
-    if (Object.keys(next).length === 0) {
-      console.log("Project submitted", form);
+    setError("");
+
+    if (Object.keys(next).length > 0) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    const payload: CreateProjectRequestBody = {
+      title: form.title.trim(),
+      description: form.description.trim(),
+      category: form.category,
+      budgetMin: Number(form.budgetMin),
+      budgetMax: Number(form.budgetMax),
+      location: form.location.trim(),
+      targetStartDate: form.targetStartDate,
+      targetCompletionDate: form.targetCompletionDate,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const body: unknown = await response.json();
+
+      if (!response.ok) {
+        setError(getErrorMessage(body));
+        return;
+      }
+
       setSubmitted(true);
+      window.setTimeout(() => {
+        navigate("/dashboard/client/projects");
+      }, 400);
+    } catch {
+      setError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
   if (submitted)
     return (
       <section className="mx-auto max-w-2xl rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-10 text-center">
@@ -105,6 +206,7 @@ export function PostProjectPage(): ReactElement {
           onClick={() => {
             setForm(initialForm);
             setErrors({});
+            setError("");
             setSubmitted(false);
           }}
           className="mt-7 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-glow"
@@ -113,10 +215,12 @@ export function PostProjectPage(): ReactElement {
         </button>
       </section>
     );
+
   const fieldError = (field: keyof PostProjectForm): ReactElement | null =>
     errors[field] ? (
       <p className="mt-2 text-xs text-red-300">{errors[field]}</p>
     ) : null;
+
   return (
     <div className="space-y-8">
       <div>
@@ -135,6 +239,14 @@ export function PostProjectPage(): ReactElement {
         onSubmit={handleSubmit}
         className="max-w-3xl space-y-6 rounded-2xl border border-white/10 bg-surface p-6 sm:p-8"
       >
+        {error ? (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200"
+          >
+            {error}
+          </div>
+        ) : null}
         <div>
           <label
             htmlFor="title"
@@ -285,9 +397,10 @@ export function PostProjectPage(): ReactElement {
         </div>
         <button
           type="submit"
-          className="w-full rounded-xl bg-primary px-5 py-3.5 text-sm font-semibold text-white shadow-glow hover:bg-glow"
+          disabled={isSubmitting}
+          className="w-full rounded-xl bg-primary px-5 py-3.5 text-sm font-semibold text-white shadow-glow hover:bg-glow disabled:cursor-not-allowed disabled:opacity-70"
         >
-          Submit Project Brief
+          {isSubmitting ? "Submitting project..." : "Submit Project Brief"}
         </button>
       </form>
     </div>

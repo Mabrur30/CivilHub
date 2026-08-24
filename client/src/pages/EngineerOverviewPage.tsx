@@ -1,16 +1,15 @@
 import { type ReactElement, useEffect, useState } from "react";
+import {
+  ActivityFeedItem,
+  isActivityItem,
+  type ActivityItem,
+} from "../components/dashboard/ActivityFeedItem";
 import { useAuth } from "../context/AuthContext";
 
 interface DashboardStat {
   label: string;
   value: string;
   detail: string;
-}
-
-interface ActivityItem {
-  message: string;
-  timestamp: string;
-  type: string;
 }
 
 interface EngineerOverview {
@@ -22,24 +21,6 @@ interface EngineerOverview {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-
-const activityColors: Record<string, string> = {
-  success: "bg-emerald-400",
-  review: "bg-amber-300",
-  message: "bg-sky-400",
-  milestone: "bg-primary",
-  default: "bg-white/50",
-};
-
-const isActivityItem = (value: unknown): value is ActivityItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const activity = value as Record<string, unknown>;
-  return (
-    typeof activity.message === "string" &&
-    typeof activity.timestamp === "string" &&
-    typeof activity.type === "string"
-  );
-};
 
 const isEngineerOverview = (value: unknown): value is EngineerOverview => {
   if (typeof value !== "object" || value === null) return false;
@@ -193,22 +174,10 @@ export function EngineerOverviewPage(): ReactElement {
           <div className="divide-y divide-white/10">
             {overview?.recentActivity.length ? (
               overview.recentActivity.map((activity) => (
-                <div
+                <ActivityFeedItem
                   key={`${activity.message}-${activity.timestamp}`}
-                  className="flex gap-4 py-5"
-                >
-                  <span
-                    className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${activityColors[activity.type] ?? activityColors.default}`}
-                  />
-                  <div className="flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
-                    <p className="text-sm font-semibold text-white/85">
-                      {activity.message}
-                    </p>
-                    <p className="mt-1 text-xs text-white/40 sm:mt-0">
-                      {activity.timestamp}
-                    </p>
-                  </div>
-                </div>
+                  activity={activity}
+                />
               ))
             ) : (
               <p className="py-8 text-sm text-white/50">

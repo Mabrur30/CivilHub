@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { getEngineerOverview } from "../controllers/project.controller";
+import {
+  getClientOverview,
+  getEngineerOverview,
+} from "../controllers/project.controller";
 import {
   protect,
   type AuthenticatedRequest,
@@ -9,6 +12,9 @@ const dashboardRouter = Router();
 
 dashboardRouter.get("/engineer/overview", protect, (req, res, next) =>
   getEngineerOverview(req as AuthenticatedRequest, res, next),
+);
+dashboardRouter.get("/client/overview", protect, (req, res, next) =>
+  getClientOverview(req as AuthenticatedRequest, res, next),
 );
 
 export default dashboardRouter;
