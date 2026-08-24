@@ -12,10 +12,16 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { SignupPage, SignupRoute } from "./pages/SignupPage";
 import { EngineerDashboardLayout } from "./components/dashboard/EngineerDashboardLayout";
 import { EngineerMarketplacePage } from "./pages/EngineerMarketplacePage";
+import { EngineerBidsPage } from "./pages/EngineerBidsPage";
 import { EngineerOverviewPage } from "./pages/EngineerOverviewPage";
 import { EngineerProjectsPage } from "./pages/EngineerProjectsPage";
+import { EngineerProfilePage } from "./pages/EngineerProfilePage";
+import { MyNetworkPage } from "./pages/MyNetworkPage";
+import { PublicProfilePage } from "./pages/PublicProfilePage";
 import { ProjectProgressPage } from "./pages/ProjectProgressPage";
 import { PostProjectPage } from "./pages/PostProjectPage";
+import { ConversationListPage } from "./pages/ConversationListPage";
+import { ChatPage } from "./pages/ChatPage";
 
 function App(): ReactElement {
   return (
@@ -39,6 +45,9 @@ function App(): ReactElement {
         <Route path="projects" element={<EngineerProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
         <Route path="marketplace" element={<EngineerMarketplacePage />} />
+        <Route path="bids" element={<EngineerBidsPage />} />
+        <Route path="network" element={<MyNetworkPage />} />
+        <Route path="profile" element={<EngineerProfilePage />} />
       </Route>
       <Route
         path="/dashboard/client"
@@ -54,8 +63,33 @@ function App(): ReactElement {
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
         <Route path="post-project" element={<PostProjectPage />} />
         <Route path="bids" element={<ClientBidsPage />} />
+        <Route path="network" element={<MyNetworkPage />} />
         <Route path="profile" element={<ClientProfilePage />} />
       </Route>
+      <Route
+        path="/users/:userId"
+        element={
+          <ProtectedRoute>
+            <PublicProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/messages"
+        element={
+          <ProtectedRoute>
+            <ConversationListPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/messages/:targetId"
+        element={
+          <ProtectedRoute>
+            <ChatPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

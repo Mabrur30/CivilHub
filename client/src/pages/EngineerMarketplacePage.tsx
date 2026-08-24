@@ -22,6 +22,11 @@ interface SubmitBidRequestBody {
   message: string;
 }
 
+interface EngineerBidSummary {
+  projectId: string;
+  status: "pending" | "accepted" | "declined";
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
@@ -36,6 +41,17 @@ const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
     typeof project.location === "string" &&
     typeof project.postedDate === "string" &&
     typeof project.category === "string"
+  );
+};
+
+const isEngineerBidSummary = (value: unknown): value is EngineerBidSummary => {
+  if (typeof value !== "object" || value === null) return false;
+  const bid = value as Record<string, unknown>;
+  return (
+    typeof bid.projectId === "string" &&
+    (bid.status === "pending" ||
+      bid.status === "accepted" ||
+      bid.status === "declined")
   );
 };
 
@@ -84,19 +100,39 @@ export function EngineerMarketplacePage(): ReactElement {
       setIsLoading(true);
       setLoadError("");
       try {
-        const response = await fetch(`${API_BASE_URL}/api/projects/open`);
-        const body: unknown = await response.json();
+        const [projectsResponse, bidsResponse] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/projects/open`),
+          fetch(`${API_BASE_URL}/api/bids/my-bids`, {
+            credentials: "include",
+          }),
+        ]);
+        const projectsBody: unknown = await projectsResponse.json();
+        const bidsBody: unknown = await bidsResponse.json();
         if (
-          !response.ok ||
-          !Array.isArray(body) ||
-          !body.every(isMarketplaceProject)
+          !projectsResponse.ok ||
+          !Array.isArray(projectsBody) ||
+          !projectsBody.every(isMarketplaceProject)
         ) {
           setLoadError(
-            getErrorMessage(body, "Unable to load marketplace projects."),
+            getErrorMessage(
+              projectsBody,
+              "Unable to load marketplace projects.",
+            ),
           );
           return;
         }
-        setProjects(body);
+        if (
+          !bidsResponse.ok ||
+          !Array.isArray(bidsBody) ||
+          !bidsBody.every(isEngineerBidSummary)
+        ) {
+          setLoadError(
+            getErrorMessage(bidsBody, "Unable to load your bid history."),
+          );
+          return;
+        }
+        setProjects(projectsBody);
+        setSubmittedProjectIds(new Set(bidsBody.map((bid) => bid.projectId)));
       } catch {
         setLoadError("Unable to connect to CivilHub. Please try again.");
       } finally {

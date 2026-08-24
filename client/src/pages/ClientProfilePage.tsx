@@ -14,6 +14,47 @@ interface ClientProfileForm {
   companyName: string;
 }
 
+interface ClientProfileResponse {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  phone: string;
+  companyName: string;
+}
+
+interface UpdateClientProfileBody {
+  phone?: string;
+  companyName?: string;
+}
+
+interface ErrorResponse {
+  message?: string;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+
+const isClientProfile = (value: unknown): value is ClientProfileResponse => {
+  if (typeof value !== "object" || value === null) return false;
+  const profile = value as Record<string, unknown>;
+  return (
+    typeof profile.id === "string" &&
+    typeof profile.userId === "string" &&
+    typeof profile.name === "string" &&
+    typeof profile.email === "string" &&
+    typeof profile.phone === "string" &&
+    typeof profile.companyName === "string"
+  );
+};
+
+const getErrorMessage = (value: unknown, fallback: string): string => {
+  if (typeof value === "object" && value !== null) {
+    const response = value as ErrorResponse;
+    if (typeof response.message === "string") return response.message;
+  }
+  return fallback;
+};
+
 export function ClientProfilePage(): ReactElement {
   const { currentUser } = useAuth();
   const [form, setForm] = useState<ClientProfileForm>({
@@ -22,25 +63,125 @@ export function ClientProfilePage(): ReactElement {
     phone: "",
     companyName: "",
   });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string>("");
+  const [saveError, setSaveError] = useState<string>("");
   const [saved, setSaved] = useState<boolean>(false);
+
   useEffect(() => {
-    if (currentUser)
+    if (currentUser) {
       setForm((current) => ({
         ...current,
         name: currentUser.name,
         email: currentUser.email,
       }));
+    }
   }, [currentUser]);
-  const handleChange = (event: ChangeEvent<HTMLInputElement>): void =>
+
+  useEffect(() => {
+    const loadProfile = async (): Promise<void> => {
+      setIsLoading(true);
+      setLoadError("");
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/clients/me`, {
+          credentials: "include",
+        });
+        const body: unknown = await response.json();
+        if (!response.ok || !isClientProfile(body)) {
+          setLoadError(getErrorMessage(body, "Unable to load your profile."));
+          return;
+        }
+        setForm({
+          name: body.name,
+          email: body.email,
+          phone: body.phone,
+          companyName: body.companyName,
+        });
+      } catch {
+        setLoadError("Unable to connect to CivilHub. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void loadProfile();
+  }, []);
+
+  const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
     setForm((current) => ({
       ...current,
       [event.target.name]: event.target.value,
     }));
-  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    console.log("Profile saved", form);
-    setSaved(true);
+    setSaved(false);
+    setSaveError("");
   };
+
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setSaved(false);
+    setSaveError("");
+    const body: UpdateClientProfileBody = {
+      phone: form.phone,
+      companyName: form.companyName,
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/clients/me`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const responseBody: unknown = await response.json();
+      if (!response.ok || !isClientProfile(responseBody)) {
+        setSaveError(
+          getErrorMessage(responseBody, "Unable to save your profile."),
+        );
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        phone: responseBody.phone,
+        companyName: responseBody.companyName,
+      }));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3500);
+    } catch {
+      setSaveError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="animate-pulse rounded-2xl border border-white/10 bg-surface p-8 text-white/50">
+        Loading profile...
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <section
+        className="max-w-2xl rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
+        role="alert"
+      >
+        <p className="text-sm text-red-200">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary"
+        >
+          Try again
+        </button>
+      </section>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div>
@@ -56,7 +197,7 @@ export function ClientProfilePage(): ReactElement {
         </p>
       </div>
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(event) => void handleSubmit(event)}
         className="max-w-2xl space-y-5 rounded-2xl border border-white/10 bg-surface p-6 sm:p-8"
       >
         <div>
@@ -70,9 +211,9 @@ export function ClientProfilePage(): ReactElement {
             id="profile-name"
             name="name"
             required
+            readOnly
             value={form.name}
-            onChange={handleChange}
-            className="form-input"
+            className="form-input cursor-not-allowed opacity-60"
           />
         </div>
         <div>
@@ -127,13 +268,19 @@ export function ClientProfilePage(): ReactElement {
         </div>
         <button
           type="submit"
-          className="w-full rounded-xl bg-primary px-5 py-3.5 text-sm font-semibold text-white shadow-glow hover:bg-glow"
+          disabled={isSubmitting}
+          className="w-full rounded-xl bg-primary px-5 py-3.5 text-sm font-semibold text-white shadow-glow hover:bg-glow disabled:cursor-wait disabled:opacity-60"
         >
-          Save changes
+          {isSubmitting ? "Saving..." : "Save changes"}
         </button>
         {saved ? (
           <p role="status" className="text-sm text-emerald-300">
-            Profile changes saved locally for now.
+            Profile changes saved.
+          </p>
+        ) : null}
+        {saveError ? (
+          <p role="alert" className="text-sm text-red-300">
+            {saveError}
           </p>
         ) : null}
       </form>

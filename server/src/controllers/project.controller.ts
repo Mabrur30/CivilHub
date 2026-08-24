@@ -30,6 +30,7 @@ export interface ClientPostedProjectResponse {
   id: string;
   projectName: string;
   assignedEngineer: string | null;
+  assignedEngineerUserId: string | null;
   currentPhaseName: string;
   progressPercentage: number;
   nextMilestone: string;
@@ -122,7 +123,12 @@ const toOpenProjectResponse = (project: IProject): OpenProjectResponse => ({
 });
 
 const toClientPostedProjectResponse = (
-  project: IProject & { assignedEngineer?: { name?: string } | null },
+  project: IProject & {
+    assignedEngineer?: {
+      _id?: { toString: () => string };
+      name?: string;
+    } | null;
+  },
 ): ClientPostedProjectResponse => ({
   id: project._id.toString(),
   projectName: project.title ?? project.name ?? "Untitled project",
@@ -131,6 +137,12 @@ const toClientPostedProjectResponse = (
     project.assignedEngineer !== null &&
     typeof project.assignedEngineer.name === "string"
       ? project.assignedEngineer.name
+      : null,
+  assignedEngineerUserId:
+    typeof project.assignedEngineer === "object" &&
+    project.assignedEngineer !== null &&
+    project.assignedEngineer._id
+      ? project.assignedEngineer._id.toString()
       : null,
   currentPhaseName: project.currentPhaseName ?? "Reviewing bids",
   progressPercentage: project.progressPercentage ?? 0,

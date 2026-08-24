@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { type NextFunction, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { Client } from "../models/Client.model";
+import { Engineer } from "../models/Engineer.model";
 import { User, type IUser, type UserRole } from "../models/User.model";
 
 export interface SignupRequestBody {
@@ -102,6 +104,15 @@ export const signup = async (
       passwordHash,
       role,
     });
+    if (role === "client") {
+      await Client.create({ user: user._id });
+    } else {
+      await Engineer.create({
+        user: user._id,
+        certificates: [],
+        portfolio: [],
+      });
+    }
 
     setAuthCookie(res, user);
     res.status(201).json(toPublicUser(user));

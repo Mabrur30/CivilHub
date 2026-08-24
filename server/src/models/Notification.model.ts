@@ -1,13 +1,20 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
-export type NotificationType = "bid_accepted" | "bid_declined";
+export type NotificationType =
+  | "bid_accepted"
+  | "bid_declined"
+  | "connection_accepted"
+  | "new_message";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
   type: NotificationType;
   message: string;
-  project: Types.ObjectId;
-  bid: Types.ObjectId;
+  project?: Types.ObjectId;
+  bid?: Types.ObjectId;
+  connection?: Types.ObjectId;
+  conversation?: Types.ObjectId;
+  messageRef?: Types.ObjectId;
   read: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -23,7 +30,12 @@ const notificationSchema = new Schema<INotification>(
     },
     type: {
       type: String,
-      enum: ["bid_accepted", "bid_declined"],
+      enum: [
+        "bid_accepted",
+        "bid_declined",
+        "connection_accepted",
+        "new_message",
+      ],
       required: true,
     },
     message: {
@@ -31,15 +43,30 @@ const notificationSchema = new Schema<INotification>(
       required: true,
       trim: true,
     },
+    connection: {
+      type: Schema.Types.ObjectId,
+      ref: "Connection",
+      required: false,
+    },
+    conversation: {
+      type: Schema.Types.ObjectId,
+      ref: "Conversation",
+      required: false,
+    },
+    messageRef: {
+      type: Schema.Types.ObjectId,
+      ref: "Message",
+      required: false,
+    },
     project: {
       type: Schema.Types.ObjectId,
       ref: "Project",
-      required: true,
+      required: false,
     },
     bid: {
       type: Schema.Types.ObjectId,
       ref: "Bid",
-      required: true,
+      required: false,
     },
     read: {
       type: Boolean,

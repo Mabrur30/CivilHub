@@ -1,10 +1,11 @@
 import { type ReactElement, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 interface ClientProject {
   id: string;
   projectName: string;
   assignedEngineer: string | null;
+  assignedEngineerUserId: string | null;
   currentPhaseName: string;
   progressPercentage: number;
   nextMilestone: string;
@@ -29,6 +30,8 @@ const isClientProject = (value: unknown): value is ClientProject => {
     typeof project.projectName === "string" &&
     (typeof project.assignedEngineer === "string" ||
       project.assignedEngineer === null) &&
+    (typeof project.assignedEngineerUserId === "string" ||
+      project.assignedEngineerUserId === null) &&
     typeof project.currentPhaseName === "string" &&
     typeof project.progressPercentage === "number" &&
     typeof project.nextMilestone === "string" &&
@@ -177,6 +180,15 @@ export function ClientProjectsPage(): ReactElement {
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                     {project.assignedEngineer ?? "Partner search open"}
                   </p>
+                  {project.assignedEngineerUserId ? (
+                    <Link
+                      to={`/users/${project.assignedEngineerUserId}`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="mt-2 inline-flex text-xs font-semibold text-primary hover:text-glow"
+                    >
+                      View profile
+                    </Link>
+                  ) : null}
                   <h2 className="mt-2 font-heading text-2xl font-bold text-white">
                     {project.projectName}
                   </h2>

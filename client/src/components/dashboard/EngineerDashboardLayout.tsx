@@ -1,5 +1,5 @@
 import { type ReactElement } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 interface EngineerDashboardLayoutProps {}
@@ -8,6 +8,9 @@ const tabs = [
   { label: "Overview", to: "/dashboard/engineer/overview" },
   { label: "My Projects", to: "/dashboard/engineer/projects" },
   { label: "Marketplace", to: "/dashboard/engineer/marketplace" },
+  { label: "My Bids", to: "/dashboard/engineer/bids" },
+  { label: "My Network", to: "/dashboard/engineer/network" },
+  { label: "Profile", to: "/dashboard/engineer/profile" },
 ];
 
 export function EngineerDashboardLayout(
@@ -41,6 +44,12 @@ export function EngineerDashboardLayout(
           </button>
 
           <div className="flex items-center gap-3">
+            <Link
+              to="/messages"
+              className="rounded-full border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+            >
+              Messages
+            </Link>
             <div className="hidden text-right sm:block">
               <p className="text-sm font-semibold text-white">
                 {currentUser?.name}

@@ -110,6 +110,47 @@
       ]
     },
     {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:5000/api/clients/me",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "clients", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+1 555 010 2000\",\n  \"companyName\": \"Northline Infrastructure\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/clients/me",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "clients", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Bids",
       "item": [
         {

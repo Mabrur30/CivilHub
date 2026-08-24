@@ -1,7 +1,9 @@
 import { type ReactElement, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 interface ClientBid {
   id: string;
+  engineerId: string;
   engineerName: string;
   amount: number;
   message: string;
@@ -26,6 +28,7 @@ const isClientBid = (value: unknown): value is ClientBid => {
   const bid = value as Record<string, unknown>;
   return (
     typeof bid.id === "string" &&
+    typeof bid.engineerId === "string" &&
     typeof bid.engineerName === "string" &&
     typeof bid.amount === "number" &&
     typeof bid.message === "string" &&
@@ -243,6 +246,12 @@ export function ClientBidsPage(): ReactElement {
                               <h3 className="font-heading text-xl font-bold text-white">
                                 {bid.engineerName}
                               </h3>
+                              <Link
+                                to={`/users/${bid.engineerId}`}
+                                className="mt-2 inline-flex text-xs font-semibold text-primary hover:text-glow"
+                              >
+                                View profile
+                              </Link>
                               <p className="mt-1 text-xs text-white/40">
                                 Submitted {formatDate(bid.submittedDate)}
                               </p>

@@ -1,5 +1,5 @@
 import { type NextFunction, type Response } from "express";
-import { type HydratedDocument } from "mongoose";
+import { Types, type HydratedDocument } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Bid, type IBid } from "../models/Bid.model";
 import { Notification } from "../models/Notification.model";
@@ -21,6 +21,7 @@ interface BidParams {
 
 interface ClientBidResponse {
   id: string;
+  engineerId: string;
   engineerName: string;
   amount: number;
   message: string;
@@ -34,10 +35,37 @@ interface ProjectBidsResponse {
   bids: ClientBidResponse[];
 }
 
+export interface EngineerBidResponse {
+  id: string;
+  projectId: string;
+  clientUserId: string;
+  projectTitle: string;
+  clientName: string;
+  amount: number;
+  status: "pending" | "accepted" | "declined";
+  submittedDate: string;
+  projectStatus: string;
+}
+
 const createBidError = (message: string, statusCode: number): BidError => {
   const error = new Error(message) as BidError;
   error.statusCode = statusCode;
   return error;
+};
+
+const extractUserId = (value: unknown): string => {
+  if (value instanceof Types.ObjectId) {
+    return value.toString();
+  }
+
+  if (typeof value === "object" && value !== null) {
+    const record = value as { _id?: { toString: () => string } };
+    if (record._id) {
+      return record._id.toString();
+    }
+  }
+
+  return "";
 };
 
 export const submitBid = async (
@@ -130,6 +158,7 @@ export const getBidsForMyProjects = async (
       const projectBids = bidsByProject.get(projectId) ?? [];
       projectBids.push({
         id: bid._id.toString(),
+        engineerId: extractUserId(bid.engineer),
         engineerName: engineer.name ?? "Unknown engineer",
         amount: bid.amount,
         message: bid.message,
@@ -146,6 +175,53 @@ export const getBidsForMyProjects = async (
         bids: bidsByProject.get(project._id.toString()) ?? [],
       }))
       .filter((project) => project.bids.length > 0);
+
+    res.status(200).json(response);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const getMyBids = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "engineer") {
+      throw createBidError("Engineer access required", 403);
+    }
+
+    const bids = await Bid.find({ engineer: req.user.userId })
+      .populate({
+        path: "project",
+        select: "title name clientName status client",
+        populate: { path: "client", select: "name" },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const response: EngineerBidResponse[] = bids.map((bid) => {
+      const project = bid.project as unknown as {
+        _id: { toString: () => string };
+        title?: string;
+        name?: string;
+        clientName?: string;
+        status: string;
+        client?: { name?: string };
+      };
+      return {
+        id: bid._id.toString(),
+        projectId: project._id.toString(),
+        clientUserId: extractUserId(project.client),
+        projectTitle: project.title ?? project.name ?? "Untitled project",
+        clientName: project.clientName ?? project.client?.name ?? "Client",
+        amount: bid.amount,
+        status: bid.status,
+        submittedDate: bid.createdAt.toISOString(),
+        projectStatus: project.status,
+      };
+    });
 
     res.status(200).json(response);
   } catch (error: unknown) {
