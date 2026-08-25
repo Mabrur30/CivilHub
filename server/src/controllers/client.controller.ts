@@ -6,6 +6,7 @@ import { User } from "../models/User.model";
 export interface UpdateClientProfileBody {
   phone?: string;
   companyName?: string;
+  bio?: string;
 }
 
 interface ClientError extends Error {
@@ -49,6 +50,7 @@ const toClientProfile = async (client: IClient) => {
     email: user.email,
     phone: client.phone ?? "",
     companyName: client.companyName ?? "",
+    bio: client.bio ?? "",
   };
 };
 
@@ -72,7 +74,7 @@ export const updateMyClientProfile = async (
 ): Promise<void> => {
   try {
     const client = await requireClient(req);
-    const { phone, companyName } = req.body;
+    const { phone, companyName, bio } = req.body;
     if (
       phone !== undefined &&
       phone.trim() !== "" &&
@@ -86,9 +88,13 @@ export const updateMyClientProfile = async (
         400,
       );
     }
+    if (bio !== undefined && bio.trim().length > 500) {
+      throw createClientError("Bio must be 500 characters or fewer", 400);
+    }
 
     if (phone !== undefined) client.phone = phone.trim();
     if (companyName !== undefined) client.companyName = companyName.trim();
+    if (bio !== undefined) client.bio = bio.trim();
     await client.save();
     res.status(200).json(await toClientProfile(client));
   } catch (error: unknown) {

@@ -26,6 +26,7 @@ export interface EngineerProfilePhoto extends StoredFile {
 
 export interface IEngineer extends Document {
   user: Types.ObjectId;
+  bio?: string;
   profilePhoto?: EngineerProfilePhoto;
   certificates: Types.DocumentArray<EngineerCertificate>;
   portfolio: Types.DocumentArray<EngineerPortfolioItem>;
@@ -47,6 +48,11 @@ const engineerSchema = new Schema<IEngineer>(
       required: true,
       unique: true,
       index: true,
+    },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: 500,
     },
     profilePhoto: {
       url: { type: String, required: true },

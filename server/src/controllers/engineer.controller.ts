@@ -22,6 +22,30 @@ interface CertificateRequestBody {
   title: string;
 }
 
+export interface UpdateEngineerProfileBody {
+  bio?: string;
+}
+
+interface SearchEngineersQuery {
+  q?: string;
+  category?: string;
+  location?: string;
+  page?: string;
+  limit?: string;
+}
+
+interface SearchEngineersAggregationRow {
+  id: string;
+  name: string;
+  profilePhotoUrl?: string;
+  bio: string;
+}
+
+interface SearchEngineersAggregationResult {
+  items: SearchEngineersAggregationRow[];
+  total: Array<{ count: number }>;
+}
+
 interface EngineerParams {
   certificateId?: string;
   portfolioItemId?: string;
@@ -95,6 +119,24 @@ const getFile = (req: AuthenticatedRequest): Express.Multer.File => {
 const getParams = (req: AuthenticatedRequest): EngineerParams =>
   req.params as unknown as EngineerParams;
 
+const toEngineerProfile = (engineer: IEngineer) => ({
+  bio: engineer.bio ?? "",
+  profilePhoto: engineer.profilePhoto,
+  certificates: engineer.certificates,
+  portfolio: engineer.portfolio,
+});
+
+const escapeRegex = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const truncateBio = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 3).trimEnd()}...`;
+};
+
 export const getMyEngineerProfile = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -102,7 +144,117 @@ export const getMyEngineerProfile = async (
 ): Promise<void> => {
   try {
     const engineer = await requireEngineer(req);
-    res.status(200).json(engineer);
+    res.status(200).json(toEngineerProfile(engineer));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const updateMyEngineerProfile = async (
+  req: AuthenticatedRequest<UpdateEngineerProfileBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const engineer = await requireEngineer(req);
+    const { bio } = req.body;
+
+    if (bio !== undefined && bio.trim().length > 500) {
+      throw createEngineerError("Bio must be 500 characters or fewer", 400);
+    }
+
+    if (bio !== undefined) {
+      engineer.bio = bio.trim();
+    }
+
+    await engineer.save();
+    res.status(200).json(toEngineerProfile(engineer));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const searchEngineers = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId) {
+      throw createEngineerError("Authentication required", 401);
+    }
+
+    const query = req.query as unknown as SearchEngineersQuery;
+    const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(query.limit ?? "20", 10) || 20),
+    );
+    const searchText = query.q?.trim() ?? "";
+
+    const escaped = searchText ? escapeRegex(searchText) : "";
+    const regexFilter = escaped
+      ? {
+          $or: [
+            { "userData.name": { $regex: escaped, $options: "i" } },
+            { bio: { $regex: escaped, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const [aggregation] =
+      await Engineer.aggregate<SearchEngineersAggregationResult>([
+        {
+          $lookup: {
+            from: "users",
+            localField: "user",
+            foreignField: "_id",
+            as: "userData",
+          },
+        },
+        { $unwind: "$userData" },
+        {
+          $match: {
+            "userData.role": "engineer",
+            ...regexFilter,
+          },
+        },
+        { $sort: { "userData.name": 1 } },
+        {
+          $facet: {
+            items: [
+              { $skip: (page - 1) * limit },
+              { $limit: limit },
+              {
+                $project: {
+                  _id: 0,
+                  id: { $toString: "$userData._id" },
+                  name: "$userData.name",
+                  profilePhotoUrl: "$profilePhoto.url",
+                  bio: { $ifNull: ["$bio", ""] },
+                },
+              },
+            ],
+            total: [{ $count: "count" }],
+          },
+        },
+      ]).exec();
+
+    const rows = aggregation?.items ?? [];
+    const total = aggregation?.total[0]?.count ?? 0;
+
+    res.status(200).json({
+      engineers: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        profilePhotoUrl: row.profilePhotoUrl ?? null,
+        bio: truncateBio(row.bio, 180),
+        location: null,
+      })),
+      page,
+      limit,
+      total,
+    });
   } catch (error: unknown) {
     next(error);
   }

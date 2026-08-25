@@ -28,9 +28,14 @@ interface PortfolioItem {
 }
 
 interface EngineerProfile {
+  bio: string;
   profilePhoto?: ProfilePhoto;
   certificates: Certificate[];
   portfolio: PortfolioItem[];
+}
+
+interface UpdateEngineerProfileBody {
+  bio?: string;
 }
 
 interface ErrorResponse {
@@ -55,6 +60,7 @@ const isEngineerProfile = (value: unknown): value is EngineerProfile => {
   if (typeof value !== "object" || value === null) return false;
   const profile = value as Record<string, unknown>;
   return (
+    typeof profile.bio === "string" &&
     (profile.profilePhoto === undefined ||
       typeof profile.profilePhoto === "object") &&
     Array.isArray(profile.certificates) &&
@@ -92,9 +98,13 @@ export function EngineerProfilePage(): ReactElement {
     useState<boolean>(false);
   const [isPortfolioUploading, setIsPortfolioUploading] =
     useState<boolean>(false);
+  const [isBioSaving, setIsBioSaving] = useState<boolean>(false);
   const [certificateTitle, setCertificateTitle] = useState<string>("");
   const [portfolioTitle, setPortfolioTitle] = useState<string>("");
   const [portfolioDescription, setPortfolioDescription] = useState<string>("");
+  const [bioDraft, setBioDraft] = useState<string>("");
+  const [bioError, setBioError] = useState<string>("");
+  const [bioSaved, setBioSaved] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadProfile = async (): Promise<void> => {
@@ -112,6 +122,7 @@ export function EngineerProfilePage(): ReactElement {
         return;
       }
       setProfile(body);
+      setBioDraft(body.bio);
     } catch {
       setLoadError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -282,6 +293,41 @@ export function EngineerProfilePage(): ReactElement {
     }
   };
 
+  const saveBio = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    setBioSaved(false);
+    setBioError("");
+
+    const payload: UpdateEngineerProfileBody = {
+      bio: bioDraft,
+    };
+
+    setIsBioSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const body: unknown = await response.json();
+
+      if (!response.ok || !isEngineerProfile(body)) {
+        setBioError(getErrorMessage(body, "Unable to save your bio."));
+        return;
+      }
+
+      setProfile(body);
+      setBioDraft(body.bio);
+      setBioSaved(true);
+      window.setTimeout(() => setBioSaved(false), 3500);
+    } catch {
+      setBioError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setIsBioSaving(false);
+    }
+  };
+
   const initials = currentUser?.name
     .split(" ")
     .map((part) => part[0])
@@ -366,6 +412,50 @@ export function EngineerProfilePage(): ReactElement {
             ) : null}
           </div>
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
+        <form onSubmit={(event) => void saveBio(event)} className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label
+              htmlFor="engineer-bio"
+              className="text-sm font-semibold text-white/80"
+            >
+              Bio <span className="font-normal text-white/40">(optional)</span>
+            </label>
+            <span className="text-xs text-white/45">{bioDraft.length}/500</span>
+          </div>
+          <textarea
+            id="engineer-bio"
+            rows={4}
+            maxLength={500}
+            value={bioDraft}
+            onChange={(event) => {
+              setBioDraft(event.target.value);
+              setBioSaved(false);
+              setBioError("");
+            }}
+            className="form-input"
+            placeholder="Describe your expertise, sector experience, or delivery strengths"
+          />
+          <button
+            type="submit"
+            disabled={isBioSaving}
+            className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+          >
+            {isBioSaving ? "Saving..." : "Save bio"}
+          </button>
+          {bioSaved ? (
+            <p role="status" className="text-sm text-emerald-300">
+              Bio saved.
+            </p>
+          ) : null}
+          {bioError ? (
+            <p role="alert" className="text-sm text-red-300">
+              {bioError}
+            </p>
+          ) : null}
+        </form>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1.25fr]">

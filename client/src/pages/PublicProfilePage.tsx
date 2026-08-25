@@ -25,6 +25,7 @@ interface BasePublicProfile {
   name: string;
   role: "client" | "engineer";
   profilePhotoUrl: string | null;
+  bio: string;
   connectionStatus: ConnectionStatus;
   connectionId: string | null;
 }
@@ -64,6 +65,7 @@ const isBaseProfile = (value: unknown): value is BasePublicProfile => {
     (profile.role === "client" || profile.role === "engineer") &&
     (typeof profile.profilePhotoUrl === "string" ||
       profile.profilePhotoUrl === null) &&
+    typeof profile.bio === "string" &&
     isConnectionStatus(profile.connectionStatus) &&
     (typeof profile.connectionId === "string" || profile.connectionId === null)
   );
@@ -301,6 +303,9 @@ export function PublicProfilePage(): ReactElement {
                 </h1>
                 <p className="mt-2 text-sm font-semibold text-white/60">
                   {statusLabel(profile.connectionStatus)}
+                </p>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
+                  {profile.bio.trim() || "This user has not added a bio yet."}
                 </p>
               </div>
             </div>

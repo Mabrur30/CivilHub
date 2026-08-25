@@ -8,6 +8,9 @@ import {
   deleteCertificate,
   deletePortfolioItem,
   getMyEngineerProfile,
+  searchEngineers,
+  updateMyEngineerProfile,
+  type UpdateEngineerProfileBody,
   uploadCertificate,
   uploadPortfolioItem,
   uploadProfilePhoto,
@@ -25,8 +28,19 @@ import {
 
 const engineerRouter = Router();
 
+engineerRouter.get("/search", protect, (req, res, next) =>
+  searchEngineers(req as AuthenticatedRequest, res, next),
+);
+
 engineerRouter.get("/me", protect, (req, res, next) =>
   getMyEngineerProfile(req as AuthenticatedRequest, res, next),
+);
+engineerRouter.patch("/me", protect, (req, res, next) =>
+  updateMyEngineerProfile(
+    req as AuthenticatedRequest<UpdateEngineerProfileBody>,
+    res,
+    next,
+  ),
 );
 engineerRouter.post(
   "/me/photo",

@@ -74,6 +74,7 @@ export const getPublicProfile = async (
         name: user.name,
         role: user.role,
         profilePhotoUrl: engineer?.profilePhoto?.url ?? null,
+        bio: engineer?.bio ?? "",
         portfolio:
           engineer?.portfolio.map((item) => ({
             title: item.title,
@@ -102,6 +103,7 @@ export const getPublicProfile = async (
       name: user.name,
       role: user.role,
       profilePhotoUrl: null,
+      bio: client?.bio ?? "",
       companyName: client?.companyName ?? "",
       completedProjects,
       connectionStatus: connection.status,

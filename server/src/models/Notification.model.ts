@@ -4,7 +4,9 @@ export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
   | "connection_accepted"
-  | "new_message";
+  | "new_message"
+  | "connection_post"
+  | "post_liked";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -35,6 +37,8 @@ const notificationSchema = new Schema<INotification>(
         "bid_declined",
         "connection_accepted",
         "new_message",
+        "connection_post",
+        "post_liked",
       ],
       required: true,
     },

@@ -12,6 +12,7 @@ interface ClientProfileForm {
   email: string;
   phone: string;
   companyName: string;
+  bio: string;
 }
 
 interface ClientProfileResponse {
@@ -21,11 +22,13 @@ interface ClientProfileResponse {
   email: string;
   phone: string;
   companyName: string;
+  bio: string;
 }
 
 interface UpdateClientProfileBody {
   phone?: string;
   companyName?: string;
+  bio?: string;
 }
 
 interface ErrorResponse {
@@ -43,7 +46,8 @@ const isClientProfile = (value: unknown): value is ClientProfileResponse => {
     typeof profile.name === "string" &&
     typeof profile.email === "string" &&
     typeof profile.phone === "string" &&
-    typeof profile.companyName === "string"
+    typeof profile.companyName === "string" &&
+    typeof profile.bio === "string"
   );
 };
 
@@ -62,6 +66,7 @@ export function ClientProfilePage(): ReactElement {
     email: "",
     phone: "",
     companyName: "",
+    bio: "",
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -97,6 +102,7 @@ export function ClientProfilePage(): ReactElement {
           email: body.email,
           phone: body.phone,
           companyName: body.companyName,
+          bio: body.bio,
         });
       } catch {
         setLoadError("Unable to connect to CivilHub. Please try again.");
@@ -107,7 +113,9 @@ export function ClientProfilePage(): ReactElement {
     void loadProfile();
   }, []);
 
-  const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
+  const handleChange = (
+    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ): void => {
     setForm((current) => ({
       ...current,
       [event.target.name]: event.target.value,
@@ -126,6 +134,7 @@ export function ClientProfilePage(): ReactElement {
     const body: UpdateClientProfileBody = {
       phone: form.phone,
       companyName: form.companyName,
+      bio: form.bio,
     };
 
     try {
@@ -146,6 +155,7 @@ export function ClientProfilePage(): ReactElement {
         ...current,
         phone: responseBody.phone,
         companyName: responseBody.companyName,
+        bio: responseBody.bio,
       }));
       setSaved(true);
       window.setTimeout(() => setSaved(false), 3500);
@@ -264,6 +274,27 @@ export function ClientProfilePage(): ReactElement {
             onChange={handleChange}
             className="form-input"
             placeholder="Your company"
+          />
+        </div>
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <label
+              htmlFor="profile-bio"
+              className="block text-sm font-semibold text-white/80"
+            >
+              Bio <span className="font-normal text-white/40">(optional)</span>
+            </label>
+            <span className="text-xs text-white/45">{form.bio.length}/500</span>
+          </div>
+          <textarea
+            id="profile-bio"
+            name="bio"
+            rows={4}
+            maxLength={500}
+            value={form.bio}
+            onChange={handleChange}
+            className="form-input"
+            placeholder="Add a short introduction for your public profile"
           />
         </div>
         <button

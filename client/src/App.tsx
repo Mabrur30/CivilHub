@@ -22,6 +22,8 @@ import { ProjectProgressPage } from "./pages/ProjectProgressPage";
 import { PostProjectPage } from "./pages/PostProjectPage";
 import { ConversationListPage } from "./pages/ConversationListPage";
 import { ChatPage } from "./pages/ChatPage";
+import { SearchEngineersPage } from "./pages/SearchEngineersPage";
+import { FeedPage } from "./pages/FeedPage";
 
 function App(): ReactElement {
   return (
@@ -71,6 +73,30 @@ function App(): ReactElement {
         element={
           <ProtectedRoute>
             <PublicProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile/:userId"
+        element={
+          <ProtectedRoute>
+            <PublicProfilePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/search/engineers"
+        element={
+          <ProtectedRoute>
+            <SearchEngineersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/feed"
+        element={
+          <ProtectedRoute>
+            <FeedPage />
           </ProtectedRoute>
         }
       />

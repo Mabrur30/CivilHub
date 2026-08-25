@@ -142,7 +142,7 @@ export function LoginPage(): ReactElement {
         <p className="mt-6 text-sm text-white/50">
           New to CivilHub?{" "}
           <Link
-            to="/signup/engineer"
+            to="/?signup=choose-role"
             className="font-semibold text-primary hover:text-glow"
           >
             Create an account

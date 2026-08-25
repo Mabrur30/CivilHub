@@ -4,6 +4,7 @@ export interface IClient extends Document {
   user: Types.ObjectId;
   phone?: string;
   companyName?: string;
+  bio?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +25,11 @@ const clientSchema = new Schema<IClient>(
     companyName: {
       type: String,
       trim: true,
+    },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: 500,
     },
   },
   { timestamps: true },
