@@ -3,6 +3,7 @@ import { Types, type HydratedDocument } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Bid, type IBid } from "../models/Bid.model";
 import { Notification } from "../models/Notification.model";
+import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Project, type IProject } from "../models/Project.model";
 
 export interface SubmitBidRequestBody {
@@ -51,6 +52,45 @@ const createBidError = (message: string, statusCode: number): BidError => {
   const error = new Error(message) as BidError;
   error.statusCode = statusCode;
   return error;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const seedDefaultProjectPhases = async (project: IProject): Promise<void> => {
+  const existingCount = await ProjectPhase.countDocuments({
+    project: project._id,
+  }).exec();
+
+  if (existingCount > 0) {
+    return;
+  }
+
+  const startDate = project.targetStartDate ?? new Date();
+  const phaseTemplates = [
+    { name: "Planning and kickoff", dueInDays: 7 },
+    { name: "Site preparation", dueInDays: 21 },
+    { name: "Core execution", dueInDays: 45 },
+    { name: "Quality review", dueInDays: 60 },
+    { name: "Final handover", dueInDays: 75 },
+  ];
+
+  await ProjectPhase.insertMany(
+    phaseTemplates.map((template, index) => ({
+      project: project._id,
+      name: template.name,
+      order: index,
+      status: index === 0 ? "in_progress" : "not_started",
+      dueDate: new Date(startDate.getTime() + template.dueInDays * DAY_MS),
+    })),
+  );
+
+  const firstPhase = phaseTemplates[0];
+  project.currentPhaseName = firstPhase.name;
+  project.progressPercentage = 0;
+  project.nextMilestone = firstPhase.name;
+  project.nextMilestoneDueDate = new Date(
+    startDate.getTime() + firstPhase.dueInDays * DAY_MS,
+  );
 };
 
 const extractUserId = (value: unknown): string => {
@@ -281,6 +321,7 @@ export const acceptBid = async (
     ).exec();
     project.assignedEngineer = bid.engineer;
     project.status = "in-progress";
+    await seedDefaultProjectPhases(project);
     await project.save();
     await Notification.create({
       recipient: bid.engineer,

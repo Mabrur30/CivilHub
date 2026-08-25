@@ -63,12 +63,24 @@ const setAuthCookie = (res: Response, user: IUser): void => {
   res.cookie(COOKIE_NAME, token, getCookieOptions());
 };
 
-const toPublicUser = (user: IUser) => ({
-  id: user._id.toString(),
-  name: user.name,
-  email: user.email,
-  role: user.role,
-});
+const toPublicUser = async (user: IUser) => {
+  let profilePhotoUrl: string | null = null;
+
+  if (user.role === "engineer") {
+    const engineerProfile = await Engineer.findOne({ user: user._id })
+      .select("profilePhoto")
+      .exec();
+    profilePhotoUrl = engineerProfile?.profilePhoto?.url ?? null;
+  }
+
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    profilePhotoUrl,
+  };
+};
 
 export const signup = async (
   req: Request<Record<string, never>, unknown, SignupRequestBody>,
@@ -104,18 +116,23 @@ export const signup = async (
       passwordHash,
       role,
     });
-    if (role === "client") {
-      await Client.create({ user: user._id });
-    } else {
-      await Engineer.create({
-        user: user._id,
-        certificates: [],
-        portfolio: [],
-      });
+    try {
+      if (role === "client") {
+        await Client.create({ user: user._id });
+      } else {
+        await Engineer.create({
+          user: user._id,
+          certificates: [],
+          portfolio: [],
+        });
+      }
+    } catch (profileError: unknown) {
+      await User.deleteOne({ _id: user._id });
+      throw profileError;
     }
 
     setAuthCookie(res, user);
-    res.status(201).json(toPublicUser(user));
+    res.status(201).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);
   }
@@ -145,7 +162,7 @@ export const login = async (
     }
 
     setAuthCookie(res, user);
-    res.status(200).json(toPublicUser(user));
+    res.status(200).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);
   }
@@ -180,7 +197,7 @@ export const getCurrentUser = async (
       throw createAuthError("User not found", 404);
     }
 
-    res.status(200).json(toPublicUser(user));
+    res.status(200).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);
   }

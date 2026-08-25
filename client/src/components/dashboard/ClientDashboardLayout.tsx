@@ -1,6 +1,8 @@
 import { type ReactElement } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { TopNavAlerts } from "./TopNavAlerts";
+import { UserMenu } from "./UserMenu";
 
 interface ClientDashboardLayoutProps {}
 
@@ -10,7 +12,6 @@ const tabs = [
   { label: "Post a Project", to: "/dashboard/client/post-project" },
   { label: "Bids", to: "/dashboard/client/bids" },
   { label: "My Network", to: "/dashboard/client/network" },
-  { label: "Profile", to: "/dashboard/client/profile" },
 ];
 
 export function ClientDashboardLayout(
@@ -18,12 +19,6 @@ export function ClientDashboardLayout(
 ): ReactElement {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
-  const initials = currentUser?.name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <div className="min-h-screen bg-void text-white">
@@ -31,7 +26,7 @@ export function ClientDashboardLayout(
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard/client")}
             className="flex items-center gap-3 text-white transition-opacity hover:opacity-90"
           >
             <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
@@ -42,30 +37,17 @@ export function ClientDashboardLayout(
             </span>
           </button>
           <div className="flex items-center gap-3">
-            <Link
-              to="/messages"
-              className="rounded-full border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-            >
-              Messages
-            </Link>
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-white">
-                {currentUser?.name}
-              </p>
-              <p className="text-xs capitalize text-white/50">
-                {currentUser?.role}
-              </p>
-            </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-              {initials}
-            </span>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="rounded-full border border-white/15 px-3 py-2 text-xs font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-            >
-              Log Out
-            </button>
+            <TopNavAlerts role="client" />
+            {currentUser ? (
+              <UserMenu
+                name={currentUser.name}
+                email={currentUser.email}
+                role={currentUser.role}
+                photoUrl={currentUser.profilePhotoUrl}
+                onViewProfile={() => navigate("/dashboard/client/profile")}
+                onLogout={logout}
+              />
+            ) : null}
           </div>
         </div>
       </header>

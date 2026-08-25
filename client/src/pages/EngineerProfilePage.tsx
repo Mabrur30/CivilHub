@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 
 interface ProfilePhoto {
@@ -328,13 +329,6 @@ export function EngineerProfilePage(): ReactElement {
     }
   };
 
-  const initials = currentUser?.name
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   if (isLoading)
     return (
       <div className="animate-pulse rounded-2xl border border-white/10 bg-surface p-8 text-white/50">
@@ -375,17 +369,11 @@ export function EngineerProfilePage(): ReactElement {
 
       <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-          {profile?.profilePhoto?.url ? (
-            <img
-              src={profile.profilePhoto.url}
-              alt="Profile"
-              className="h-28 w-28 rounded-full object-cover ring-2 ring-primary/50"
-            />
-          ) : (
-            <div className="flex h-28 w-28 items-center justify-center rounded-full bg-primary/15 text-3xl font-semibold text-primary ring-2 ring-primary/40">
-              {initials}
-            </div>
-          )}
+          <Avatar
+            name={currentUser?.name ?? "Engineer"}
+            photoUrl={profile?.profilePhoto?.url ?? null}
+            size="lg"
+          />
           <div>
             <h2 className="font-heading text-2xl font-bold text-white">
               {currentUser?.name}

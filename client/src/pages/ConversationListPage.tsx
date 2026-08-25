@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 
 interface ConversationParticipant {
@@ -231,19 +232,11 @@ export function ConversationListPage(): ReactElement {
                 className="w-full rounded-xl border border-white/10 bg-void/40 p-4 text-left transition-colors hover:border-primary/50"
               >
                 <div className="flex items-start gap-3">
-                  {conversation.otherParticipant.profilePhotoUrl ? (
-                    <img
-                      src={conversation.otherParticipant.profilePhotoUrl}
-                      alt={`${conversation.otherParticipant.name} profile`}
-                      className="h-11 w-11 rounded-full border border-white/10 object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-sm font-bold text-primary">
-                      {conversation.otherParticipant.name
-                        .charAt(0)
-                        .toUpperCase()}
-                    </span>
-                  )}
+                  <Avatar
+                    name={conversation.otherParticipant.name}
+                    photoUrl={conversation.otherParticipant.profilePhotoUrl}
+                    size="sm"
+                  />
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">

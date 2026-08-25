@@ -289,9 +289,17 @@ export function ClientBidsPage(): ReactElement {
                                   : "Decline"}
                             </button>
                             {bid.status === "accepted" ? (
-                              <span className="text-xs font-semibold text-emerald-300">
-                                Selected for this project
-                              </span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs font-semibold text-emerald-300">
+                                  Selected for this project
+                                </span>
+                                <Link
+                                  to={`/dashboard/client/projects/${project.projectId}`}
+                                  className="text-xs font-semibold text-primary hover:text-glow"
+                                >
+                                  Open progress
+                                </Link>
+                              </div>
                             ) : null}
                             {bid.status === "declined" ? (
                               <span className="text-xs font-semibold text-white/40">

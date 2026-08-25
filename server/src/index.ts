@@ -14,6 +14,7 @@ import networkRouter from "./routes/network.routes";
 import conversationsRouter from "./routes/conversations.routes";
 import userRouter from "./routes/user.routes";
 import postRouter from "./routes/post.routes";
+import notificationsRouter from "./routes/notifications.routes";
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ app.use("/api/network", networkRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/users", userRouter);
 app.use("/api/posts", postRouter);
+app.use("/api/notifications", notificationsRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {

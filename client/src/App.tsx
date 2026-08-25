@@ -24,6 +24,7 @@ import { ConversationListPage } from "./pages/ConversationListPage";
 import { ChatPage } from "./pages/ChatPage";
 import { SearchEngineersPage } from "./pages/SearchEngineersPage";
 import { FeedPage } from "./pages/FeedPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 
 function App(): ReactElement {
   return (
@@ -113,6 +114,14 @@ function App(): ReactElement {
         element={
           <ProtectedRoute>
             <ChatPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/notifications"
+        element={
+          <ProtectedRoute>
+            <NotificationsPage />
           </ProtectedRoute>
         }
       />

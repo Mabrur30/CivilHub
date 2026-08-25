@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Link } from "react-router-dom";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 
 interface NetworkUser {
@@ -266,38 +267,6 @@ const formatRelativeTime = (value: string): string => {
   if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
   if (diffSeconds < 604800) return `${Math.floor(diffSeconds / 86400)}d ago`;
   return date.toLocaleDateString();
-};
-
-const Avatar = ({
-  name,
-  photo,
-  size,
-}: {
-  name: string;
-  photo: string | null;
-  size: "sm" | "lg";
-}): ReactElement => {
-  const sizeClass =
-    size === "lg"
-      ? "h-24 w-24 text-2xl shrink-0"
-      : "h-10 w-10 text-sm shrink-0";
-  if (photo) {
-    return (
-      <img
-        src={photo}
-        alt={`${name} profile`}
-        className={`${sizeClass} rounded-full border border-white/15 object-cover`}
-      />
-    );
-  }
-
-  return (
-    <span
-      className={`${sizeClass} flex items-center justify-center rounded-full border border-primary/50 bg-primary/10 font-bold text-primary`}
-    >
-      {name.charAt(0).toUpperCase()}
-    </span>
-  );
 };
 
 export function MyNetworkPage(): ReactElement {
@@ -885,7 +854,7 @@ export function MyNetworkPage(): ReactElement {
               <div className="-mt-10">
                 <Avatar
                   name={profile?.name ?? currentUser?.name ?? "You"}
-                  photo={profile?.profilePhotoUrl ?? null}
+                  photoUrl={profile?.profilePhotoUrl ?? null}
                   size="lg"
                 />
               </div>
@@ -965,7 +934,7 @@ export function MyNetworkPage(): ReactElement {
               <div className="flex items-center gap-3">
                 <Avatar
                   name={profile?.name ?? currentUser?.name ?? "You"}
-                  photo={profile?.profilePhotoUrl ?? null}
+                  photoUrl={profile?.profilePhotoUrl ?? null}
                   size="sm"
                 />
                 <button
@@ -1146,7 +1115,7 @@ export function MyNetworkPage(): ReactElement {
                         <Link to={`/profile/${post.author.userId}`}>
                           <Avatar
                             name={post.author.name}
-                            photo={post.author.profilePhotoUrl}
+                            photoUrl={post.author.profilePhotoUrl}
                             size="sm"
                           />
                         </Link>
@@ -1310,7 +1279,7 @@ export function MyNetworkPage(): ReactElement {
                         <div className="flex items-center gap-3">
                           <Avatar
                             name={request.name}
-                            photo={request.profilePhotoUrl}
+                            photoUrl={request.profilePhotoUrl}
                             size="sm"
                           />
                           <div>
@@ -1415,7 +1384,7 @@ export function MyNetworkPage(): ReactElement {
                         <div className="flex items-center gap-3">
                           <Avatar
                             name={person.name}
-                            photo={person.profilePhotoUrl}
+                            photoUrl={person.profilePhotoUrl}
                             size="sm"
                           />
                           <div className="min-w-0 flex-1">
@@ -1553,7 +1522,7 @@ export function MyNetworkPage(): ReactElement {
                         <div className="flex items-center gap-2">
                           <Avatar
                             name={request.name}
-                            photo={request.profilePhotoUrl}
+                            photoUrl={request.profilePhotoUrl}
                             size="sm"
                           />
                           <div>
@@ -1614,7 +1583,7 @@ export function MyNetworkPage(): ReactElement {
                       <div className="flex items-center gap-2">
                         <Avatar
                           name={connection.name}
-                          photo={connection.profilePhotoUrl}
+                          photoUrl={connection.profilePhotoUrl}
                           size="sm"
                         />
                         <div>

@@ -40,6 +40,16 @@ const storedFileFields = {
   resourceType: { type: String, enum: ["image", "raw"], required: true },
 };
 
+const engineerProfilePhotoSchema = new Schema<EngineerProfilePhoto>(
+  {
+    url: { type: String, required: true },
+    publicId: { type: String, required: true },
+    fileUrl: { type: String, required: true },
+    resourceType: { type: String, enum: ["image", "raw"], required: true },
+  },
+  { _id: false },
+);
+
 const engineerSchema = new Schema<IEngineer>(
   {
     user: {
@@ -55,10 +65,8 @@ const engineerSchema = new Schema<IEngineer>(
       maxlength: 500,
     },
     profilePhoto: {
-      url: { type: String, required: true },
-      publicId: { type: String, required: true },
-      fileUrl: { type: String, required: true },
-      resourceType: { type: String, enum: ["image", "raw"], required: true },
+      type: engineerProfilePhotoSchema,
+      default: undefined,
     },
     certificates: [
       {

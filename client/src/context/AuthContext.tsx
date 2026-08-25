@@ -13,6 +13,7 @@ export interface CurrentUser {
   name: string;
   email: string;
   role: "client" | "engineer";
+  profilePhotoUrl: string | null;
 }
 
 interface AuthContextValue {
@@ -39,6 +40,8 @@ const isCurrentUser = (value: unknown): value is CurrentUser => {
     typeof user.id === "string" &&
     typeof user.name === "string" &&
     typeof user.email === "string" &&
+    (typeof user.profilePhotoUrl === "string" ||
+      user.profilePhotoUrl === null) &&
     (user.role === "client" || user.role === "engineer")
   );
 };

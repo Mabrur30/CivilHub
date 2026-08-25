@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import { GetStartedMenu } from "./GetStartedMenu";
 
 interface NavbarProps {}
@@ -16,6 +17,9 @@ export function Navbar(_props: NavbarProps): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser } = useAuth();
+
+  const homeTarget = currentUser ? `/dashboard/${currentUser.role}` : "/";
 
   const scrollToSection = (targetId: string): void => {
     if (location.pathname !== "/") {
@@ -43,7 +47,7 @@ export function Navbar(_props: NavbarProps): ReactElement {
       >
         <button
           type="button"
-          onClick={() => scrollToSection("home")}
+          onClick={() => navigate(homeTarget)}
           className="flex items-center gap-3 text-white transition-opacity duration-300 hover:opacity-90"
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">

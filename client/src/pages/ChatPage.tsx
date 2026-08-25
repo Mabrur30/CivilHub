@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 
 interface Participant {
@@ -403,17 +404,11 @@ export function ChatPage(): ReactElement {
       <section className="mx-auto flex max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface">
         <header className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
-            {otherParticipant?.profilePhotoUrl ? (
-              <img
-                src={otherParticipant.profilePhotoUrl}
-                alt={`${otherParticipant.name} profile`}
-                className="h-11 w-11 rounded-full border border-white/15 object-cover"
-              />
-            ) : (
-              <span className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-sm font-bold text-primary">
-                {(otherParticipant?.name ?? "?").charAt(0).toUpperCase()}
-              </span>
-            )}
+            <Avatar
+              name={otherParticipant?.name ?? "Unknown user"}
+              photoUrl={otherParticipant?.profilePhotoUrl ?? null}
+              size="sm"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">
                 {otherParticipant?.name ?? "Conversation"}

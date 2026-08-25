@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
 
 interface EngineerPortfolioItem {
@@ -283,17 +284,11 @@ export function PublicProfilePage(): ReactElement {
         <section className="rounded-2xl border border-white/10 bg-surface p-8">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-4">
-              {profile.profilePhotoUrl ? (
-                <img
-                  src={profile.profilePhotoUrl}
-                  alt={`${profile.name} profile`}
-                  className="h-16 w-16 rounded-full border border-white/15 object-cover"
-                />
-              ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-xl font-bold text-primary">
-                  {profile.name.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <Avatar
+                name={profile.name}
+                photoUrl={profile.profilePhotoUrl}
+                size="md"
+              />
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                   {profile.role}
