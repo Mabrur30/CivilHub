@@ -5,6 +5,7 @@ import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
 import { Project } from "../models/Project.model";
 import { User, type UserRole } from "../models/User.model";
+import { Review } from "../models/Review.model";
 import type { ConnectionViewStatus } from "./network.controller";
 
 interface UserParams {
@@ -27,6 +28,30 @@ const getUserId = (req: AuthenticatedRequest): string => {
 
 const getParams = (req: AuthenticatedRequest): UserParams =>
   req.params as unknown as UserParams;
+
+const getEngineerRating = async (
+  userId: string,
+): Promise<{ rating: number | null; reviewCount: number }> => {
+  const rows = await Review.aggregate<{
+    averageRating: number;
+    reviewCount: number;
+  }>([
+    { $match: { engineer: userId } },
+    {
+      $group: {
+        _id: "$engineer",
+        averageRating: { $avg: "$rating" },
+        reviewCount: { $sum: 1 },
+      },
+    },
+  ]).exec();
+  return rows[0]
+    ? {
+        rating: Math.round(rows[0].averageRating * 10) / 10,
+        reviewCount: rows[0].reviewCount,
+      }
+    : { rating: null, reviewCount: 0 };
+};
 
 const getConnectionDetails = async (
   requester: string,
@@ -69,6 +94,7 @@ export const getPublicProfile = async (
 
     if (user.role === "engineer") {
       const engineer = await Engineer.findOne({ user: user._id }).exec();
+      const engineerRating = await getEngineerRating(user._id.toString());
       res.status(200).json({
         userId: user._id.toString(),
         name: user.name,
@@ -89,6 +115,8 @@ export const getPublicProfile = async (
           })) ?? [],
         connectionStatus: connection.status,
         connectionId: connection.connectionId,
+        rating: engineerRating.rating,
+        reviewCount: engineerRating.reviewCount,
       });
       return;
     }
@@ -108,6 +136,8 @@ export const getPublicProfile = async (
       completedProjects,
       connectionStatus: connection.status,
       connectionId: connection.connectionId,
+      rating: null,
+      reviewCount: 0,
     });
   } catch (error: unknown) {
     next(error);

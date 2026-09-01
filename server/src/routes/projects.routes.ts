@@ -14,6 +14,7 @@ import {
   rejectPhasePlan,
   type RejectPhasePlanRequestBody,
 } from "../controllers/project.controller";
+import { canReviewProject } from "../controllers/review.controller";
 import {
   getProjectProgress,
   updateProjectPhase,
@@ -25,12 +26,17 @@ import {
   payFullRemaining,
   type PayFullRemainingRequestBody,
 } from "../controllers/projectProgress.controller";
+import { getMyProjectHistory } from "../controllers/projectHistory.controller";
 import {
   protect,
   type AuthenticatedRequest,
 } from "../middleware/auth.middleware";
 
 const projectsRouter = Router();
+
+projectsRouter.get("/history", protect, (req, res, next) =>
+  getMyProjectHistory(req as AuthenticatedRequest, res, next),
+);
 
 projectsRouter.get("/open", getOpenProjects);
 projectsRouter.post("/", protect, (req, res, next) =>
@@ -48,6 +54,9 @@ projectsRouter.get("/my-posted-projects", protect, (req, res, next) =>
 );
 projectsRouter.get("/:projectId/progress", protect, (req, res, next) =>
   getProjectProgress(req as AuthenticatedRequest, res, next),
+);
+projectsRouter.get("/:projectId/can-review", protect, (req, res, next) =>
+  canReviewProject(req as AuthenticatedRequest, res, next),
 );
 projectsRouter.patch("/:projectId/phases/:phaseId", protect, (req, res, next) =>
   updateProjectPhase(

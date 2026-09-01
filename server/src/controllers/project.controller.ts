@@ -278,7 +278,10 @@ export const getMyProjects = async (
       throw createProjectError("Engineer access required", 403);
     }
 
-    const projects = await Project.find({ assignedEngineer: req.user.userId })
+    const projects = await Project.find({
+      assignedEngineer: req.user.userId,
+      status: { $ne: "completed" },
+    })
       .sort({ nextMilestoneDueDate: 1 })
       .exec();
 
@@ -298,7 +301,10 @@ export const getMyPostedProjects = async (
       throw createProjectError("Client access required", 403);
     }
 
-    const projects = await Project.find({ client: req.user.userId })
+    const projects = await Project.find({
+      client: req.user.userId,
+      status: { $ne: "completed" },
+    })
       .populate("assignedEngineer", "name")
       .sort({ createdAt: -1 })
       .exec();
@@ -785,7 +791,7 @@ export const getClientOverview = async (
     const [activeProjects, pendingBidReviews] = await Promise.all([
       Project.countDocuments({
         ...clientFilter,
-        status: { $nin: ["completed", "cancelled"] },
+        status: { $in: ["active", "in-progress"] },
       }),
       Bid.countDocuments({
         project: { $in: projectIds },

@@ -15,6 +15,9 @@ import conversationsRouter from "./routes/conversations.routes";
 import userRouter from "./routes/user.routes";
 import postRouter from "./routes/post.routes";
 import notificationsRouter from "./routes/notifications.routes";
+import reviewsRouter from "./routes/reviews.routes";
+import commentsRouter from "./routes/comments.routes";
+import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 
 dotenv.config();
 
@@ -46,10 +49,13 @@ app.use("/api/conversations", conversationsRouter);
 app.use("/api/users", userRouter);
 app.use("/api/posts", postRouter);
 app.use("/api/notifications", notificationsRouter);
+app.use("/api/reviews", reviewsRouter);
+app.use("/api/comments", commentsRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {
   await connectDB();
+  await backfillCompletedProjectStatuses();
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });

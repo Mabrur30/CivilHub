@@ -9,7 +9,10 @@ import {
   deletePost,
   getFeed,
   toggleLike,
+  createRepost,
+  type CreateRepostBody,
 } from "../controllers/post.controller";
+import { getCommentsForPost } from "../controllers/comment.controller";
 import {
   protect,
   type AuthenticatedRequest,
@@ -32,6 +35,12 @@ postRouter.post(
 
 postRouter.get("/feed", protect, (req, res, next) =>
   getFeed(req as AuthenticatedRequest, res, next),
+);
+postRouter.get("/:postId/comments", protect, (req, res, next) =>
+  getCommentsForPost(req as AuthenticatedRequest, res, next),
+);
+postRouter.post("/repost", protect, (req, res, next) =>
+  createRepost(req as AuthenticatedRequest<CreateRepostBody>, res, next),
 );
 
 postRouter.patch("/:postId/like", protect, (req, res, next) =>

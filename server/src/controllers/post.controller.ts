@@ -4,9 +4,11 @@ import { Types } from "mongoose";
 import cloudinary from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
+import { Comment } from "../models/Comment.model";
 import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Post, type IPost } from "../models/Post.model";
+import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
 
 interface PostError extends Error {
@@ -17,6 +19,11 @@ interface CreatePostBody {
   content?: string;
 }
 
+export interface CreateRepostBody {
+  originalPostId: string;
+  content?: string;
+}
+
 interface FeedQuery {
   page?: string;
   limit?: string;
@@ -24,6 +31,7 @@ interface FeedQuery {
 
 interface PostParams {
   postId?: string;
+  userId?: string;
 }
 
 interface PopulatedUser {
@@ -37,11 +45,14 @@ interface FeedPostAuthor {
   name: string;
   role: UserRole;
   profilePhotoUrl: string | null;
+  rating: number | null;
+  reviewCount: number;
 }
 
 interface FeedPostOriginal {
   id: string;
   content: string;
+  imageUrl: string | null;
   author: FeedPostAuthor;
   createdAt: string;
 }
@@ -53,6 +64,7 @@ interface FeedPostResponse {
   author: FeedPostAuthor;
   likeCount: number;
   likedByMe: boolean;
+  commentCount: number;
   originalPost: FeedPostOriginal | null;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +75,12 @@ interface FeedResponse {
   page: number;
   limit: number;
   total: number;
+}
+
+interface RatingAggregate {
+  _id: Types.ObjectId;
+  averageRating: number;
+  reviewCount: number;
 }
 
 const createPostError = (message: string, statusCode: number): PostError => {
@@ -172,16 +190,48 @@ const getEngineerPhotoMapByUserIds = async (
   );
 };
 
+const getEngineerRatingMapByUserIds = async (
+  userIds: string[],
+): Promise<Map<string, { rating: number; reviewCount: number }>> => {
+  const objectIds = userIds
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  const aggregates = await Review.aggregate<RatingAggregate>([
+    { $match: { engineer: { $in: objectIds } } },
+    {
+      $group: {
+        _id: "$engineer",
+        averageRating: { $avg: "$rating" },
+        reviewCount: { $sum: 1 },
+      },
+    },
+  ]).exec();
+  return new Map(
+    aggregates.map((item) => [
+      item._id.toString(),
+      {
+        rating: Math.round(item.averageRating * 10) / 10,
+        reviewCount: item.reviewCount,
+      },
+    ]),
+  );
+};
+
 const toFeedAuthor = (
   user: PopulatedUser,
   photoByUserId: Map<string, string>,
+  ratingByUserId: Map<string, { rating: number; reviewCount: number }>,
 ): FeedPostAuthor => {
   const userId = user._id.toString();
+  const rating =
+    user.role === "engineer" ? ratingByUserId.get(userId) : undefined;
   return {
     userId,
     name: user.name,
     role: user.role,
     profilePhotoUrl: photoByUserId.get(userId) ?? null,
+    rating: rating?.rating ?? null,
+    reviewCount: rating?.reviewCount ?? 0,
   };
 };
 
@@ -189,6 +239,8 @@ const toFeedPost = (
   post: IPost,
   viewerUserId: string,
   photoByUserId: Map<string, string>,
+  ratingByUserId: Map<string, { rating: number; reviewCount: number }>,
+  commentCount = 0,
 ): FeedPostResponse => {
   const author = post.author as unknown as PopulatedUser;
   const original = post.originalPost as unknown as IPost | null;
@@ -197,10 +249,12 @@ const toFeedPost = (
     ? {
         id: original._id.toString(),
         content: original.content,
+        imageUrl: original.imageUrl ?? null,
         createdAt: original.createdAt.toISOString(),
         author: toFeedAuthor(
           original.author as unknown as PopulatedUser,
           photoByUserId,
+          ratingByUserId,
         ),
       }
     : null;
@@ -209,9 +263,10 @@ const toFeedPost = (
     id: post._id.toString(),
     content: post.content,
     imageUrl: post.imageUrl ?? null,
-    author: toFeedAuthor(author, photoByUserId),
+    author: toFeedAuthor(author, photoByUserId, ratingByUserId),
     likeCount: post.likes.length,
     likedByMe: post.likes.some((like) => like.toString() === viewerUserId),
+    commentCount,
     originalPost: originalResponse,
     createdAt: post.createdAt.toISOString(),
     updatedAt: post.updatedAt.toISOString(),
@@ -266,6 +321,7 @@ export const createPost = async (
     }
 
     const photoByUserId = await getEngineerPhotoMapByUserIds([userId]);
+    const ratingByUserId = await getEngineerRatingMapByUserIds([userId]);
 
     const connectionUserIds = await getAcceptedConnectionUserIds(userId);
     const recipientIds = connectionUserIds.filter((id) => id !== userId);
@@ -279,7 +335,9 @@ export const createPost = async (
       );
     }
 
-    res.status(201).json(toFeedPost(populated, userId, photoByUserId));
+    res
+      .status(201)
+      .json(toFeedPost(populated, userId, photoByUserId, ratingByUserId, 0));
   } catch (error: unknown) {
     next(error);
   }
@@ -336,15 +394,138 @@ export const getFeed = async (
     const photoByUserId = await getEngineerPhotoMapByUserIds(
       Array.from(photoOwnerIds),
     );
+    const ratingByUserId = await getEngineerRatingMapByUserIds(
+      Array.from(photoOwnerIds),
+    );
 
     const response: FeedResponse = {
-      posts: posts.map((post) => toFeedPost(post, userId, photoByUserId)),
+      posts: await Promise.all(
+        posts.map(async (post) =>
+          toFeedPost(
+            post,
+            userId,
+            photoByUserId,
+            ratingByUserId,
+            await Comment.countDocuments({ post: post._id }),
+          ),
+        ),
+      ),
       page,
       limit,
       total,
     };
 
     res.status(200).json(response);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const createRepost = async (
+  req: AuthenticatedRequest<CreateRepostBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = requireUser(req);
+    const { originalPostId, content } = req.body;
+    if (!originalPostId || !Types.ObjectId.isValid(originalPostId)) {
+      throw createPostError("Original post not found", 404);
+    }
+
+    const originalPost = await Post.findById(originalPostId).exec();
+    if (!originalPost) throw createPostError("Original post not found", 404);
+
+    const repost = await Post.create({
+      author: new Types.ObjectId(userId),
+      content: content?.trim() || "Reposted",
+      originalPost: originalPost._id,
+      likes: [],
+    });
+    const populated = await Post.findById(repost._id)
+      .populate("author", "name role")
+      .populate({
+        path: "originalPost",
+        populate: { path: "author", select: "name role" },
+      })
+      .exec();
+    if (!populated) throw createPostError("Unable to load the repost", 500);
+
+    const photoByUserId = await getEngineerPhotoMapByUserIds([
+      userId,
+      originalPost.author.toString(),
+    ]);
+    const ratingByUserId = await getEngineerRatingMapByUserIds([
+      userId,
+      originalPost.author.toString(),
+    ]);
+    if (originalPost.author.toString() !== userId) {
+      const reposter = await User.findById(userId).select("name").exec();
+      await Notification.create({
+        recipient: originalPost.author,
+        type: "post_reposted",
+        message: `${reposter?.name ?? "Someone"} reposted your post.`,
+      });
+    }
+
+    res
+      .status(201)
+      .json(toFeedPost(populated, userId, photoByUserId, ratingByUserId, 0));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const getUserPosts = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const viewerUserId = requireUser(req);
+    const { userId } = getParams(req);
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      throw createPostError("User not found", 404);
+    }
+
+    const posts = await Post.find({ author: userId })
+      .sort({ createdAt: -1 })
+      .populate("author", "name role")
+      .populate({
+        path: "originalPost",
+        populate: { path: "author", select: "name role" },
+      })
+      .exec();
+    const photoOwnerIds = new Set<string>([userId]);
+    posts.forEach((post) => {
+      if (post.originalPost) {
+        const original = post.originalPost as unknown as IPost;
+        photoOwnerIds.add(
+          normalizeUserId(
+            original.author as unknown as Types.ObjectId | PopulatedUser,
+          ),
+        );
+      }
+    });
+    const photoByUserId = await getEngineerPhotoMapByUserIds(
+      Array.from(photoOwnerIds),
+    );
+    const ratingByUserId = await getEngineerRatingMapByUserIds(
+      Array.from(photoOwnerIds),
+    );
+    res.json({
+      posts: await Promise.all(
+        posts.map(async (post) =>
+          toFeedPost(
+            post,
+            viewerUserId,
+            photoByUserId,
+            ratingByUserId,
+            await Comment.countDocuments({ post: post._id }),
+          ),
+        ),
+      ),
+    });
   } catch (error: unknown) {
     next(error);
   }

@@ -9,6 +9,9 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
+import { PostComments } from "../components/dashboard/PostComments";
+import { RepostButton } from "../components/dashboard/RepostButton";
+import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 
 interface NetworkUser {
@@ -25,6 +28,8 @@ interface ConnectionUser {
   name: string;
   role: "client" | "engineer";
   profilePhotoUrl: string | null;
+  rating: number | null;
+  reviewCount: number;
 }
 
 interface EngineerSearchResult {
@@ -47,12 +52,15 @@ interface FeedAuthor {
   name: string;
   role: "client" | "engineer";
   profilePhotoUrl: string | null;
+  rating: number | null;
+  reviewCount: number;
 }
 
 interface FeedOriginalPost {
   id: string;
   content: string;
   author: FeedAuthor;
+  imageUrl: string | null;
   createdAt: string;
 }
 
@@ -63,6 +71,7 @@ interface FeedPost {
   author: FeedAuthor;
   likeCount: number;
   likedByMe: boolean;
+  commentCount: number;
   originalPost: FeedOriginalPost | null;
   createdAt: string;
   updatedAt: string;
@@ -86,6 +95,8 @@ interface SelfPublicProfile {
   role: "client" | "engineer";
   profilePhotoUrl: string | null;
   bio: string;
+  rating: number | null;
+  reviewCount: number;
 }
 
 interface EngineerOverviewResponse {
@@ -138,7 +149,10 @@ const isConnectionUser = (value: unknown): value is ConnectionUser => {
     typeof user.userId === "string" &&
     typeof user.name === "string" &&
     isRole(user.role) &&
-    (typeof user.profilePhotoUrl === "string" || user.profilePhotoUrl === null)
+    (typeof user.profilePhotoUrl === "string" ||
+      user.profilePhotoUrl === null) &&
+    (typeof user.rating === "number" || user.rating === null) &&
+    typeof user.reviewCount === "number"
   );
 };
 
@@ -239,7 +253,9 @@ const isSelfPublicProfile = (value: unknown): value is SelfPublicProfile => {
     isRole(profile.role) &&
     typeof profile.bio === "string" &&
     (typeof profile.profilePhotoUrl === "string" ||
-      profile.profilePhotoUrl === null)
+      profile.profilePhotoUrl === null) &&
+    (typeof profile.rating === "number" || profile.rating === null) &&
+    typeof profile.reviewCount === "number"
   );
 };
 
@@ -844,6 +860,28 @@ export function MyNetworkPage(): ReactElement {
     ? searchResults
     : connectableSuggestions;
 
+  const selfAuthorMetrics = useMemo(() => {
+    if (!currentUser?.id || currentUser.role !== "engineer") {
+      return { rating: null as number | null, reviewCount: 0 };
+    }
+
+    const authored = posts.find(
+      (post) =>
+        post.author.userId === currentUser.id &&
+        post.author.role === "engineer",
+    );
+
+    return {
+      rating: authored?.author.rating ?? null,
+      reviewCount: authored?.author.reviewCount ?? 0,
+    };
+  }, [currentUser?.id, currentUser?.role, posts]);
+
+  const selfProfileLink = profile?.userId ?? currentUser?.id ?? null;
+  const selfRole = profile?.role ?? currentUser?.role;
+  const selfRating = profile?.rating ?? selfAuthorMetrics.rating;
+  const selfReviewCount = profile?.reviewCount ?? selfAuthorMetrics.reviewCount;
+
   return (
     <div className="mx-auto w-full max-w-[1240px] space-y-6 pb-6">
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_2.2fr_1fr]">
@@ -852,16 +890,47 @@ export function MyNetworkPage(): ReactElement {
             <div className="h-16 w-full bg-gradient-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
             <div className="p-5 pt-0">
               <div className="-mt-10">
-                <Avatar
-                  name={profile?.name ?? currentUser?.name ?? "You"}
-                  photoUrl={profile?.profilePhotoUrl ?? null}
-                  size="lg"
-                />
+                {selfProfileLink ? (
+                  <Link
+                    to={`/profile/${selfProfileLink}`}
+                    aria-label="Open your public profile"
+                  >
+                    <Avatar
+                      name={profile?.name ?? currentUser?.name ?? "You"}
+                      photoUrl={profile?.profilePhotoUrl ?? null}
+                      size="lg"
+                    />
+                  </Link>
+                ) : (
+                  <Avatar
+                    name={profile?.name ?? currentUser?.name ?? "You"}
+                    photoUrl={profile?.profilePhotoUrl ?? null}
+                    size="lg"
+                  />
+                )}
               </div>
               <div className="mt-3">
-                <h2 className="font-heading text-2xl font-bold text-white">
-                  {profile?.name ?? currentUser?.name}
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  {selfProfileLink ? (
+                    <Link
+                      to={`/profile/${selfProfileLink}`}
+                      className="font-heading text-2xl font-bold text-white transition-colors duration-200 hover:text-primary"
+                    >
+                      {profile?.name ?? currentUser?.name}
+                    </Link>
+                  ) : (
+                    <h2 className="font-heading text-2xl font-bold text-white">
+                      {profile?.name ?? currentUser?.name}
+                    </h2>
+                  )}
+                  {selfRole === "engineer" && (
+                    <RatingBadge
+                      rating={selfRating ?? null}
+                      reviewCount={selfReviewCount ?? 0}
+                      size="sm"
+                    />
+                  )}
+                </div>
                 <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
                   {profile?.role ?? currentUser?.role}
                 </span>
@@ -1126,6 +1195,13 @@ export function MyNetworkPage(): ReactElement {
                           >
                             {post.author.name}
                           </Link>
+                          {post.author.role === "engineer" && (
+                            <RatingBadge
+                              rating={post.author.rating ?? null}
+                              reviewCount={post.author.reviewCount ?? 0}
+                              size="sm"
+                            />
+                          )}
                           <div className="mt-1 flex items-center gap-2 text-xs text-white/45">
                             <span className="rounded-full border border-white/15 px-2 py-0.5 capitalize text-white/60">
                               {post.author.role}
@@ -1166,13 +1242,21 @@ export function MyNetworkPage(): ReactElement {
                     </div>
 
                     <p className="mt-4 whitespace-pre-line text-sm leading-7 text-white/80">
-                      {post.content}
+                      {post.originalPost ? (
+                        <span className="text-sm text-white/75">
+                          {post.content === "Reposted" ? "" : post.content}
+                        </span>
+                      ) : (
+                        post.content
+                      )}
                     </p>
 
                     {post.originalPost ? (
                       <div className="mt-4 rounded-xl border border-white/10 bg-void/40 p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/40">
-                          Repost context
+                          <span className="inline-flex items-center gap-1.5">
+                            ↻ Reposted post
+                          </span>
                         </p>
                         <p className="mt-2 text-xs text-white/60">
                           {post.originalPost.author.name} •{" "}
@@ -1181,6 +1265,13 @@ export function MyNetworkPage(): ReactElement {
                         <p className="mt-2 text-sm text-white/70">
                           {post.originalPost.content}
                         </p>
+                        {post.originalPost.imageUrl ? (
+                          <img
+                            src={post.originalPost.imageUrl}
+                            alt="Original post attachment"
+                            className="mt-3 max-h-56 w-full rounded-lg object-cover"
+                          />
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -1198,29 +1289,61 @@ export function MyNetworkPage(): ReactElement {
                       </button>
                     ) : null}
 
-                    <div className="mt-4 flex items-center gap-3 border-t border-white/10 pt-4">
-                      <button
-                        type="button"
-                        onClick={() => void toggleLike(post.id)}
-                        disabled={isLikeLoading}
-                        className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition-all duration-200 ${
-                          isLiked
-                            ? "border-primary bg-primary/15 text-primary"
-                            : "border-white/15 text-white/65 hover:border-primary hover:text-white"
-                        } ${isPulsing ? "scale-110" : "scale-100"}`}
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          className="h-4 w-4"
-                          fill={isLiked ? "currentColor" : "none"}
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          aria-hidden="true"
+                    <div className="mt-4 border-t border-white/10 pt-3">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void toggleLike(post.id)}
+                          disabled={isLikeLoading}
+                          className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 ${
+                            isLiked
+                              ? "bg-primary/12 text-primary"
+                              : "text-white/65 hover:bg-primary/10 hover:text-white"
+                          } ${isPulsing ? "scale-110" : "scale-100"}`}
                         >
-                          <path d="M12 21s-6.5-4.35-9.19-7.04C.14 11.28.28 6.88 3.2 4.6c2.1-1.66 5.16-1.4 7 .53 1.84-1.93 4.9-2.19 7-.53 2.92 2.28 3.06 6.68.39 9.36C18.5 16.65 12 21 12 21Z" />
-                        </svg>
-                        <span>{post.likeCount}</span>
-                      </button>
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="h-4 w-4"
+                            fill={isLiked ? "currentColor" : "none"}
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden="true"
+                          >
+                            <path d="M12 21s-6.5-4.35-9.19-7.04C.14 11.28.28 6.88 3.2 4.6c2.1-1.66 5.16-1.4 7 .53 1.84-1.93 4.9-2.19 7-.53 2.92 2.28 3.06 6.68.39 9.36C18.5 16.65 12 21 12 21Z" />
+                          </svg>
+                          <span>
+                            {post.likeCount > 0 ? `${post.likeCount}` : "Like"}
+                          </span>
+                        </button>
+                        <PostComments
+                          postId={post.id}
+                          initialCount={post.commentCount}
+                          currentUser={
+                            currentUser
+                              ? {
+                                  userId: currentUser.id,
+                                  name: currentUser.name,
+                                  role: currentUser.role,
+                                  profilePhotoUrl: currentUser.profilePhotoUrl,
+                                }
+                              : null
+                          }
+                          variant="inline"
+                        />
+                        <RepostButton
+                          originalPostId={post.originalPost?.id ?? post.id}
+                          originalAuthor={
+                            post.originalPost?.author ?? post.author
+                          }
+                          originalContent={
+                            post.originalPost?.content ?? post.content
+                          }
+                          originalImageUrl={
+                            post.originalPost?.imageUrl ?? post.imageUrl
+                          }
+                          variant="inline"
+                        />
+                      </div>
                     </div>
                   </article>
                 );
@@ -1587,9 +1710,18 @@ export function MyNetworkPage(): ReactElement {
                           size="sm"
                         />
                         <div>
-                          <p className="text-sm font-semibold text-white">
-                            {connection.name}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-white">
+                              {connection.name}
+                            </p>
+                            {connection.role === "engineer" && (
+                              <RatingBadge
+                                rating={connection.rating ?? null}
+                                reviewCount={connection.reviewCount ?? 0}
+                                size="sm"
+                              />
+                            )}
+                          </div>
                           <p className="text-[11px] capitalize text-white/45">
                             {connection.role}
                           </p>

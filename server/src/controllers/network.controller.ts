@@ -4,6 +4,7 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
 import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
+import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
 
 export type ConnectionViewStatus =
@@ -24,6 +25,8 @@ interface UserView {
   name: string;
   role: UserRole;
   profilePhotoUrl: string | null;
+  rating: number | null;
+  reviewCount: number;
 }
 interface PopulatedUser {
   _id: Types.ObjectId;
@@ -51,6 +54,37 @@ const getEngineerPhotoMap = async (
     engineers.map((engineer) => [
       engineer.user.toString(),
       engineer.profilePhoto?.url ?? "",
+    ]),
+  );
+};
+
+const getEngineerRatingMap = async (
+  users: PopulatedUser[],
+): Promise<Map<string, { rating: number; reviewCount: number }>> => {
+  const engineerIds = users
+    .filter((user) => user.role === "engineer")
+    .map((user) => user._id);
+  const rows = await Review.aggregate<{
+    _id: Types.ObjectId;
+    averageRating: number;
+    reviewCount: number;
+  }>([
+    { $match: { engineer: { $in: engineerIds } } },
+    {
+      $group: {
+        _id: "$engineer",
+        averageRating: { $avg: "$rating" },
+        reviewCount: { $sum: 1 },
+      },
+    },
+  ]).exec();
+  return new Map(
+    rows.map((row) => [
+      row._id.toString(),
+      {
+        rating: Math.round(row.averageRating * 10) / 10,
+        reviewCount: row.reviewCount,
+      },
     ]),
   );
 };
@@ -251,11 +285,14 @@ export const declineConnectionRequest = async (
 const toUserView = (
   user: PopulatedUser,
   photoByUser: Map<string, string>,
+  ratingByUser: Map<string, { rating: number; reviewCount: number }>,
 ): UserView => ({
   userId: user._id.toString(),
   name: user.name,
   role: user.role,
   profilePhotoUrl: photoByUser.get(user._id.toString()) ?? null,
+  rating: ratingByUser.get(user._id.toString())?.rating ?? null,
+  reviewCount: ratingByUser.get(user._id.toString())?.reviewCount ?? 0,
 });
 
 export const getMyConnections = async (
@@ -279,9 +316,12 @@ export const getMyConnections = async (
     ]) as unknown as PopulatedUser[];
     const otherUsers = users.filter((user) => user._id.toString() !== userId);
     const photoByUser = await getEngineerPhotoMap(otherUsers);
+    const ratingByUser = await getEngineerRatingMap(otherUsers);
     res
       .status(200)
-      .json(otherUsers.map((user) => toUserView(user, photoByUser)));
+      .json(
+        otherUsers.map((user) => toUserView(user, photoByUser, ratingByUser)),
+      );
   } catch (error: unknown) {
     next(error);
   }
@@ -298,12 +338,10 @@ export const getConnectionStatus = async (
     if (!targetUserId)
       throw createNetworkError("Target user ID is required", 400);
     if (targetUserId === userId) {
-      res
-        .status(200)
-        .json({
-          status: "connected" satisfies ConnectionViewStatus,
-          connectionId: null,
-        });
+      res.status(200).json({
+        status: "connected" satisfies ConnectionViewStatus,
+        connectionId: null,
+      });
       return;
     }
     const connection = await Connection.findOne(

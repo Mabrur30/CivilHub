@@ -68,6 +68,28 @@ interface ProjectProgressResponse {
   canUpdate: boolean;
 }
 
+interface ReviewSummary {
+  id: string;
+  projectId: string;
+  client: {
+    id: string;
+    name: string;
+    profilePhotoUrl: string | null;
+  };
+  rating: number;
+  reviewText: string;
+  engineerReply: string | null;
+  engineerRepliedAt: string | null;
+  createdAt: string;
+}
+
+interface ReviewEligibilityResponse {
+  canReview: boolean;
+  alreadyReviewed: boolean;
+  reason?: string;
+  review?: ReviewSummary;
+}
+
 interface ErrorResponse {
   message?: string;
 }
@@ -118,6 +140,178 @@ const formatCurrency = (value: number): string => {
   return `$${value.toFixed(2)}`;
 };
 
+type SummaryIconName = "phase" | "progress" | "milestone";
+
+const SummaryIcon = ({ name }: { name: SummaryIconName }): ReactElement => {
+  if (name === "progress") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 19V5M4 19h16" />
+        <path d="m7 15 3-4 3 2 5-7" />
+      </svg>
+    );
+  }
+
+  if (name === "milestone") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-5 w-5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M6 21V4" />
+        <path d="M6 5c4-3 8 3 12 0v9c-4 3-8-3-12 0" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+};
+
+const StatusIcon = ({
+  status,
+}: {
+  status: ProjectPhaseStatus;
+}): ReactElement => {
+  if (status === "completed") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-3.5 w-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="m5 12 4 4L19 6" />
+      </svg>
+    );
+  }
+
+  if (status === "in_progress") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-3.5 w-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+
+  if (status === "awaiting_approval") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-3.5 w-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 3 3.5 7.5v5c0 4 3.6 7.2 8.5 8.5 4.9-1.3 8.5-4.5 8.5-8.5v-5L12 3Z" />
+        <path d="M12 8v4M12 15h.01" />
+      </svg>
+    );
+  }
+
+  if (status === "delayed") {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className="h-3.5 w-3.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="m12 4 9 16H3L12 4Z" />
+        <path d="M12 9v5M12 17h.01" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-3.5 w-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="5" y="10" width="14" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+};
+
+const CheckIcon = (): ReactElement => (
+  <svg
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="m5 12 4 4L19 6" />
+  </svg>
+);
+
+const CardAccentIcon = ({ paid }: { paid: boolean }): ReactElement => (
+  <span
+    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${paid ? "bg-emerald-300/10 text-emerald-300" : "bg-primary/10 text-primary"}`}
+  >
+    {paid ? <CheckIcon /> : <span className="text-lg font-semibold">$</span>}
+  </span>
+);
+
 export function ProjectProgressPage(): ReactElement {
   const { projectId } = useParams<{ projectId: string }>();
   const { currentUser } = useAuth();
@@ -152,6 +346,13 @@ export function ProjectProgressPage(): ReactElement {
   const [isProcessingPayment, setIsProcessingPayment] =
     useState<boolean>(false);
   const [paymentError, setPaymentError] = useState<string>("");
+  const [reviewEligibility, setReviewEligibility] =
+    useState<ReviewEligibilityResponse | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(0);
+  const [reviewText, setReviewText] = useState<string>("");
+  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+  const [reviewError, setReviewError] = useState<string>("");
+  const [reviewSuccess, setReviewSuccess] = useState<boolean>(false);
 
   // Rejection feedback
   const [rejectFeedback, setRejectFeedback] = useState<string>("");
@@ -175,13 +376,18 @@ export function ProjectProgressPage(): ReactElement {
     setError("");
 
     try {
-      const [progressRes, planRes] = await Promise.all([
+      const [progressRes, planRes, reviewRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/projects/${projectId}/progress`, {
           credentials: "include",
         }),
         fetch(`${API_BASE_URL}/api/projects/${projectId}/phase-plan`, {
           credentials: "include",
         }),
+        currentUser?.role === "client"
+          ? fetch(`${API_BASE_URL}/api/projects/${projectId}/can-review`, {
+              credentials: "include",
+            })
+          : Promise.resolve(null),
       ]);
 
       if (!progressRes.ok) {
@@ -198,6 +404,13 @@ export function ProjectProgressPage(): ReactElement {
         const planData: unknown = await planRes.json();
         setPhasePlan(planData as PhasePlan);
       }
+
+      if (reviewRes?.ok) {
+        const reviewData: unknown = await reviewRes.json();
+        setReviewEligibility(reviewData as ReviewEligibilityResponse);
+      } else if (currentUser?.role !== "client") {
+        setReviewEligibility(null);
+      }
     } catch {
       setError("Unable to connect to CivilHub. Please try again.");
       setProjectProgress(null);
@@ -208,7 +421,7 @@ export function ProjectProgressPage(): ReactElement {
 
   useEffect(() => {
     void loadData();
-  }, [projectId]);
+  }, [currentUser?.role, projectId]);
 
   const handleUpdatePhase = async (
     phaseId: string,
@@ -568,12 +781,54 @@ export function ProjectProgressPage(): ReactElement {
     }
   };
 
+  const handleSubmitReview = async (): Promise<void> => {
+    if (!projectId || reviewRating === 0 || !reviewText.trim()) {
+      setReviewError("Choose a rating and write a review before submitting.");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    setReviewError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/reviews`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          rating: reviewRating,
+          reviewText: reviewText.trim(),
+        }),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        setReviewError(getErrorMessage(body));
+        return;
+      }
+
+      const createdReview = (body as { review?: ReviewSummary }).review;
+      setReviewEligibility({
+        canReview: false,
+        alreadyReviewed: true,
+        review: createdReview,
+      });
+      setReviewSuccess(true);
+    } catch {
+      setReviewError("Unable to submit your review. Please try again.");
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   const totalPhasePrice = phasePlanFormData.reduce(
     (sum, p) => sum + p.price,
     0,
   );
   const totalAgreedValue = phasePlan?.totalAgreedValue || 0;
   const pricesMatch = Math.abs(totalPhasePrice - totalAgreedValue) < 0.01;
+  const completedPhaseCount =
+    projectProgress?.phases.filter((phase) => phase.status === "completed")
+      .length ?? 0;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -606,7 +861,7 @@ export function ProjectProgressPage(): ReactElement {
         </section>
       ) : projectProgress && phasePlan ? (
         <>
-          <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
+          <section className="rounded-2xl border border-white/10 bg-surface p-6 shadow-[0_18px_50px_rgba(0,0,0,0.18)] sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
               Project progress
             </p>
@@ -614,27 +869,50 @@ export function ProjectProgressPage(): ReactElement {
               {projectProgress.project.name}
             </h1>
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-xl border border-white/10 bg-void/45 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                  Current phase
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/85">
+              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
+                    Current phase
+                  </p>
+                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
+                    <SummaryIcon name="phase" />
+                  </span>
+                </div>
+                <p className="mt-3 text-sm font-semibold text-white/90">
                   {projectProgress.project.currentPhaseName}
                 </p>
               </div>
-              <div className="rounded-xl border border-white/10 bg-void/45 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                  Progress
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/85">
+              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
+                    Progress
+                  </p>
+                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
+                    <SummaryIcon name="progress" />
+                  </span>
+                </div>
+                <p className="mt-2 text-2xl font-bold text-white">
                   {projectProgress.project.progressPercentage}%
                 </p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                    style={{
+                      width: `${projectProgress.project.progressPercentage}%`,
+                    }}
+                  />
+                </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-void/45 p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                  Next milestone
-                </p>
-                <p className="mt-2 text-sm font-semibold text-white/85">
+              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
+                    Next milestone
+                  </p>
+                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
+                    <SummaryIcon name="milestone" />
+                  </span>
+                </div>
+                <p className="mt-3 text-sm font-semibold text-white/90">
                   {projectProgress.project.nextMilestone}
                 </p>
                 <p className="mt-1 text-xs text-white/55">
@@ -643,6 +921,95 @@ export function ProjectProgressPage(): ReactElement {
               </div>
             </div>
           </section>
+
+          {currentUser?.role === "client" && reviewEligibility?.canReview && (
+            <section className="rounded-2xl border border-primary/35 bg-primary/[0.06] p-6 shadow-[0_18px_50px_rgba(227,63,63,0.1)] sm:p-8">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                Project complete
+              </p>
+              <h2 className="mt-2 font-heading text-2xl font-bold text-white">
+                Celebrate the work with a review
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-white/65">
+                Share a thoughtful note about your experience working with the
+                engineer.
+              </p>
+              <div className="mt-5">
+                <p className="text-sm font-semibold text-white">Your rating</p>
+                <div className="mt-2 flex gap-1" aria-label="Choose a rating">
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                      onClick={() => setReviewRating(value)}
+                      className={`text-3xl leading-none transition-all duration-150 hover:scale-110 ${value <= reviewRating ? "text-amber-300" : "text-white/20 hover:text-amber-200/70"}`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                value={reviewText}
+                onChange={(event) =>
+                  setReviewText(event.target.value.slice(0, 1000))
+                }
+                placeholder="What stood out about the delivery?"
+                rows={4}
+                maxLength={1000}
+                className="mt-4 w-full rounded-xl border border-white/15 bg-void/50 px-4 py-3 text-sm text-white placeholder-white/35 outline-none transition-colors focus:border-primary/60"
+              />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-xs text-white/45">
+                  {reviewText.length}/1000
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleSubmitReview()}
+                  disabled={isSubmittingReview}
+                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {isSubmittingReview ? "Submitting..." : "Submit Review"}
+                </button>
+              </div>
+              {reviewError && (
+                <p className="mt-3 text-sm text-red-200" role="alert">
+                  {reviewError}
+                </p>
+              )}
+            </section>
+          )}
+
+          {currentUser?.role === "client" &&
+            reviewEligibility?.alreadyReviewed &&
+            reviewEligibility.review && (
+              <section className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.04] p-6 sm:p-8">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+                  {reviewSuccess ? "Review submitted" : "Your review"}
+                </p>
+                <div className="mt-3 flex items-center gap-1 text-amber-300">
+                  {Array.from({ length: 5 }, (_, index) => (
+                    <span
+                      key={index}
+                      className={
+                        index < reviewEligibility.review!.rating
+                          ? ""
+                          : "text-white/15"
+                      }
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm leading-6 text-white/75">
+                  {reviewEligibility.review.reviewText}
+                </p>
+                <p className="mt-3 text-xs text-white/40">
+                  Submitted {formatDate(reviewEligibility.review.createdAt)}
+                </p>
+              </section>
+            )}
 
           {/* Phase Plan Section - Engineer View */}
           {currentUser?.role === "engineer" &&
@@ -930,10 +1297,20 @@ export function ProjectProgressPage(): ReactElement {
 
           {/* Payment Section - When Plan is Approved */}
           {phasePlan.phasePlanStatus === "approved" && (
-            <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
-              <h2 className="font-heading text-2xl font-bold text-white">
-                Payments
-              </h2>
+            <section className="rounded-2xl border border-white/10 bg-surface p-6 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:p-8">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <span className="text-xl font-semibold">$</span>
+                </span>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                    Financial checkpoints
+                  </p>
+                  <h2 className="mt-1 font-heading text-2xl font-bold text-white">
+                    Payments
+                  </h2>
+                </div>
+              </div>
 
               {paymentError && (
                 <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 p-4">
@@ -943,16 +1320,24 @@ export function ProjectProgressPage(): ReactElement {
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {/* Advance Payment */}
-                <div className="rounded-lg border border-white/10 bg-void/45 p-4">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                    Advance Payment
-                  </p>
+                <div
+                  className={`rounded-xl border p-5 transition-all duration-200 ${phasePlan.advancePaid ? "border-emerald-300/25 bg-emerald-300/[0.04]" : "border-primary/35 bg-primary/[0.045] shadow-[inset_3px_0_0_rgba(227,63,63,0.85)]"}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.14em] text-white/60">
+                      Advance Payment
+                    </p>
+                    <CardAccentIcon paid={phasePlan.advancePaid} />
+                  </div>
                   <p className="mt-2 text-xl font-bold text-white">
                     {formatCurrency(phasePlan.advanceRequiredAmount || 0)}
                   </p>
-                  <p className="mt-1 text-xs text-white/50">
+                  <p
+                    className={`mt-2 flex items-center gap-1.5 text-xs ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}
+                  >
+                    {phasePlan.advancePaid && <CheckIcon />}
                     {phasePlan.advancePaid
-                      ? "✓ Paid"
+                      ? "Paid"
                       : "Required before work begins"}
                   </p>
                   {!phasePlan.advancePaid && currentUser?.role === "client" && (
@@ -960,7 +1345,7 @@ export function ProjectProgressPage(): ReactElement {
                       type="button"
                       onClick={() => void handlePayAdvance()}
                       disabled={isProcessingPayment}
-                      className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
                     >
                       {isProcessingPayment
                         ? "Processing..."
@@ -971,10 +1356,13 @@ export function ProjectProgressPage(): ReactElement {
 
                 {/* Remaining Payment */}
                 {phasePlan.paymentPlan === "full_upfront" && (
-                  <div className="rounded-lg border border-white/10 bg-void/45 p-4">
-                    <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                      Remaining Balance
-                    </p>
+                  <div className="rounded-xl border border-primary/25 bg-primary/[0.035] p-5 transition-all duration-200 hover:border-primary/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.14em] text-white/60">
+                        Remaining Balance
+                      </p>
+                      <CardAccentIcon paid={false} />
+                    </div>
                     <p className="mt-2 text-xl font-bold text-white">
                       {formatCurrency(
                         (phasePlan.totalAgreedValue || 0) -
@@ -992,7 +1380,7 @@ export function ProjectProgressPage(): ReactElement {
                           type="button"
                           onClick={() => void handlePayFullRemaining()}
                           disabled={isProcessingPayment}
-                          className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                          className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
                         >
                           {isProcessingPayment
                             ? "Processing..."
@@ -1004,11 +1392,14 @@ export function ProjectProgressPage(): ReactElement {
               </div>
 
               {currentUser?.role === "client" && (
-                <div className="mt-4 rounded-lg border border-blue-400/20 bg-blue-400/5 p-4">
-                  <p className="text-xs text-blue-200">
-                    💳 <strong>Mock Payment Note:</strong> This is a simulated
-                    payment for testing purposes. Real payment gateway
-                    integration coming soon.
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.045] p-4">
+                  <span className="mt-0.5 text-sky-200">
+                    <span className="text-base">i</span>
+                  </span>
+                  <p className="text-xs leading-relaxed text-sky-100/75">
+                    <strong className="text-sky-100">Mock Payment Note:</strong>{" "}
+                    This is a simulated payment for testing purposes. Real
+                    payment gateway integration coming soon.
                   </p>
                 </div>
               )}
@@ -1040,17 +1431,37 @@ export function ProjectProgressPage(): ReactElement {
                   </div>
                 )}
 
-                <div className="mt-5 space-y-3">
+                <div className="relative mt-6 space-y-4 pl-7 sm:pl-9">
+                  <div className="absolute bottom-8 left-[0.7rem] top-8 w-px bg-white/10 sm:left-[1rem]" />
+                  <div
+                    className="absolute left-[0.7rem] top-8 w-px bg-primary transition-[height] duration-500 sm:left-[1rem]"
+                    style={{
+                      height: `${projectProgress.phases.length > 1 ? (completedPhaseCount / (projectProgress.phases.length - 1)) * 100 : completedPhaseCount > 0 ? 100 : 0}%`,
+                    }}
+                  />
                   {projectProgress.phases.map((phase) => {
                     const isUpdating = updatingPhaseId === phase.id;
-                    const phasePrice = phase.price || 0;
+                    const phasePlanPhase = phasePlan.phases.find(
+                      (planPhase) => planPhase.id === phase.id,
+                    );
+                    const phasePrice =
+                      phase.price ?? phasePlanPhase?.price ?? 0;
+                    const paymentStatus =
+                      phase.paymentStatus ?? phasePlanPhase?.paymentStatus;
                     const isAdvancePaid = phasePlan.advancePaid;
+                    const isLocked =
+                      !isAdvancePaid && phase.status === "not_started";
 
                     return (
                       <article
                         key={phase.id}
-                        className="rounded-xl border border-white/10 bg-void/45 p-4"
+                        className={`relative rounded-xl border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)] ${isLocked ? "border-white/10 bg-void/60 opacity-65" : "border-white/10 bg-void/45 hover:border-primary/25"}`}
                       >
+                        <span
+                          className={`absolute -left-[2.05rem] top-6 flex h-5 w-5 items-center justify-center rounded-full border-2 bg-surface sm:-left-[2.35rem] ${phase.status === "completed" ? "border-primary text-primary" : isLocked ? "border-white/20 text-white/40" : "border-white/30 text-white/70"}`}
+                        >
+                          <StatusIcon status={phase.status} />
+                        </span>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex-1">
                             <p className="text-xs uppercase tracking-[0.14em] text-white/45">
@@ -1073,7 +1484,7 @@ export function ProjectProgressPage(): ReactElement {
                                   {formatCurrency(phasePrice)}
                                 </span>
                               )}
-                              {phase.paymentStatus === "paid" && (
+                              {paymentStatus === "paid" && (
                                 <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 text-emerald-200">
                                   Paid
                                 </span>
@@ -1082,10 +1493,11 @@ export function ProjectProgressPage(): ReactElement {
                           </div>
                           <div className="flex items-center gap-3">
                             <span
-                              className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                              className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
                                 statusBadgeClass[phase.status]
                               }`}
                             >
+                              <StatusIcon status={phase.status} />
                               {phase.status.replace(/_/g, " ")}
                             </span>
                             {projectProgress.canUpdate && (
@@ -1127,14 +1539,15 @@ export function ProjectProgressPage(): ReactElement {
                         {phasePlan.paymentPlan === "phase_by_phase" &&
                           (phase.status === "awaiting_approval" ||
                             phase.status === "completed") &&
-                          phase.paymentStatus === "unpaid" &&
+                          paymentStatus === "unpaid" &&
                           currentUser?.role === "client" && (
                             <button
                               type="button"
                               onClick={() => void handlePayForPhase(phase.id)}
                               disabled={isProcessingPayment}
-                              className="mt-3 rounded-lg bg-primary/20 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/30 disabled:opacity-50"
+                              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/20 active:translate-y-0 disabled:opacity-50"
                             >
+                              <span className="text-sm font-bold">$</span>
                               {isProcessingPayment
                                 ? "Processing..."
                                 : `Pay for this phase (${formatCurrency(phasePrice)}) - Mock`}

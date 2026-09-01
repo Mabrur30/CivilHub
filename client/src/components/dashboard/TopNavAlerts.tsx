@@ -1,5 +1,6 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import {
   formatRelativeTime,
   getNotificationDotClassName,
@@ -57,7 +58,15 @@ const getNotificationTargetPath = (
   if (
     (notification.type === "bid_accepted" ||
       notification.type === "bid_declined" ||
-      notification.type === "project_phase_updated") &&
+      notification.type === "project_phase_updated" ||
+      notification.type === "phase_plan_submitted" ||
+      notification.type === "phase_plan_approved" ||
+      notification.type === "phase_plan_rejected" ||
+      notification.type === "advance_payment_received" ||
+      notification.type === "phase_payment_received" ||
+      notification.type === "full_payment_received" ||
+      notification.type === "review_received" ||
+      notification.type === "review_reply") &&
     notification.projectId
   ) {
     return `/dashboard/${role}/projects/${notification.projectId}`;
@@ -128,6 +137,7 @@ const renderIconBadge = (count: number): ReactElement | null => {
 
 export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [messageUnreadCount, setMessageUnreadCount] = useState<number>(0);
@@ -222,6 +232,10 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
   };
 
   useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+
     const bootstrap = async (): Promise<void> => {
       await refreshCounts();
     };
@@ -235,7 +249,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent): void => {

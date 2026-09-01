@@ -13,7 +13,11 @@ export type NotificationType =
   | "phase_plan_rejected"
   | "advance_payment_received"
   | "phase_payment_received"
-  | "full_payment_received";
+  | "full_payment_received"
+  | "review_received"
+  | "review_reply"
+  | "comment_received"
+  | "post_reposted";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -53,6 +57,10 @@ const notificationSchema = new Schema<INotification>(
         "advance_payment_received",
         "phase_payment_received",
         "full_payment_received",
+        "review_received",
+        "review_reply",
+        "comment_received",
+        "post_reposted",
       ],
       required: true,
     },

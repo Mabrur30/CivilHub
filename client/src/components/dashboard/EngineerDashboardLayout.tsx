@@ -9,6 +9,7 @@ interface EngineerDashboardLayoutProps {}
 const tabs = [
   { label: "Overview", to: "/dashboard/engineer/overview" },
   { label: "My Projects", to: "/dashboard/engineer/projects" },
+  { label: "Project History", to: "/dashboard/engineer/history" },
   { label: "Marketplace", to: "/dashboard/engineer/marketplace" },
   { label: "My Bids", to: "/dashboard/engineer/bids" },
   { label: "My Network", to: "/dashboard/engineer/network" },

@@ -25,11 +25,15 @@ import {
   portfolioUpload,
   profilePhotoUpload,
 } from "../middleware/upload.middleware";
+import { getEngineerReviews } from "../controllers/review.controller";
 
 const engineerRouter = Router();
 
 engineerRouter.get("/search", protect, (req, res, next) =>
   searchEngineers(req as AuthenticatedRequest, res, next),
+);
+engineerRouter.get("/:engineerUserId/reviews", protect, (req, res, next) =>
+  getEngineerReviews(req as AuthenticatedRequest, res, next),
 );
 
 engineerRouter.get("/me", protect, (req, res, next) =>

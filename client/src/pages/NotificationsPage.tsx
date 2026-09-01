@@ -38,7 +38,15 @@ const getNotificationTargetPath = (
   if (
     (notification.type === "bid_accepted" ||
       notification.type === "bid_declined" ||
-      notification.type === "project_phase_updated") &&
+      notification.type === "project_phase_updated" ||
+      notification.type === "phase_plan_submitted" ||
+      notification.type === "phase_plan_approved" ||
+      notification.type === "phase_plan_rejected" ||
+      notification.type === "advance_payment_received" ||
+      notification.type === "phase_payment_received" ||
+      notification.type === "full_payment_received" ||
+      notification.type === "review_received" ||
+      notification.type === "review_reply") &&
     notification.projectId
   ) {
     return `/dashboard/${role}/projects/${notification.projectId}`;

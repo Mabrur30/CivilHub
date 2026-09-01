@@ -40,6 +40,7 @@ export interface IProject extends Document {
   advancePaidAt?: Date;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt?: Date;
+  completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -164,6 +165,9 @@ const projectSchema = new Schema<IProject>(
       default: false,
     },
     fullPaymentPaidAt: {
+      type: Date,
+    },
+    completedAt: {
       type: Date,
     },
   },

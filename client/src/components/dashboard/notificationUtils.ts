@@ -7,8 +7,17 @@ export type NotificationType =
   | "new_message"
   | "connection_post"
   | "post_liked"
-  | "project_phase_updated";
-
+  | "project_phase_updated"
+  | "phase_plan_submitted"
+  | "phase_plan_approved"
+  | "phase_plan_rejected"
+  | "advance_payment_received"
+  | "phase_payment_received"
+  | "full_payment_received"
+  | "review_received"
+  | "review_reply"
+  | "comment_received"
+  | "post_reposted";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -38,6 +47,16 @@ const notificationTypes: NotificationType[] = [
   "connection_post",
   "post_liked",
   "project_phase_updated",
+  "phase_plan_submitted",
+  "phase_plan_approved",
+  "phase_plan_rejected",
+  "advance_payment_received",
+  "phase_payment_received",
+  "full_payment_received",
+  "review_received",
+  "review_reply",
+  "comment_received",
+  "post_reposted",
 ];
 
 const isNotificationType = (value: unknown): value is NotificationType =>
@@ -95,7 +114,21 @@ export const mapNotificationTypeToActivityType = (
   if (type === "connection_accepted") return "milestone";
   if (type === "connection_post") return "review";
   if (type === "post_liked") return "bid";
-  if (type === "project_phase_updated") return "milestone";
+  if (
+    type === "project_phase_updated" ||
+    type === "phase_plan_submitted" ||
+    type === "phase_plan_approved" ||
+    type === "phase_plan_rejected" ||
+    type === "advance_payment_received" ||
+    type === "phase_payment_received" ||
+    type === "full_payment_received" ||
+    type === "review_received" ||
+    type === "review_reply" ||
+    type === "comment_received" ||
+    type === "post_reposted"
+  ) {
+    return "milestone";
+  }
   return "review";
 };
 

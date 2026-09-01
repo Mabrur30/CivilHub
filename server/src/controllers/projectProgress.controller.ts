@@ -160,6 +160,46 @@ const syncProjectProgressSnapshot = async (
   };
 };
 
+export const isProjectFullyComplete = async (
+  project: IProject,
+): Promise<boolean> => {
+  const phases = await ProjectPhase.find({ project: project._id }).exec();
+  if (
+    phases.length === 0 ||
+    phases.some((phase) => phase.status !== "completed")
+  ) {
+    return false;
+  }
+
+  if (project.paymentPlan === "phase_by_phase") {
+    return phases.every((phase) => phase.paymentStatus === "paid");
+  }
+
+  return project.paymentPlan === "full_upfront" && project.fullPaymentPaid;
+};
+
+export const syncProjectCompletionStatus = async (
+  project: IProject,
+): Promise<boolean> => {
+  if (!(await isProjectFullyComplete(project))) {
+    return false;
+  }
+
+  if (project.status !== "completed" || !project.completedAt) {
+    project.status = "completed";
+    project.completedAt = project.completedAt ?? new Date();
+    await project.save();
+  }
+  return true;
+};
+
+export const backfillCompletedProjectStatuses = async (): Promise<void> => {
+  const projects = await Project.find({ status: { $ne: "completed" } }).exec();
+  for (const project of projects) {
+    await syncProjectCompletionStatus(project);
+  }
+};
+
 const loadProjectForViewer = async (
   req: AuthenticatedRequest,
 ): Promise<{ project: IProject; canUpdate: boolean }> => {
@@ -318,6 +358,7 @@ export const updateProjectPhase = async (
     await phase.save();
 
     await syncProjectProgressSnapshot(project);
+    await syncProjectCompletionStatus(project);
 
     if (
       (status === "completed" ||
@@ -509,6 +550,7 @@ export const payForPhase = async (
     phase.paymentStatus = "paid";
     phase.paidAt = paymentDate;
     await phase.save();
+    await syncProjectCompletionStatus(project);
 
     // Notify engineer
     if (project.assignedEngineer) {

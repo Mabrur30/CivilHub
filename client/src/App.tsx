@@ -25,6 +25,7 @@ import { ChatPage } from "./pages/ChatPage";
 import { SearchEngineersPage } from "./pages/SearchEngineersPage";
 import { FeedPage } from "./pages/FeedPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { ProjectHistoryPage } from "./pages/ProjectHistoryPage";
 
 function App(): ReactElement {
   return (
@@ -47,6 +48,7 @@ function App(): ReactElement {
         <Route path="overview" element={<EngineerOverviewPage />} />
         <Route path="projects" element={<EngineerProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
+        <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="marketplace" element={<EngineerMarketplacePage />} />
         <Route path="bids" element={<EngineerBidsPage />} />
         <Route path="network" element={<MyNetworkPage />} />
@@ -64,6 +66,7 @@ function App(): ReactElement {
         <Route path="overview" element={<ClientOverviewPage />} />
         <Route path="projects" element={<ClientProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
+        <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="post-project" element={<PostProjectPage />} />
         <Route path="bids" element={<ClientBidsPage />} />
         <Route path="network" element={<MyNetworkPage />} />
