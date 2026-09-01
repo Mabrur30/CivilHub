@@ -1,5 +1,12 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
+export type PhasePlanStatus =
+  | "not_created"
+  | "draft"
+  | "pending_client_approval"
+  | "approved";
+export type PaymentPlan = "phase_by_phase" | "full_upfront";
+
 export interface IProject extends Document {
   title?: string;
   name?: string;
@@ -25,6 +32,14 @@ export interface IProject extends Document {
   progressPercentage?: number;
   nextMilestone?: string;
   nextMilestoneDueDate?: Date;
+  phasePlanStatus: PhasePlanStatus;
+  totalAgreedValue?: number;
+  paymentPlan?: PaymentPlan | null;
+  advanceRequiredAmount?: number | null;
+  advancePaid: boolean;
+  advancePaidAt?: Date;
+  fullPaymentPaid: boolean;
+  fullPaymentPaidAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -115,6 +130,40 @@ const projectSchema = new Schema<IProject>(
       trim: true,
     },
     nextMilestoneDueDate: {
+      type: Date,
+    },
+    phasePlanStatus: {
+      type: String,
+      enum: ["not_created", "draft", "pending_client_approval", "approved"],
+      default: "not_created",
+      required: true,
+    },
+    totalAgreedValue: {
+      type: Number,
+      min: 0,
+    },
+    paymentPlan: {
+      type: String,
+      enum: ["phase_by_phase", "full_upfront"],
+      default: null,
+    },
+    advanceRequiredAmount: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    advancePaid: {
+      type: Boolean,
+      default: false,
+    },
+    advancePaidAt: {
+      type: Date,
+    },
+    fullPaymentPaid: {
+      type: Boolean,
+      default: false,
+    },
+    fullPaymentPaidAt: {
       type: Date,
     },
   },

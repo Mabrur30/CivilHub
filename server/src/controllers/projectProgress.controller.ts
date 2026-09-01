@@ -2,6 +2,7 @@ import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Notification } from "../models/Notification.model";
+import { Payment } from "../models/Payment.model";
 import { Project, type IProject } from "../models/Project.model";
 import {
   ProjectPhase,
@@ -260,6 +261,58 @@ export const updateProjectPhase = async (
       throw createProjectProgressError("Project phase not found", 404);
     }
 
+    // ===== NEW GATING RULES =====
+
+    // Rule 1: Block any phase from moving to 'in_progress' if advance not paid
+    if (status === "in_progress" && !project.advancePaid) {
+      throw createProjectProgressError(
+        "Advance payment required before work can begin",
+        403,
+      );
+    }
+
+    // Rule 2: Enforce sequential order - phase can only move to 'in_progress' if previous phase is completed
+    if (status === "in_progress" && phase.order > 0) {
+      const previousPhase = await ProjectPhase.findOne({
+        project: project._id,
+        order: phase.order - 1,
+      }).exec();
+
+      if (!previousPhase || previousPhase.status !== "completed") {
+        throw createProjectProgressError(
+          `Complete and pay for phase "${previousPhase?.name || "the previous phase"}" first`,
+          403,
+        );
+      }
+
+      // If phase_by_phase payment, also check if previous phase is paid
+      if (project.paymentPlan === "phase_by_phase") {
+        if (previousPhase.paymentStatus !== "paid") {
+          throw createProjectProgressError(
+            `Previous phase must be paid before this phase can start`,
+            403,
+          );
+        }
+      }
+    }
+
+    // Rule 3: If full_upfront, block final phase from completing until remaining balance paid
+    if (
+      status === "completed" &&
+      project.paymentPlan === "full_upfront" &&
+      phase.order ===
+        (await ProjectPhase.countDocuments({ project: project._id })) - 1
+    ) {
+      if (!project.fullPaymentPaid) {
+        throw createProjectProgressError(
+          "Final payment required before project completion",
+          403,
+        );
+      }
+    }
+
+    // ===== END GATING RULES =====
+
     phase.status = status;
     phase.completedAt = status === "completed" ? new Date() : undefined;
     await phase.save();
@@ -283,6 +336,281 @@ export const updateProjectPhase = async (
     res.status(200).json({
       success: true,
       phase: toPhaseResponse(phase),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+// ============ Payment Methods ============
+
+export interface PayAdvanceRequestBody {
+  // Mock payment - no additional data needed
+}
+
+export interface PayForPhaseRequestBody {
+  // Mock payment - no additional data needed
+}
+
+export interface PayFullRemainingRequestBody {
+  // Mock payment - no additional data needed
+}
+
+export const payAdvance = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createProjectProgressError("Client access required", 403);
+    }
+
+    const { projectId } = getParams(req);
+    if (!projectId) {
+      throw createProjectProgressError("Project ID is required", 400);
+    }
+
+    const project = await Project.findById(projectId).exec();
+    if (!project) {
+      throw createProjectProgressError("Project not found", 404);
+    }
+
+    if (project.client?.toString() !== req.user.userId) {
+      throw createProjectProgressError("You do not own this project", 403);
+    }
+
+    if (project.phasePlanStatus !== "approved") {
+      throw createProjectProgressError(
+        "Phase plan must be approved before payment",
+        409,
+      );
+    }
+
+    if (project.advancePaid) {
+      throw createProjectProgressError(
+        "Advance payment has already been made",
+        409,
+      );
+    }
+
+    const advanceAmount = project.advanceRequiredAmount || 0;
+    const paymentDate = new Date();
+
+    // Create payment record
+    await Payment.create({
+      project: project._id,
+      type: "advance",
+      amount: advanceAmount,
+      paidBy: req.user.userId,
+      method: "mock",
+      paidAt: paymentDate,
+    });
+
+    // Update project
+    project.advancePaid = true;
+    project.advancePaidAt = paymentDate;
+    await project.save();
+
+    // Notify engineer
+    if (project.assignedEngineer) {
+      await Notification.create({
+        recipient: project.assignedEngineer,
+        type: "advance_payment_received",
+        message: `Advance payment of $${advanceAmount.toFixed(2)} received for ${project.title ?? project.name ?? "your project"}. Work can now begin.`,
+        project: project._id,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Advance payment processed (mock)",
+      amount: advanceAmount,
+      paidAt: paymentDate.toISOString(),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const payForPhase = async (
+  req: AuthenticatedRequest<PayForPhaseRequestBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createProjectProgressError("Client access required", 403);
+    }
+
+    const { projectId, phaseId } = getParams(req);
+    if (!projectId || !phaseId) {
+      throw createProjectProgressError(
+        "Project ID and phase ID are required",
+        400,
+      );
+    }
+
+    if (!Types.ObjectId.isValid(phaseId)) {
+      throw createProjectProgressError("Invalid phase ID", 400);
+    }
+
+    const project = await Project.findById(projectId).exec();
+    if (!project) {
+      throw createProjectProgressError("Project not found", 404);
+    }
+
+    if (project.client?.toString() !== req.user.userId) {
+      throw createProjectProgressError("You do not own this project", 403);
+    }
+
+    if (project.paymentPlan !== "phase_by_phase") {
+      throw createProjectProgressError(
+        "This project uses a different payment plan",
+        409,
+      );
+    }
+
+    const phase = await ProjectPhase.findOne({
+      _id: phaseId,
+      project: project._id,
+    }).exec();
+
+    if (!phase) {
+      throw createProjectProgressError("Phase not found", 404);
+    }
+
+    if (phase.status !== "awaiting_approval" && phase.status !== "completed") {
+      throw createProjectProgressError(
+        "Phase must be completed or awaiting approval to pay",
+        409,
+      );
+    }
+
+    if (phase.paymentStatus === "paid") {
+      throw createProjectProgressError("This phase has already been paid", 409);
+    }
+
+    const paymentDate = new Date();
+    const phasePrice = phase.price;
+
+    // Create payment record
+    await Payment.create({
+      project: project._id,
+      phase: phase._id,
+      type: "phase",
+      amount: phasePrice,
+      paidBy: req.user.userId,
+      method: "mock",
+      paidAt: paymentDate,
+    });
+
+    // Update phase
+    phase.paymentStatus = "paid";
+    phase.paidAt = paymentDate;
+    await phase.save();
+
+    // Notify engineer
+    if (project.assignedEngineer) {
+      await Notification.create({
+        recipient: project.assignedEngineer,
+        type: "phase_payment_received",
+        message: `Payment of $${phasePrice.toFixed(2)} received for phase "${phase.name}" in ${project.title ?? project.name ?? "your project"}.`,
+        project: project._id,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Phase payment processed (mock)",
+      phase: phase.name,
+      amount: phasePrice,
+      paidAt: paymentDate.toISOString(),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const payFullRemaining = async (
+  req: AuthenticatedRequest<PayFullRemainingRequestBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user?.userId || req.user.role !== "client") {
+      throw createProjectProgressError("Client access required", 403);
+    }
+
+    const { projectId } = getParams(req);
+    if (!projectId) {
+      throw createProjectProgressError("Project ID is required", 400);
+    }
+
+    const project = await Project.findById(projectId).exec();
+    if (!project) {
+      throw createProjectProgressError("Project not found", 404);
+    }
+
+    if (project.client?.toString() !== req.user.userId) {
+      throw createProjectProgressError("You do not own this project", 403);
+    }
+
+    if (project.paymentPlan !== "full_upfront") {
+      throw createProjectProgressError(
+        "This project uses a different payment plan",
+        409,
+      );
+    }
+
+    if (!project.advancePaid) {
+      throw createProjectProgressError(
+        "Advance payment must be made first",
+        409,
+      );
+    }
+
+    if (project.fullPaymentPaid) {
+      throw createProjectProgressError(
+        "Full payment has already been made",
+        409,
+      );
+    }
+
+    const paymentDate = new Date();
+    const remainingAmount =
+      (project.totalAgreedValue || 0) - (project.advanceRequiredAmount || 0);
+
+    // Create payment record
+    await Payment.create({
+      project: project._id,
+      type: "full_remaining",
+      amount: remainingAmount,
+      paidBy: req.user.userId,
+      method: "mock",
+      paidAt: paymentDate,
+    });
+
+    // Update project
+    project.fullPaymentPaid = true;
+    project.fullPaymentPaidAt = paymentDate;
+    await project.save();
+
+    // Notify engineer
+    if (project.assignedEngineer) {
+      await Notification.create({
+        recipient: project.assignedEngineer,
+        type: "full_payment_received",
+        message: `Remaining payment of $${remainingAmount.toFixed(2)} received for ${project.title ?? project.name ?? "your project"}.`,
+        project: project._id,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Remaining payment processed (mock)",
+      amount: remainingAmount,
+      paidAt: paymentDate.toISOString(),
     });
   } catch (error: unknown) {
     next(error);

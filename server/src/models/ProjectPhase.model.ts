@@ -7,13 +7,19 @@ export type ProjectPhaseStatus =
   | "completed"
   | "delayed";
 
+export type PaymentStatus = "unpaid" | "paid";
+
 export interface IProjectPhase extends Document {
   project: Types.ObjectId;
   name: string;
+  description?: string;
   order: number;
   status: ProjectPhaseStatus;
   dueDate?: Date;
   completedAt?: Date;
+  price: number;
+  paymentStatus: PaymentStatus;
+  paidAt?: Date;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -29,6 +35,10 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
     name: {
       type: String,
       required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
       trim: true,
     },
     order: {
@@ -54,6 +64,21 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
       required: false,
     },
     completedAt: {
+      type: Date,
+      required: false,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "paid"],
+      default: "unpaid",
+      required: true,
+    },
+    paidAt: {
       type: Date,
       required: false,
     },
