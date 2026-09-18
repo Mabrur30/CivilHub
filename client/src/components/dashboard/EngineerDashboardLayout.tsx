@@ -11,6 +11,7 @@ const tabs = [
   { label: "My Projects", to: "/dashboard/engineer/projects" },
   { label: "Project History", to: "/dashboard/engineer/history" },
   { label: "Marketplace", to: "/dashboard/engineer/marketplace" },
+  { label: "Cost Estimator", to: "/dashboard/engineer/cost-estimator" },
   { label: "My Bids", to: "/dashboard/engineer/bids" },
   { label: "My Network", to: "/dashboard/engineer/network" },
 ];

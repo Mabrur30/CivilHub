@@ -26,6 +26,7 @@ import { SearchEngineersPage } from "./pages/SearchEngineersPage";
 import { FeedPage } from "./pages/FeedPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectHistoryPage } from "./pages/ProjectHistoryPage";
+import { CostEstimatorPage } from "./pages/CostEstimatorPage";
 
 function App(): ReactElement {
   return (
@@ -50,6 +51,7 @@ function App(): ReactElement {
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
         <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="marketplace" element={<EngineerMarketplacePage />} />
+        <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<EngineerBidsPage />} />
         <Route path="network" element={<MyNetworkPage />} />
         <Route path="profile" element={<EngineerProfilePage />} />
@@ -68,10 +70,15 @@ function App(): ReactElement {
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
         <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="post-project" element={<PostProjectPage />} />
+        <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<ClientBidsPage />} />
         <Route path="network" element={<MyNetworkPage />} />
         <Route path="profile" element={<ClientProfilePage />} />
       </Route>
+      <Route
+        path="/cost-estimator"
+        element={<CostEstimatorPage isStandalone />}
+      />
       <Route
         path="/users/:userId"
         element={

@@ -4,7 +4,7 @@ import {
   type ReactElement,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 interface PostProjectForm {
   title: string;
@@ -30,21 +30,6 @@ interface CreateProjectRequestBody {
   targetCompletionDate: string;
 }
 
-interface CreateProjectSuccessResponse {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  budgetMin: number;
-  budgetMax: number;
-  location: string;
-  targetStartDate: string;
-  targetCompletionDate: string;
-  client: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 interface CreateProjectErrorResponse {
   message?: string;
@@ -85,7 +70,12 @@ const getErrorMessage = (value: unknown): string => {
 
 export function PostProjectPage(): ReactElement {
   const navigate = useNavigate();
-  const [form, setForm] = useState<PostProjectForm>(initialForm);
+  const location = useLocation();
+  const routeState = location.state as Partial<PostProjectForm> | null;
+  const [form, setForm] = useState<PostProjectForm>(() => ({
+    ...initialForm,
+    ...(routeState || {}),
+  }));
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
