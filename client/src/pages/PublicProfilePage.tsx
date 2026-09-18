@@ -181,7 +181,7 @@ const isEngineerReviewsResponse = (
 
 const isPublicProfile = (value: unknown): value is PublicProfile => {
   if (!isBaseProfile(value)) return false;
-  const profile = value as Record<string, unknown>;
+  const profile = value as unknown as Record<string, unknown>;
 
   if (profile.role === "engineer") {
     return (

@@ -75,6 +75,12 @@ export function Navbar(_props: NavbarProps): ReactElement {
 
         <div className="hidden items-center gap-3 lg:flex">
           <Link
+            to="/cost-estimator"
+            className="flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary transition-all duration-300 hover:bg-primary hover:text-white"
+          >
+            <span>🏗️</span> Cost Estimator
+          </Link>
+          <Link
             to="/login"
             className="rounded-full border border-white/20 bg-transparent px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 hover:border-primary hover:text-primary"
           >
@@ -114,6 +120,13 @@ export function Navbar(_props: NavbarProps): ReactElement {
               </button>
             ))}
             <div className="flex flex-col gap-3 pt-2">
+              <Link
+                to="/cost-estimator"
+                onClick={() => setIsOpen(false)}
+                className="rounded-full border border-primary/40 bg-primary/10 px-4 py-2.5 text-center text-sm font-semibold text-primary transition-all duration-300 hover:bg-primary hover:text-white"
+              >
+                🏗️ Cost Estimator
+              </Link>
               <Link
                 to="/login"
                 onClick={() => setIsOpen(false)}

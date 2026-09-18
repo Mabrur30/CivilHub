@@ -80,3 +80,31 @@ export const protect = (
     next(error);
   }
 };
+
+export const optionalProtect = (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): void => {
+  try {
+    const token = req.cookies?.civilhub_token;
+    const secret = process.env.JWT_SECRET;
+
+    if (!token || !secret) {
+      return next();
+    }
+
+    const decoded = jwt.verify(token, secret);
+    if (isVerifiedJwtPayload(decoded)) {
+      req.user = {
+        userId: decoded.userId,
+        role: decoded.role,
+      };
+    }
+    next();
+  } catch {
+    // If token invalid/expired, continue without user
+    next();
+  }
+};
+
