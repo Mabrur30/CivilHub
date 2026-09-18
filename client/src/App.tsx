@@ -27,6 +27,32 @@ import { FeedPage } from "./pages/FeedPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectHistoryPage } from "./pages/ProjectHistoryPage";
 import { CostEstimatorPage } from "./pages/CostEstimatorPage";
+import { useAuth } from "./context/AuthContext";
+
+function CostEstimatorRedirect(): ReactElement {
+  const { currentUser, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-void text-white">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
+          Checking session...
+        </p>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <Navigate
+      to={`/dashboard/${currentUser.role}/cost-estimator`}
+      replace
+    />
+  );
+}
 
 function App(): ReactElement {
   return (
@@ -77,7 +103,7 @@ function App(): ReactElement {
       </Route>
       <Route
         path="/cost-estimator"
-        element={<CostEstimatorPage isStandalone />}
+        element={<CostEstimatorRedirect />}
       />
       <Route
         path="/users/:userId"

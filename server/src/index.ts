@@ -35,6 +35,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+app.get("/", (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "ok",
+    message: "CivilHub Backend API is running",
+    frontendUrl: process.env.CLIENT_URL || "http://localhost:5173",
+    healthCheck: "/api/health",
+  });
+});
+
 app.get("/api/health", (_req: Request, res: Response) => {
   res.status(200).json({ status: "ok", message: "CivilHub API is running" });
 });
