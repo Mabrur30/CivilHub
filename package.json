@@ -6,8 +6,10 @@
   "scripts": {
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
+    "dev:clinet": "npm --prefix client run dev",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
+    "clinet": "npm --prefix client run dev",
     "build": "npm --prefix server run build && npm --prefix client run build"
   }
 }
