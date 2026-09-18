@@ -248,6 +248,7 @@ export function CostEstimatorPage({
       const res = await fetch(`${API_BASE_URL}/api/cost-estimator/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           city,
           location,
