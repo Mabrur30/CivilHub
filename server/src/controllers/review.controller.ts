@@ -1,6 +1,7 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { EquipmentBooking } from "../models/EquipmentBooking.model";
 import { Notification } from "../models/Notification.model";
 import { Project } from "../models/Project.model";
 import { ProjectPhase } from "../models/ProjectPhase.model";
@@ -17,12 +18,20 @@ interface ProjectParams {
 
 interface ReviewParams {
   projectId?: string;
+  bookingId?: string;
+  equipmentId?: string;
   reviewId?: string;
   engineerUserId?: string;
 }
 
 export interface CreateReviewRequestBody {
   projectId: string;
+  rating: number;
+  reviewText: string;
+}
+
+export interface CreateEquipmentReviewRequestBody {
+  bookingId: string;
   rating: number;
   reviewText: string;
 }
@@ -39,7 +48,9 @@ interface ReviewClientView {
 
 interface ReviewView {
   id: string;
-  projectId: string;
+  projectId: string | null;
+  equipmentBookingId: string | null;
+  equipmentId: string | null;
   client: ReviewClientView;
   rating: number;
   reviewText: string;
@@ -103,9 +114,35 @@ const toReviewView = (review: IReview): ReviewView => {
     profilePhotoUrl?: string | null;
   };
 
+  const bookingRef = review.equipmentBooking as
+    | Types.ObjectId
+    | {
+        _id: Types.ObjectId;
+        equipment?: Types.ObjectId | { _id: Types.ObjectId };
+      }
+    | undefined;
+
+  const equipmentBookingId =
+    bookingRef instanceof Types.ObjectId
+      ? bookingRef.toString()
+      : (bookingRef?._id?.toString() ?? null);
+
+  const equipmentValue =
+    bookingRef && !(bookingRef instanceof Types.ObjectId)
+      ? bookingRef.equipment
+      : undefined;
+  const equipmentId =
+    equipmentValue instanceof Types.ObjectId
+      ? equipmentValue.toString()
+      : equipmentValue && typeof equipmentValue === "object"
+        ? (equipmentValue._id?.toString() ?? null)
+        : null;
+
   return {
     id: review._id.toString(),
-    projectId: review.project.toString(),
+    projectId: review.project?.toString() ?? null,
+    equipmentBookingId,
+    equipmentId,
     client: {
       id: client._id.toString(),
       name: client.name,
@@ -171,6 +208,75 @@ export const canReviewProject = async (
             reason: "Project not yet fully complete",
           },
     );
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+const isBookingCompleteAndDepositResolved = (booking: {
+  status: string;
+  depositResolution: string;
+}): boolean =>
+  booking.status === "completed" && booking.depositResolution !== "pending";
+
+export const canReviewBooking = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+
+    const { bookingId } = getParams(req);
+    if (!bookingId || !Types.ObjectId.isValid(bookingId)) {
+      throw createReviewError("Booking not found", 404);
+    }
+
+    const booking = await EquipmentBooking.findById(bookingId)
+      .populate("equipment", "title")
+      .exec();
+    if (!booking) throw createReviewError("Booking not found", 404);
+    if (booking.renter.toString() !== userId) {
+      throw createReviewError("You do not own this booking", 403);
+    }
+
+    const existingReview = await Review.findOne({
+      equipmentBooking: booking._id,
+      client: userId,
+    })
+      .populate("client", "name")
+      .populate({ path: "equipmentBooking", select: "equipment" })
+      .exec();
+
+    if (existingReview) {
+      res.json({
+        canReview: false,
+        alreadyReviewed: true,
+        reason: "Already reviewed",
+        review: toReviewView(existingReview),
+      });
+      return;
+    }
+
+    if (booking.status !== "completed") {
+      res.json({
+        canReview: false,
+        alreadyReviewed: false,
+        reason: "Booking is not completed yet",
+      });
+      return;
+    }
+
+    if (booking.depositResolution === "pending") {
+      res.json({
+        canReview: false,
+        alreadyReviewed: false,
+        reason: "Deposit must be resolved before leaving a review",
+      });
+      return;
+    }
+
+    res.json({ canReview: true, alreadyReviewed: false });
   } catch (error: unknown) {
     next(error);
   }
@@ -252,6 +358,92 @@ export const createReview = async (
   }
 };
 
+export const createEquipmentReview = async (
+  req: AuthenticatedRequest<CreateEquipmentReviewRequestBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = getUserId(req);
+
+    const { bookingId, rating, reviewText } = req.body;
+    if (!bookingId || !Types.ObjectId.isValid(bookingId)) {
+      throw createReviewError("Valid booking ID is required", 400);
+    }
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw createReviewError("Rating must be an integer from 1 to 5", 400);
+    }
+    if (!reviewText?.trim() || reviewText.length > 1000) {
+      throw createReviewError(
+        "Review text is required and must be 1000 characters or fewer",
+        400,
+      );
+    }
+
+    const booking = await EquipmentBooking.findById(bookingId)
+      .populate("equipment", "title")
+      .exec();
+    if (!booking) throw createReviewError("Booking not found", 404);
+    if (booking.renter.toString() !== userId) {
+      throw createReviewError("You do not own this booking", 403);
+    }
+    if (!isBookingCompleteAndDepositResolved(booking)) {
+      throw createReviewError(
+        "Booking must be completed and deposit resolved before review",
+        409,
+      );
+    }
+    if (
+      await Review.exists({ equipmentBooking: booking._id, client: userId })
+    ) {
+      throw createReviewError("Already reviewed", 409);
+    }
+
+    const review = await Review.create({
+      equipmentBooking: booking._id,
+      client: userId,
+      engineer: booking.owner,
+      rating,
+      reviewText: reviewText.trim(),
+    });
+    await review.populate("client", "name");
+    await review.populate({ path: "equipmentBooking", select: "equipment" });
+
+    const populatedEquipment = booking.equipment as
+      | Types.ObjectId
+      | { _id: Types.ObjectId; title?: string }
+      | undefined;
+    const equipmentId =
+      populatedEquipment instanceof Types.ObjectId
+        ? populatedEquipment
+        : populatedEquipment?._id;
+    const equipmentTitle =
+      populatedEquipment instanceof Types.ObjectId
+        ? "your equipment listing"
+        : (populatedEquipment?.title ?? "your equipment listing");
+
+    await Notification.create({
+      recipient: booking.owner,
+      type: "review_received",
+      message: `You received a ${rating}-star equipment review for ${equipmentTitle}.`,
+      equipment: equipmentId,
+      equipmentBooking: booking._id,
+    });
+
+    res.status(201).json({ review: toReviewView(review) });
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code?: number }).code === 11000
+    ) {
+      next(createReviewError("Already reviewed", 409));
+      return;
+    }
+    next(error);
+  }
+};
+
 export const replyToReview = async (
   req: AuthenticatedRequest<ReplyToReviewRequestBody>,
   res: Response,
@@ -285,15 +477,92 @@ export const replyToReview = async (
     review.engineerRepliedAt = new Date();
     await review.save();
     await review.populate("client", "name");
+    await review.populate({ path: "equipmentBooking", select: "equipment" });
 
-    await Notification.create({
+    const notificationPayload: {
+      recipient: Types.ObjectId;
+      type: "review_reply";
+      message: string;
+      project?: Types.ObjectId;
+      equipmentBooking?: Types.ObjectId;
+      equipment?: Types.ObjectId;
+    } = {
       recipient: review.client,
       type: "review_reply",
-      message: "An engineer replied to your project review.",
-      project: review.project,
-    });
+      message: review.project
+        ? "An engineer replied to your project review."
+        : "An equipment owner replied to your review.",
+    };
+
+    if (review.project) {
+      notificationPayload.project = review.project;
+    }
+
+    const bookingRef = review.equipmentBooking as
+      | Types.ObjectId
+      | { _id: Types.ObjectId; equipment?: Types.ObjectId }
+      | undefined;
+    if (bookingRef) {
+      notificationPayload.equipmentBooking =
+        bookingRef instanceof Types.ObjectId ? bookingRef : bookingRef._id;
+      if (!(bookingRef instanceof Types.ObjectId) && bookingRef.equipment) {
+        notificationPayload.equipment = bookingRef.equipment;
+      }
+    }
+
+    await Notification.create(notificationPayload);
 
     res.json({ review: toReviewView(review) });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const getEquipmentReviews = async (
+  req: AuthenticatedRequest,
+  res: Response<ReviewListResponse>,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    getUserId(req);
+    const { equipmentId } = getParams(req);
+    if (!equipmentId || !Types.ObjectId.isValid(equipmentId)) {
+      throw createReviewError("Equipment not found", 404);
+    }
+
+    const reviews = await Review.find({
+      equipmentBooking: { $exists: true, $ne: null },
+    })
+      .populate("client", "name")
+      .populate({
+        path: "equipmentBooking",
+        select: "equipment",
+        match: { equipment: new Types.ObjectId(equipmentId) },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const filtered = reviews.filter(
+      (review) =>
+        review.equipmentBooking &&
+        !(review.equipmentBooking instanceof Types.ObjectId),
+    );
+
+    const totalReviews = filtered.length;
+    const averageRating =
+      totalReviews === 0
+        ? 0
+        : Math.round(
+            (filtered.reduce((sum, review) => sum + review.rating, 0) /
+              totalReviews) *
+              10,
+          ) / 10;
+
+    res.json({
+      reviews: filtered.map(toReviewView),
+      averageRating,
+      totalReviews,
+    });
   } catch (error: unknown) {
     next(error);
   }
@@ -317,7 +586,10 @@ export const getEngineerReviews = async (
     }).exec();
     if (!engineer) throw createReviewError("Engineer not found", 404);
 
-    const reviews = await Review.find({ engineer: engineer._id })
+    const reviews = await Review.find({
+      engineer: engineer._id,
+      project: { $exists: true, $ne: null },
+    })
       .populate("client", "name")
       .sort({ createdAt: -1 })
       .exec();

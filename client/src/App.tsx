@@ -27,6 +27,11 @@ import { FeedPage } from "./pages/FeedPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProjectHistoryPage } from "./pages/ProjectHistoryPage";
 import { CostEstimatorPage } from "./pages/CostEstimatorPage";
+import { BrowseEquipmentPage } from "./pages/BrowseEquipmentPage";
+import { MyEquipmentPage } from "./pages/MyEquipmentPage";
+import { EquipmentDetailPage } from "./pages/EquipmentDetailPage";
+import { MyEquipmentBookingsPage } from "./pages/MyEquipmentBookingsPage";
+import { BookingDetailPage } from "./pages/BookingDetailPage";
 import { useAuth } from "./context/AuthContext";
 
 function CostEstimatorRedirect(): ReactElement {
@@ -47,10 +52,7 @@ function CostEstimatorRedirect(): ReactElement {
   }
 
   return (
-    <Navigate
-      to={`/dashboard/${currentUser.role}/cost-estimator`}
-      replace
-    />
+    <Navigate to={`/dashboard/${currentUser.role}/cost-estimator`} replace />
   );
 }
 
@@ -77,6 +79,26 @@ function App(): ReactElement {
         <Route path="projects/:projectId" element={<ProjectProgressPage />} />
         <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="marketplace" element={<EngineerMarketplacePage />} />
+        <Route
+          path="equipment"
+          element={
+            <Navigate to="/dashboard/engineer/equipment/browse" replace />
+          }
+        />
+        <Route path="equipment/browse" element={<BrowseEquipmentPage />} />
+        <Route path="equipment/mine" element={<MyEquipmentPage />} />
+        <Route
+          path="equipment/bookings"
+          element={<MyEquipmentBookingsPage />}
+        />
+        <Route
+          path="equipment/bookings/:bookingId"
+          element={<BookingDetailPage />}
+        />
+        <Route
+          path="equipment/:equipmentId"
+          element={<EquipmentDetailPage />}
+        />
         <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<EngineerBidsPage />} />
         <Route path="network" element={<MyNetworkPage />} />
@@ -101,10 +123,7 @@ function App(): ReactElement {
         <Route path="network" element={<MyNetworkPage />} />
         <Route path="profile" element={<ClientProfilePage />} />
       </Route>
-      <Route
-        path="/cost-estimator"
-        element={<CostEstimatorRedirect />}
-      />
+      <Route path="/cost-estimator" element={<CostEstimatorRedirect />} />
       <Route
         path="/users/:userId"
         element={

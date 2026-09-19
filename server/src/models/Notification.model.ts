@@ -3,6 +3,15 @@ import { Document, Model, Schema, Types, model } from "mongoose";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
+  | "equipment_booking_request"
+  | "equipment_booking_approved"
+  | "equipment_booking_declined"
+  | "equipment_booking_auto_declined"
+  | "equipment_booking_payment_received"
+  | "equipment_pickup_confirmed"
+  | "equipment_return_confirmed"
+  | "equipment_deposit_released"
+  | "equipment_deposit_claimed"
   | "connection_accepted"
   | "new_message"
   | "connection_post"
@@ -24,7 +33,9 @@ export interface INotification extends Document {
   type: NotificationType;
   message: string;
   project?: Types.ObjectId;
+  equipment?: Types.ObjectId;
   bid?: Types.ObjectId;
+  equipmentBooking?: Types.ObjectId;
   connection?: Types.ObjectId;
   conversation?: Types.ObjectId;
   messageRef?: Types.ObjectId;
@@ -46,6 +57,15 @@ const notificationSchema = new Schema<INotification>(
       enum: [
         "bid_accepted",
         "bid_declined",
+        "equipment_booking_request",
+        "equipment_booking_approved",
+        "equipment_booking_declined",
+        "equipment_booking_auto_declined",
+        "equipment_booking_payment_received",
+        "equipment_pickup_confirmed",
+        "equipment_return_confirmed",
+        "equipment_deposit_released",
+        "equipment_deposit_claimed",
         "connection_accepted",
         "new_message",
         "connection_post",
@@ -89,9 +109,19 @@ const notificationSchema = new Schema<INotification>(
       ref: "Project",
       required: false,
     },
+    equipment: {
+      type: Schema.Types.ObjectId,
+      ref: "Equipment",
+      required: false,
+    },
     bid: {
       type: Schema.Types.ObjectId,
       ref: "Bid",
+      required: false,
+    },
+    equipmentBooking: {
+      type: Schema.Types.ObjectId,
+      ref: "EquipmentBooking",
       required: false,
     },
     read: {

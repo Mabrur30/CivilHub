@@ -3,6 +3,15 @@ import { activityColors } from "./ActivityFeedItem";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
+  | "equipment_booking_request"
+  | "equipment_booking_approved"
+  | "equipment_booking_declined"
+  | "equipment_booking_auto_declined"
+  | "equipment_booking_payment_received"
+  | "equipment_pickup_confirmed"
+  | "equipment_return_confirmed"
+  | "equipment_deposit_released"
+  | "equipment_deposit_claimed"
   | "connection_accepted"
   | "new_message"
   | "connection_post"
@@ -25,7 +34,9 @@ export interface NotificationListItem {
   isRead: boolean;
   createdAt: string;
   projectId: string | null;
+  equipmentId: string | null;
   bidId: string | null;
+  equipmentBookingId: string | null;
   connectionId: string | null;
   conversationId: string | null;
   messageId: string | null;
@@ -42,6 +53,15 @@ export interface NotificationListResponse {
 const notificationTypes: NotificationType[] = [
   "bid_accepted",
   "bid_declined",
+  "equipment_booking_request",
+  "equipment_booking_approved",
+  "equipment_booking_declined",
+  "equipment_booking_auto_declined",
+  "equipment_booking_payment_received",
+  "equipment_pickup_confirmed",
+  "equipment_return_confirmed",
+  "equipment_deposit_released",
+  "equipment_deposit_claimed",
   "connection_accepted",
   "new_message",
   "connection_post",
@@ -81,7 +101,9 @@ export const isNotificationListItem = (
     typeof item.isRead === "boolean" &&
     typeof item.createdAt === "string" &&
     isNullableId(item.projectId) &&
+    isNullableId(item.equipmentId) &&
     isNullableId(item.bidId) &&
+    isNullableId(item.equipmentBookingId) &&
     isNullableId(item.connectionId) &&
     isNullableId(item.conversationId) &&
     isNullableId(item.messageId)
@@ -115,6 +137,15 @@ export const mapNotificationTypeToActivityType = (
   if (type === "connection_post") return "review";
   if (type === "post_liked") return "bid";
   if (
+    type === "equipment_booking_request" ||
+    type === "equipment_booking_approved" ||
+    type === "equipment_booking_declined" ||
+    type === "equipment_booking_auto_declined" ||
+    type === "equipment_booking_payment_received" ||
+    type === "equipment_pickup_confirmed" ||
+    type === "equipment_return_confirmed" ||
+    type === "equipment_deposit_released" ||
+    type === "equipment_deposit_claimed" ||
     type === "project_phase_updated" ||
     type === "phase_plan_submitted" ||
     type === "phase_plan_approved" ||

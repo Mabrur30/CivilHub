@@ -69,7 +69,12 @@ const getEngineerRatingMap = async (
     averageRating: number;
     reviewCount: number;
   }>([
-    { $match: { engineer: { $in: engineerIds } } },
+    {
+      $match: {
+        engineer: { $in: engineerIds },
+        project: { $exists: true, $ne: null },
+      },
+    },
     {
       $group: {
         _id: "$engineer",

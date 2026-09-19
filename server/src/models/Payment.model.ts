@@ -1,10 +1,15 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
-export type PaymentType = "advance" | "phase" | "full_remaining";
+export type PaymentType =
+  | "advance"
+  | "phase"
+  | "full_remaining"
+  | "equipment_booking";
 export type PaymentMethod = "mock" | "stripe" | "sslcommerz";
 
 export interface IPayment extends Document {
-  project: Types.ObjectId;
+  project?: Types.ObjectId;
+  equipmentBooking?: Types.ObjectId;
   phase?: Types.ObjectId;
   type: PaymentType;
   amount: number;
@@ -20,7 +25,13 @@ const paymentSchema = new Schema<IPayment>(
     project: {
       type: Schema.Types.ObjectId,
       ref: "Project",
-      required: true,
+      required: false,
+      index: true,
+    },
+    equipmentBooking: {
+      type: Schema.Types.ObjectId,
+      ref: "EquipmentBooking",
+      required: false,
       index: true,
     },
     phase: {
@@ -30,7 +41,7 @@ const paymentSchema = new Schema<IPayment>(
     },
     type: {
       type: String,
-      enum: ["advance", "phase", "full_remaining"],
+      enum: ["advance", "phase", "full_remaining", "equipment_booking"],
       required: true,
     },
     amount: {

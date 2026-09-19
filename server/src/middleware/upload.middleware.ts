@@ -34,6 +34,11 @@ export const certificateUpload = createUploader(
 );
 export const portfolioUpload = createUploader(imageTypes, 5 * 1024 * 1024);
 export const postImageUpload = createUploader(imageTypes, 5 * 1024 * 1024);
+export const equipmentPhotoUpload = createUploader(imageTypes, 5 * 1024 * 1024);
+export const bookingConditionPhotoUpload = createUploader(
+  imageTypes,
+  5 * 1024 * 1024,
+);
 
 export const handleUploadError = (
   error: unknown,

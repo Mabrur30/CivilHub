@@ -56,6 +56,33 @@ const getNotificationTargetPath = (
   }
 
   if (
+    (notification.type === "equipment_booking_request" ||
+      notification.type === "equipment_booking_declined" ||
+      notification.type === "equipment_booking_auto_declined") &&
+    notification.equipmentId
+  ) {
+    return "/dashboard/engineer/equipment/mine";
+  }
+
+  if (
+    (notification.type === "equipment_booking_approved" ||
+      notification.type === "equipment_pickup_confirmed" ||
+      notification.type === "equipment_return_confirmed" ||
+      notification.type === "equipment_deposit_released" ||
+      notification.type === "equipment_deposit_claimed") &&
+    notification.equipmentId
+  ) {
+    return "/dashboard/engineer/equipment/bookings";
+  }
+
+  if (
+    notification.type === "equipment_booking_payment_received" &&
+    notification.equipmentId
+  ) {
+    return "/dashboard/engineer/equipment/mine";
+  }
+
+  if (
     (notification.type === "bid_accepted" ||
       notification.type === "bid_declined" ||
       notification.type === "project_phase_updated" ||

@@ -72,7 +72,12 @@ const ratingForAuthor = async (
     averageRating: number;
     reviewCount: number;
   }>([
-    { $match: { engineer: new Types.ObjectId(authorId) } },
+    {
+      $match: {
+        engineer: new Types.ObjectId(authorId),
+        project: { $exists: true, $ne: null },
+      },
+    },
     {
       $group: {
         _id: "$engineer",

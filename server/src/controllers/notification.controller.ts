@@ -26,7 +26,9 @@ interface NotificationListItem {
   isRead: boolean;
   createdAt: string;
   projectId: string | null;
+  equipmentId: string | null;
   bidId: string | null;
+  equipmentBookingId: string | null;
   connectionId: string | null;
   conversationId: string | null;
   messageId: string | null;
@@ -92,7 +94,13 @@ const toNotificationListItem = (
   isRead: notification.read,
   createdAt: notification.createdAt.toISOString(),
   projectId: notification.project ? notification.project.toString() : null,
+  equipmentId: notification.equipment
+    ? notification.equipment.toString()
+    : null,
   bidId: notification.bid ? notification.bid.toString() : null,
+  equipmentBookingId: notification.equipmentBooking
+    ? notification.equipmentBooking.toString()
+    : null,
   connectionId: notification.connection
     ? notification.connection.toString()
     : null,

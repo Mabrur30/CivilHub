@@ -197,7 +197,12 @@ const getEngineerRatingMapByUserIds = async (
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
   const aggregates = await Review.aggregate<RatingAggregate>([
-    { $match: { engineer: { $in: objectIds } } },
+    {
+      $match: {
+        engineer: { $in: objectIds },
+        project: { $exists: true, $ne: null },
+      },
+    },
     {
       $group: {
         _id: "$engineer",

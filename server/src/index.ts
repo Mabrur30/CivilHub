@@ -18,6 +18,8 @@ import notificationsRouter from "./routes/notifications.routes";
 import reviewsRouter from "./routes/reviews.routes";
 import commentsRouter from "./routes/comments.routes";
 import costEstimatorRouter from "./routes/costEstimator.routes";
+import equipmentRouter from "./routes/equipment.routes";
+import equipmentBookingRouter from "./routes/equipmentBooking.routes";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 
 dotenv.config();
@@ -62,6 +64,8 @@ app.use("/api/notifications", notificationsRouter);
 app.use("/api/reviews", reviewsRouter);
 app.use("/api/comments", commentsRouter);
 app.use("/api/cost-estimator", costEstimatorRouter);
+app.use("/api/equipment", equipmentRouter);
+app.use("/api", equipmentBookingRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {
