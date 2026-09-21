@@ -48,7 +48,7 @@ export function EngineerDashboardLayout(
                 email={currentUser.email}
                 role={currentUser.role}
                 photoUrl={currentUser.profilePhotoUrl}
-                onViewProfile={() => navigate("/dashboard/engineer/profile")}
+                onViewProfile={() => navigate(`/profile/${currentUser.id}`)}
                 onLogout={logout}
               />
             ) : null}

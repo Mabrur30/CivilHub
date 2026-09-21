@@ -22,11 +22,10 @@ export interface PostComment {
   updatedAt: string;
 }
 
-interface PostCommentsProps {
+interface UsePostCommentsArgs {
   postId: string;
   initialCount: number;
   currentUser: CommentAuthor | null;
-  variant?: "default" | "inline";
 }
 
 interface ErrorResponse {
@@ -55,12 +54,11 @@ const formatRelativeTime = (value: string): string => {
   return `${Math.floor(elapsedHours / 24)}d`;
 };
 
-export function PostComments({
+export function usePostComments({
   postId,
   initialCount,
   currentUser,
-  variant = "default",
-}: PostCommentsProps): ReactElement {
+}: UsePostCommentsArgs) {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentCount, setCommentCount] = useState<number>(initialCount);
@@ -97,9 +95,7 @@ export function PostComments({
   const toggleComments = (): void => {
     const nextOpen = !isOpen;
     setIsOpen(nextOpen);
-    if (nextOpen && comments.length === 0 && commentCount > 0) {
-      void loadComments();
-    } else if (nextOpen && comments.length === 0) {
+    if (nextOpen && comments.length === 0) {
       void loadComments();
     }
   };
@@ -186,6 +182,92 @@ export function PostComments({
     }
   };
 
+  return {
+    isOpen,
+    toggleComments,
+    commentCount,
+    comments,
+    isLoading,
+    content,
+    setContent,
+    replyTarget,
+    setReplyTarget,
+    replyContent,
+    setReplyContent,
+    isSubmitting,
+    deletingId,
+    error,
+    submitComment,
+    deleteComment,
+  };
+}
+
+export type PostCommentsState = ReturnType<typeof usePostComments>;
+
+interface CommentToggleButtonProps {
+  isOpen: boolean;
+  commentCount: number;
+  onToggle: () => void;
+  variant?: "default" | "inline";
+}
+
+export function CommentToggleButton({
+  isOpen,
+  commentCount,
+  onToggle,
+  variant = "default",
+}: CommentToggleButtonProps): ReactElement {
+  const isInline = variant === "inline";
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className={
+        isInline
+          ? "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/65 transition-colors duration-200 hover:bg-primary/10 hover:text-white"
+          : "inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/60 transition-colors hover:border-primary hover:text-white"
+      }
+    >
+      <svg
+        viewBox="0 0 24 24"
+        className="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        aria-hidden="true"
+      >
+        <path d="M8 9h8M8 13h5m5 8-4.6-2.2a2 2 0 0 0-.86-.2H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v7a4 4 0 0 1-4 4h-.54a2 2 0 0 0-.86.2Z" />
+      </svg>
+      Comment <span className="text-white/40">{commentCount}</span>
+    </button>
+  );
+}
+
+interface CommentPanelProps extends PostCommentsState {
+  currentUser: CommentAuthor | null;
+}
+
+export function CommentPanel({
+  isOpen,
+  comments,
+  isLoading,
+  content,
+  setContent,
+  replyTarget,
+  setReplyTarget,
+  replyContent,
+  setReplyContent,
+  isSubmitting,
+  deletingId,
+  error,
+  submitComment,
+  deleteComment,
+  currentUser,
+}: CommentPanelProps): ReactElement | null {
+  if (!isOpen) return null;
+
   const renderComments = (
     parentCommentId: string | null,
     depth: number,
@@ -195,16 +277,14 @@ export function PostComments({
       .map((comment) => (
         <div
           key={comment.id}
-          className={
-            depth > 0 ? "mt-3 border-l border-white/10 pl-3 sm:pl-5" : "mt-4"
-          }
+          className={depth > 0 ? "mt-3 border-l border-white/15 pl-3 sm:pl-5" : ""}
         >
           <div className="flex items-start gap-2.5">
             <Link to={`/profile/${comment.author.userId}`} className="shrink-0">
               <Avatar
                 name={comment.author.name}
                 photoUrl={comment.author.profilePhotoUrl}
-                size="sm"
+                size={depth > 0 ? "2xs" : "xs"}
               />
             </Link>
             <div className="min-w-0 flex-1">
@@ -222,7 +302,7 @@ export function PostComments({
                     size="sm"
                   />
                 )}
-                <span className="text-[11px] text-white/35">
+                <span className="text-[11px] text-white/45">
                   {formatRelativeTime(comment.createdAt)}
                 </span>
               </div>
@@ -237,7 +317,7 @@ export function PostComments({
                       replyTarget === comment.id ? null : comment.id,
                     )
                   }
-                  className="text-[11px] font-semibold text-primary hover:text-white"
+                  className="text-[11px] font-medium text-white/40 transition-colors duration-150 hover:text-primary"
                 >
                   Reply
                 </button>
@@ -247,7 +327,7 @@ export function PostComments({
                     type="button"
                     onClick={() => void deleteComment(comment.id)}
                     disabled={deletingId === comment.id}
-                    className="text-[11px] text-white/35 hover:text-red-200 disabled:opacity-50"
+                    className="text-[11px] font-medium text-white/40 transition-colors duration-150 hover:text-primary disabled:opacity-50"
                   >
                     Delete
                   </button>
@@ -280,70 +360,76 @@ export function PostComments({
         </div>
       ));
 
+  return (
+    <div className="mt-3 w-full">
+      {currentUser && (
+        <div className="flex gap-2">
+          <input
+            value={content}
+            onChange={(event) => setContent(event.target.value.slice(0, 500))}
+            maxLength={500}
+            placeholder="Add a comment..."
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-xs text-white outline-none focus:border-primary/50"
+          />
+          <button
+            type="button"
+            onClick={() => void submitComment()}
+            disabled={isSubmitting || !content.trim()}
+            className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+          >
+            Post
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="mt-2 text-xs text-red-200" role="alert">
+          {error}
+        </p>
+      )}
+      {isLoading ? (
+        <p className="mt-3 text-xs text-white/45">Loading comments...</p>
+      ) : comments.length === 0 ? (
+        <p className="mt-3 text-xs text-white/40">No comments yet.</p>
+      ) : (
+        <div className="mt-3 divide-y divide-white/10">
+          {renderComments(null, 0).map((element, index) => (
+            <div key={element.key} className={index === 0 ? "pb-4" : "py-4"}>
+              {element}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface PostCommentsProps {
+  postId: string;
+  initialCount: number;
+  currentUser: CommentAuthor | null;
+  variant?: "default" | "inline";
+}
+
+export function PostComments({
+  postId,
+  initialCount,
+  currentUser,
+  variant = "default",
+}: PostCommentsProps): ReactElement {
+  const state = usePostComments({ postId, initialCount, currentUser });
   const isInline = variant === "inline";
 
   return (
     <div
       className={isInline ? "min-w-0" : "mt-4 border-t border-white/10 pt-3"}
     >
-      <button
-        type="button"
-        onClick={toggleComments}
-        className={
-          isInline
-            ? "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/65 transition-colors duration-200 hover:bg-primary/10 hover:text-white"
-            : "inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/60 transition-colors hover:border-primary hover:text-white"
-        }
-      >
-        <svg
-          viewBox="0 0 24 24"
-          className="h-4 w-4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <path d="M8 9h8M8 13h5m5 8-4.6-2.2a2 2 0 0 0-.86-.2H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v7a4 4 0 0 1-4 4h-.54a2 2 0 0 0-.86.2Z" />
-        </svg>
-        Comment <span className="text-white/40">{commentCount}</span>
-      </button>
-      {isOpen && (
-        <div className={isInline ? "mt-3 w-full" : "mt-3"}>
-          {currentUser && (
-            <div className="flex gap-2">
-              <input
-                value={content}
-                onChange={(event) =>
-                  setContent(event.target.value.slice(0, 500))
-                }
-                maxLength={500}
-                placeholder="Add a comment..."
-                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-xs text-white outline-none focus:border-primary/50"
-              />
-              <button
-                type="button"
-                onClick={() => void submitComment()}
-                disabled={isSubmitting || !content.trim()}
-                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
-              >
-                Post
-              </button>
-            </div>
-          )}
-          {error && (
-            <p className="mt-2 text-xs text-red-200" role="alert">
-              {error}
-            </p>
-          )}
-          {isLoading ? (
-            <p className="mt-3 text-xs text-white/45">Loading comments...</p>
-          ) : comments.length === 0 ? (
-            <p className="mt-3 text-xs text-white/40">No comments yet.</p>
-          ) : (
-            <div>{renderComments(null, 0)}</div>
-          )}
-        </div>
-      )}
+      <CommentToggleButton
+        isOpen={state.isOpen}
+        commentCount={state.commentCount}
+        onToggle={state.toggleComments}
+        variant={variant}
+      />
+      <CommentPanel {...state} currentUser={currentUser} />
     </div>
   );
 }

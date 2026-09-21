@@ -3,10 +3,12 @@ import { type ReactElement, useEffect, useMemo, useState } from "react";
 export interface AvatarProps {
   photoUrl?: string | null;
   name: string;
-  size?: "sm" | "md" | "lg";
+  size?: "2xs" | "xs" | "sm" | "md" | "lg";
 }
 
 const sizeClassMap: Record<NonNullable<AvatarProps["size"]>, string> = {
+  "2xs": "h-7 w-7 text-[10px]",
+  xs: "h-8 w-8 text-xs",
   sm: "h-10 w-10 text-sm",
   md: "h-16 w-16 text-xl",
   lg: "h-24 w-24 text-2xl",

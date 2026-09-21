@@ -9,8 +9,13 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
-import { PostComments } from "../components/dashboard/PostComments";
-import { RepostButton } from "../components/dashboard/RepostButton";
+import {
+  FeedPostCard,
+  type FeedAuthor,
+  type FeedOriginalPost,
+  type FeedPost,
+} from "../components/dashboard/FeedPostCard";
+import { PostComposerModal } from "../components/dashboard/PostComposerModal";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 
@@ -45,36 +50,6 @@ interface SearchEngineersResponse {
   page: number;
   limit: number;
   total: number;
-}
-
-interface FeedAuthor {
-  userId: string;
-  name: string;
-  role: "client" | "engineer";
-  profilePhotoUrl: string | null;
-  rating: number | null;
-  reviewCount: number;
-}
-
-interface FeedOriginalPost {
-  id: string;
-  content: string;
-  author: FeedAuthor;
-  imageUrl: string | null;
-  createdAt: string;
-}
-
-interface FeedPost {
-  id: string;
-  content: string;
-  imageUrl: string | null;
-  author: FeedAuthor;
-  likeCount: number;
-  likedByMe: boolean;
-  commentCount: number;
-  originalPost: FeedOriginalPost | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 interface FeedResponse {
@@ -343,7 +318,7 @@ export function MyNetworkPage(): ReactElement {
   const [selectedImagePreview, setSelectedImagePreview] = useState<string>("");
   const [isPosting, setIsPosting] = useState<boolean>(false);
   const [composerError, setComposerError] = useState<string>("");
-  const [isComposerExpanded, setIsComposerExpanded] = useState<boolean>(false);
+  const [isComposerOpen, setIsComposerOpen] = useState<boolean>(false);
 
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
@@ -358,6 +333,9 @@ export function MyNetworkPage(): ReactElement {
   const hasMoreFeed = posts.length < feedTotal;
   const remainingChars = MAX_CONTENT_LENGTH - content.length;
   const showRemainingCount = remainingChars <= 100;
+  const composerFirstName = (profile?.name ?? currentUser?.name ?? "You")
+    .trim()
+    .split(/\s+/)[0];
 
   const searchTotalPages = Math.max(
     1,
@@ -693,7 +671,7 @@ export function MyNetworkPage(): ReactElement {
       setFeedTotal((current) => current + 1);
       setContent("");
       clearImage();
-      setIsComposerExpanded(false);
+      setIsComposerOpen(false);
     } catch {
       setComposerError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -996,10 +974,7 @@ export function MyNetworkPage(): ReactElement {
 
         <section className="order-2 w-full space-y-4">
           {isEngineer ? (
-            <form
-              onSubmit={(event) => void handleCreatePost(event)}
-              className="w-full rounded-2xl border border-white/10 bg-surface p-5 shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-all duration-200 hover:border-primary/30 sm:p-6"
-            >
+            <div className="w-full rounded-2xl border border-white/10 bg-surface p-4 shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-all duration-200 hover:border-primary/30">
               <div className="flex items-center gap-3">
                 <Avatar
                   name={profile?.name ?? currentUser?.name ?? "You"}
@@ -1008,108 +983,36 @@ export function MyNetworkPage(): ReactElement {
                 />
                 <button
                   type="button"
-                  onClick={() => setIsComposerExpanded(true)}
-                  className="w-full rounded-full border border-white/20 bg-void/40 px-4 py-2.5 text-left text-sm font-semibold text-white/70 transition-colors duration-200 hover:border-primary hover:text-white"
+                  onClick={() => setIsComposerOpen(true)}
+                  className="w-full rounded-full border border-white/20 bg-void/40 px-4 py-2.5 text-left text-sm font-semibold text-white/50 transition-colors duration-200 hover:border-primary hover:text-white/70"
                 >
-                  Start a post
+                  What's on your mind, {composerFirstName}?
                 </button>
               </div>
-
-              {isComposerExpanded ? (
-                <div className="mt-4 space-y-4">
-                  <textarea
-                    value={content}
-                    maxLength={MAX_CONTENT_LENGTH}
-                    onChange={(event) => {
-                      setContent(event.target.value);
-                      setComposerError("");
-                    }}
-                    placeholder="Share an update, a completed project, or industry insight..."
-                    rows={4}
-                    className="form-input min-h-[120px] resize-y"
-                  />
-                </div>
-              ) : null}
-
-              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-white/10 pt-4 text-xs font-semibold text-white/70 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3 sm:text-sm">
-                <button
-                  type="button"
-                  onClick={() => setIsComposerExpanded(true)}
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-2 text-left transition-colors duration-200 hover:border-primary hover:text-white"
-                >
-                  Video
-                </button>
-                <label className="cursor-pointer rounded-full border border-white/20 bg-white/5 px-3 py-2 text-left transition-colors duration-200 hover:border-primary hover:text-white">
-                  Photo
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleImageChange}
-                    className="sr-only"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsComposerExpanded(true)}
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-2 text-left transition-colors duration-200 hover:border-primary hover:text-white"
-                >
-                  Write article
-                </button>
-              </div>
-
-              {isComposerExpanded ? (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {showRemainingCount ? (
-                      <span className="text-xs font-semibold text-white/55">
-                        {remainingChars} characters left
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsComposerExpanded(false)}
-                      className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-primary hover:text-white"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isPosting || !content.trim()}
-                      className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isPosting ? "Posting..." : "Post"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {selectedImagePreview ? (
-                <div className="relative mt-4 w-fit overflow-hidden rounded-xl border border-white/10">
-                  <img
-                    src={selectedImagePreview}
-                    alt="Selected preview"
-                    className="h-28 w-40 object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={clearImage}
-                    className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary"
-                  >
-                    X
-                  </button>
-                </div>
-              ) : null}
-
-              {composerError ? (
-                <p className="mt-3 text-sm text-red-300" role="alert">
-                  {composerError}
-                </p>
-              ) : null}
-            </form>
+            </div>
           ) : null}
+
+          <PostComposerModal
+            isOpen={isComposerOpen}
+            onClose={() => setIsComposerOpen(false)}
+            authorName={profile?.name ?? currentUser?.name ?? "You"}
+            authorPhotoUrl={profile?.profilePhotoUrl ?? null}
+            authorRole={profile?.role ?? currentUser?.role}
+            content={content}
+            onContentChange={(value) => {
+              setContent(value);
+              setComposerError("");
+            }}
+            maxContentLength={MAX_CONTENT_LENGTH}
+            remainingChars={remainingChars}
+            showRemainingCount={showRemainingCount}
+            selectedImagePreview={selectedImagePreview}
+            onImageChange={handleImageChange}
+            onClearImage={clearImage}
+            composerError={composerError}
+            isPosting={isPosting}
+            onSubmit={(event) => void handleCreatePost(event)}
+          />
 
           {feedError ? (
             <section
@@ -1168,186 +1071,37 @@ export function MyNetworkPage(): ReactElement {
 
           {!isFeedLoading && posts.length > 0 ? (
             <section className="w-full space-y-4">
-              {posts.map((post) => {
-                const isLikeLoading = likeLoadingIds.includes(post.id);
-                const isLiked = post.likedByMe;
-                const isPulsing = likedPulseId === post.id;
-                const isOwner = currentUser?.id === post.author.userId;
-
-                return (
-                  <article
-                    key={post.id}
-                    className="w-full rounded-2xl border border-white/10 bg-surface p-5 shadow-[0_14px_38px_rgba(0,0,0,0.24)] transition-all duration-200 hover:border-primary/25 sm:p-6"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <Link to={`/profile/${post.author.userId}`}>
-                          <Avatar
-                            name={post.author.name}
-                            photoUrl={post.author.profilePhotoUrl}
-                            size="sm"
-                          />
-                        </Link>
-                        <div>
-                          <Link
-                            to={`/profile/${post.author.userId}`}
-                            className="text-sm font-semibold text-white transition-colors duration-200 hover:text-primary"
-                          >
-                            {post.author.name}
-                          </Link>
-                          {post.author.role === "engineer" && (
-                            <RatingBadge
-                              rating={post.author.rating ?? null}
-                              reviewCount={post.author.reviewCount ?? 0}
-                              size="sm"
-                            />
-                          )}
-                          <div className="mt-1 flex items-center gap-2 text-xs text-white/45">
-                            <span className="rounded-full border border-white/15 px-2 py-0.5 capitalize text-white/60">
-                              {post.author.role}
-                            </span>
-                            <span>•</span>
-                            <span>{formatRelativeTime(post.createdAt)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {isOwner ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveMenuPostId((current) =>
-                                current === post.id ? null : post.id,
-                              )
-                            }
-                            className="rounded-full border border-white/15 px-2.5 py-1 text-sm text-white/65 transition-all duration-200 hover:border-primary hover:text-white"
-                          >
-                            ...
-                          </button>
-                          {activeMenuPostId === post.id ? (
-                            <button
-                              type="button"
-                              onClick={() => void removePost(post.id)}
-                              disabled={deleteLoadingId === post.id}
-                              className="absolute right-0 top-10 whitespace-nowrap rounded-lg border border-red-400/30 bg-void px-3 py-2 text-xs font-semibold text-red-200 transition-colors duration-200 hover:bg-red-400/10 disabled:opacity-60"
-                            >
-                              {deleteLoadingId === post.id
-                                ? "Deleting..."
-                                : "Delete post"}
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <p className="mt-4 whitespace-pre-line text-sm leading-7 text-white/80">
-                      {post.originalPost ? (
-                        <span className="text-sm text-white/75">
-                          {post.content === "Reposted" ? "" : post.content}
-                        </span>
-                      ) : (
-                        post.content
-                      )}
-                    </p>
-
-                    {post.originalPost ? (
-                      <div className="mt-4 rounded-xl border border-white/10 bg-void/40 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/40">
-                          <span className="inline-flex items-center gap-1.5">
-                            ↻ Reposted post
-                          </span>
-                        </p>
-                        <p className="mt-2 text-xs text-white/60">
-                          {post.originalPost.author.name} •{" "}
-                          {formatRelativeTime(post.originalPost.createdAt)}
-                        </p>
-                        <p className="mt-2 text-sm text-white/70">
-                          {post.originalPost.content}
-                        </p>
-                        {post.originalPost.imageUrl ? (
-                          <img
-                            src={post.originalPost.imageUrl}
-                            alt="Original post attachment"
-                            className="mt-3 max-h-56 w-full rounded-lg object-cover"
-                          />
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {post.imageUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setLightboxImageUrl(post.imageUrl)}
-                        className="mt-4 block overflow-hidden rounded-xl border border-white/10 transition-transform duration-200 hover:scale-[1.01]"
-                      >
-                        <img
-                          src={post.imageUrl}
-                          alt="Post attachment"
-                          className="max-h-[420px] w-full object-cover"
-                        />
-                      </button>
-                    ) : null}
-
-                    <div className="mt-4 border-t border-white/10 pt-3">
-                      <div className="flex flex-wrap items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => void toggleLike(post.id)}
-                          disabled={isLikeLoading}
-                          className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 ${
-                            isLiked
-                              ? "bg-primary/12 text-primary"
-                              : "text-white/65 hover:bg-primary/10 hover:text-white"
-                          } ${isPulsing ? "scale-110" : "scale-100"}`}
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                            fill={isLiked ? "currentColor" : "none"}
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            aria-hidden="true"
-                          >
-                            <path d="M12 21s-6.5-4.35-9.19-7.04C.14 11.28.28 6.88 3.2 4.6c2.1-1.66 5.16-1.4 7 .53 1.84-1.93 4.9-2.19 7-.53 2.92 2.28 3.06 6.68.39 9.36C18.5 16.65 12 21 12 21Z" />
-                          </svg>
-                          <span>
-                            {post.likeCount > 0 ? `${post.likeCount}` : "Like"}
-                          </span>
-                        </button>
-                        <PostComments
-                          postId={post.id}
-                          initialCount={post.commentCount}
-                          currentUser={
-                            currentUser
-                              ? {
-                                  userId: currentUser.id,
-                                  name: currentUser.name,
-                                  role: currentUser.role,
-                                  profilePhotoUrl: currentUser.profilePhotoUrl,
-                                }
-                              : null
-                          }
-                          variant="inline"
-                        />
-                        <RepostButton
-                          originalPostId={post.originalPost?.id ?? post.id}
-                          originalAuthor={
-                            post.originalPost?.author ?? post.author
-                          }
-                          originalContent={
-                            post.originalPost?.content ?? post.content
-                          }
-                          originalImageUrl={
-                            post.originalPost?.imageUrl ?? post.imageUrl
-                          }
-                          variant="inline"
-                        />
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
+              {posts.map((post) => (
+                <FeedPostCard
+                  key={post.id}
+                  post={post}
+                  currentUser={
+                    currentUser
+                      ? {
+                          userId: currentUser.id,
+                          name: currentUser.name,
+                          role: currentUser.role,
+                          profilePhotoUrl: currentUser.profilePhotoUrl,
+                        }
+                      : null
+                  }
+                  isOwner={currentUser?.id === post.author.userId}
+                  isLiked={post.likedByMe}
+                  isLikeLoading={likeLoadingIds.includes(post.id)}
+                  isPulsing={likedPulseId === post.id}
+                  onToggleLike={() => void toggleLike(post.id)}
+                  isMenuOpen={activeMenuPostId === post.id}
+                  onToggleMenu={() =>
+                    setActiveMenuPostId((current) =>
+                      current === post.id ? null : post.id,
+                    )
+                  }
+                  onDeletePost={() => void removePost(post.id)}
+                  isDeleting={deleteLoadingId === post.id}
+                  onOpenImage={setLightboxImageUrl}
+                  formatRelativeTime={formatRelativeTime}
+                />
+              ))}
 
               {hasMoreFeed ? (
                 <div className="flex justify-center pt-2">

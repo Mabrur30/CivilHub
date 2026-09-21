@@ -58,6 +58,12 @@ const getEngineerRating = async (
     : { rating: null, reviewCount: 0 };
 };
 
+const getConnectionsCount = async (userId: string): Promise<number> =>
+  Connection.countDocuments({
+    $or: [{ requester: userId }, { recipient: userId }],
+    status: "accepted",
+  }).exec();
+
 const getConnectionDetails = async (
   requester: string,
   target: string,
@@ -96,6 +102,7 @@ export const getPublicProfile = async (
     const user = await User.findById(userId).select("name role").exec();
     if (!user) throw createUserError("User not found", 404);
     const connection = await getConnectionDetails(requesterId, userId);
+    const connectionsCount = await getConnectionsCount(userId);
 
     if (user.role === "engineer") {
       const engineer = await Engineer.findOne({ user: user._id }).exec();
@@ -106,6 +113,7 @@ export const getPublicProfile = async (
         role: user.role,
         profilePhotoUrl: engineer?.profilePhoto?.url ?? null,
         bio: engineer?.bio ?? "",
+        connectionsCount,
         portfolio:
           engineer?.portfolio.map((item) => ({
             title: item.title,
@@ -141,6 +149,7 @@ export const getPublicProfile = async (
       completedProjects,
       connectionStatus: connection.status,
       connectionId: connection.connectionId,
+      connectionsCount,
       rating: null,
       reviewCount: 0,
     });

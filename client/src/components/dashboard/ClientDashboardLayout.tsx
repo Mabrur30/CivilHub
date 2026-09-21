@@ -46,7 +46,7 @@ export function ClientDashboardLayout(
                 email={currentUser.email}
                 role={currentUser.role}
                 photoUrl={currentUser.profilePhotoUrl}
-                onViewProfile={() => navigate("/dashboard/client/profile")}
+                onViewProfile={() => navigate(`/profile/${currentUser.id}`)}
                 onLogout={logout}
               />
             ) : null}
