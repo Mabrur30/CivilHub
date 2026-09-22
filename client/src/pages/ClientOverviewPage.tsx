@@ -1,8 +1,9 @@
 import { type ReactElement, useEffect, useState } from "react";
 import {
   ActivityFeedItem,
-  isActivityItem,
-  type ActivityItem,
+  getFeedEntryKey,
+  isFeedEntry,
+  type FeedEntry,
 } from "../components/dashboard/ActivityFeedItem";
 
 interface DashboardStat {
@@ -16,7 +17,7 @@ interface ClientOverview {
   pendingBidReviews: number;
   unreadMessages: number;
   totalSpent: number;
-  recentActivity: ActivityItem[];
+  recentActivity: FeedEntry[];
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
@@ -33,7 +34,7 @@ const isClientOverview = (value: unknown): value is ClientOverview => {
     typeof overview.unreadMessages === "number" &&
     typeof overview.totalSpent === "number" &&
     Array.isArray(overview.recentActivity) &&
-    overview.recentActivity.every(isActivityItem)
+    overview.recentActivity.every(isFeedEntry)
   );
 };
 
@@ -178,10 +179,11 @@ export function ClientOverviewPage(): ReactElement {
           </div>
           <div className="divide-y divide-white/10">
             {overview?.recentActivity.length ? (
-              overview.recentActivity.map((activity) => (
+              overview.recentActivity.map((entry) => (
                 <ActivityFeedItem
-                  key={`${activity.message}-${activity.timestamp}`}
-                  activity={activity}
+                  key={getFeedEntryKey(entry)}
+                  entry={entry}
+                  role="client"
                 />
               ))
             ) : (

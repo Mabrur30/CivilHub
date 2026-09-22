@@ -199,6 +199,56 @@ export const getOrCreateConversation = async (
   }
 };
 
+export const getUnreadMessageCountsByConversation = async (
+  userId: string,
+  conversationIds: Types.ObjectId[],
+): Promise<Map<string, number>> => {
+  if (conversationIds.length === 0) {
+    return new Map();
+  }
+
+  const unreadRows = await Message.aggregate<{
+    _id: Types.ObjectId;
+    unreadCount: number;
+  }>([
+    {
+      $match: {
+        conversation: { $in: conversationIds },
+        sender: { $ne: new Types.ObjectId(userId) },
+        readBy: { $ne: new Types.ObjectId(userId) },
+      },
+    },
+    {
+      $group: {
+        _id: "$conversation",
+        unreadCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return new Map(unreadRows.map((row) => [row._id.toString(), row.unreadCount]));
+};
+
+export const getTotalUnreadMessageCount = async (
+  userId: string,
+): Promise<number> => {
+  const conversations = await Conversation.find({ participants: userId })
+    .select("_id")
+    .exec();
+  const conversationIds = conversations.map((conversation) => conversation._id);
+
+  const unreadByConversation = await getUnreadMessageCountsByConversation(
+    userId,
+    conversationIds,
+  );
+
+  let total = 0;
+  for (const count of unreadByConversation.values()) {
+    total += count;
+  }
+  return total;
+};
+
 export const getMyConversations = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -229,27 +279,9 @@ export const getMyConversations = async (
       (conversation) => conversation._id,
     );
 
-    const unreadRows = await Message.aggregate<{
-      _id: Types.ObjectId;
-      unreadCount: number;
-    }>([
-      {
-        $match: {
-          conversation: { $in: conversationIds },
-          sender: { $ne: new Types.ObjectId(userId) },
-          readBy: { $ne: new Types.ObjectId(userId) },
-        },
-      },
-      {
-        $group: {
-          _id: "$conversation",
-          unreadCount: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const unreadByConversation = new Map(
-      unreadRows.map((row) => [row._id.toString(), row.unreadCount]),
+    const unreadByConversation = await getUnreadMessageCountsByConversation(
+      userId,
+      conversationIds,
     );
 
     res.status(200).json(

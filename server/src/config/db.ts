@@ -25,6 +25,14 @@ const connectDB = async (): Promise<void> => {
     console.error("MongoDB connection error:", error);
     process.exit(1);
   }
+
+  for (const name of mongoose.modelNames()) {
+    try {
+      await mongoose.model(name).syncIndexes();
+    } catch (error) {
+      console.error(`Failed to sync indexes for model "${name}":`, error);
+    }
+  }
 };
 
 export default connectDB;

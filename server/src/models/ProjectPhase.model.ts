@@ -87,6 +87,7 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
 );
 
 projectPhaseSchema.index({ project: 1, order: 1 }, { unique: true });
+projectPhaseSchema.index({ project: 1, completedAt: -1 });
 
 export const ProjectPhase: Model<IProjectPhase> = model<IProjectPhase>(
   "ProjectPhase",

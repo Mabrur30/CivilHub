@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   formatRelativeTime,
   getNotificationDotClassName,
+  getNotificationTargetPath,
   isNotificationListResponse,
   type NotificationListItem,
   type NotificationListResponse,
@@ -25,45 +26,6 @@ const getErrorMessage = (value: unknown): string => {
   }
 
   return "Unable to load notifications.";
-};
-
-const getNotificationTargetPath = (
-  notification: NotificationListItem,
-  role: "client" | "engineer",
-): string | null => {
-  if (notification.type === "new_message" && notification.conversationId) {
-    return `/messages/${notification.conversationId}`;
-  }
-
-  if (
-    (notification.type === "bid_accepted" ||
-      notification.type === "bid_declined" ||
-      notification.type === "project_phase_updated" ||
-      notification.type === "phase_plan_submitted" ||
-      notification.type === "phase_plan_approved" ||
-      notification.type === "phase_plan_rejected" ||
-      notification.type === "advance_payment_received" ||
-      notification.type === "phase_payment_received" ||
-      notification.type === "full_payment_received" ||
-      notification.type === "review_received" ||
-      notification.type === "review_reply") &&
-    notification.projectId
-  ) {
-    return `/dashboard/${role}/projects/${notification.projectId}`;
-  }
-
-  if (notification.type === "connection_accepted") {
-    return `/dashboard/${role}/network`;
-  }
-
-  if (
-    notification.type === "connection_post" ||
-    notification.type === "post_liked"
-  ) {
-    return "/feed";
-  }
-
-  return null;
 };
 
 export function NotificationsPage(): ReactElement {

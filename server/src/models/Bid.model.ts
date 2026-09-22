@@ -51,5 +51,8 @@ bidSchema.index(
   { unique: true, partialFilterExpression: { status: "pending" } },
 );
 
+bidSchema.index({ engineer: 1, status: 1 });
+bidSchema.index({ engineer: 1, createdAt: -1 });
+
 export const Bid: Model<IBid> = model<IBid>("Bid", bidSchema);
 export default Bid;

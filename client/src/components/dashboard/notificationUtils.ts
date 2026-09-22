@@ -1,5 +1,3 @@
-import { activityColors } from "./ActivityFeedItem";
-
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
@@ -79,11 +77,11 @@ const notificationTypes: NotificationType[] = [
   "post_reposted",
 ];
 
-const isNotificationType = (value: unknown): value is NotificationType =>
+export const isNotificationType = (value: unknown): value is NotificationType =>
   typeof value === "string" &&
   notificationTypes.includes(value as NotificationType);
 
-const isNullableId = (value: unknown): value is string | null =>
+export const isNullableId = (value: unknown): value is string | null =>
   value === null || typeof value === "string";
 
 export const isNotificationListItem = (
@@ -128,6 +126,15 @@ export const isNotificationListResponse = (
   );
 };
 
+const activityColors: Record<string, string> = {
+  success: "bg-emerald-400",
+  review: "bg-amber-300",
+  message: "bg-sky-400",
+  milestone: "bg-primary",
+  bid: "bg-primary",
+  default: "bg-white/50",
+};
+
 export const mapNotificationTypeToActivityType = (
   type: NotificationType,
 ): string => {
@@ -166,6 +173,77 @@ export const mapNotificationTypeToActivityType = (
 export const getNotificationDotClassName = (type: NotificationType): string =>
   activityColors[mapNotificationTypeToActivityType(type)] ??
   activityColors.default;
+
+export interface NotificationTargetRefs {
+  type: NotificationType;
+  projectId?: string | null;
+  equipmentId?: string | null;
+  bidId?: string | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+}
+
+export const getNotificationTargetPath = (
+  notification: NotificationTargetRefs,
+  role: "client" | "engineer",
+): string | null => {
+  if (notification.type === "new_message" && notification.conversationId) {
+    return `/messages/${notification.conversationId}`;
+  }
+
+  // Equipment listing and booking are engineer-only, and the equipment routes
+  // exist only under /dashboard/engineer, so role is deliberately not used here.
+  if (
+    (notification.type === "equipment_booking_request" ||
+      notification.type === "equipment_booking_declined" ||
+      notification.type === "equipment_booking_auto_declined" ||
+      notification.type === "equipment_booking_payment_received") &&
+    notification.equipmentId
+  ) {
+    return "/dashboard/engineer/equipment/mine";
+  }
+
+  if (
+    (notification.type === "equipment_booking_approved" ||
+      notification.type === "equipment_pickup_confirmed" ||
+      notification.type === "equipment_return_confirmed" ||
+      notification.type === "equipment_deposit_released" ||
+      notification.type === "equipment_deposit_claimed") &&
+    notification.equipmentId
+  ) {
+    return "/dashboard/engineer/equipment/bookings";
+  }
+
+  if (
+    (notification.type === "bid_accepted" ||
+      notification.type === "bid_declined" ||
+      notification.type === "project_phase_updated" ||
+      notification.type === "phase_plan_submitted" ||
+      notification.type === "phase_plan_approved" ||
+      notification.type === "phase_plan_rejected" ||
+      notification.type === "advance_payment_received" ||
+      notification.type === "phase_payment_received" ||
+      notification.type === "full_payment_received" ||
+      notification.type === "review_received" ||
+      notification.type === "review_reply") &&
+    notification.projectId
+  ) {
+    return `/dashboard/${role}/projects/${notification.projectId}`;
+  }
+
+  if (notification.type === "connection_accepted") {
+    return `/dashboard/${role}/network`;
+  }
+
+  if (
+    notification.type === "connection_post" ||
+    notification.type === "post_liked"
+  ) {
+    return "/feed";
+  }
+
+  return null;
+};
 
 export const formatRelativeTime = (value: string): string => {
   const date = new Date(value);

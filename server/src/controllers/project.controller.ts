@@ -1,7 +1,8 @@
 import { type NextFunction, type Request, type Response } from "express";
+import { getTotalUnreadMessageCount } from "./message.controller";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Bid } from "../models/Bid.model";
-import { Notification } from "../models/Notification.model";
+import { Notification, type NotificationType } from "../models/Notification.model";
 import {
   Project,
   type IProject,
@@ -70,7 +71,7 @@ interface CreateProjectSuccessResponse {
   updatedAt: string;
 }
 
-interface EngineerOverviewResponse {
+export interface EngineerOverviewResponse {
   activeProjects: number;
   pendingBids: number;
   unreadMessages: number;
@@ -86,11 +87,41 @@ interface ClientOverviewResponse {
   recentActivity: RecentActivity[];
 }
 
-interface RecentActivity {
-  type: string;
+interface NotificationFeedEntry {
+  source: "notification";
+  type: NotificationType;
   message: string;
   timestamp: string;
+  projectId: string | null;
+  equipmentId: string | null;
+  bidId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
 }
+
+interface OwnBidFeedEntry {
+  source: "own_bid";
+  bidId: string;
+  projectId: string;
+  projectTitle: string;
+  timestamp: string;
+}
+
+interface OwnPhaseCompletionFeedEntry {
+  source: "own_phase_completion";
+  phaseId: string;
+  projectId: string;
+  projectTitle: string;
+  phaseTitle: string;
+  timestamp: string;
+}
+
+type RecentActivity =
+  | NotificationFeedEntry
+  | OwnBidFeedEntry
+  | OwnPhaseCompletionFeedEntry;
+
+const RECENT_ACTIVITY_LIMIT = 5;
 
 interface ProjectError extends Error {
   statusCode: number;
@@ -342,33 +373,106 @@ export const getEngineerOverview = async (
     }
 
     const engineerFilter = { assignedEngineer: req.user.userId };
-    const [activeProjects, upcomingMilestones, notifications] =
-      await Promise.all([
-        Project.countDocuments({
-          ...engineerFilter,
-          status: { $in: ["active", "in-progress"] },
-        }),
-        Project.countDocuments({
-          ...engineerFilter,
-          nextMilestoneDueDate: { $gt: new Date() },
-          status: { $ne: "completed" },
-        }),
-        Notification.find({ recipient: req.user.userId })
-          .sort({ createdAt: -1 })
-          .limit(5)
-          .exec(),
-      ]);
+    const [
+      activeProjects,
+      upcomingMilestones,
+      notifications,
+      pendingBids,
+      unreadMessages,
+      ownBids,
+      engineerProjects,
+    ] = await Promise.all([
+      Project.countDocuments({
+        ...engineerFilter,
+        status: { $in: ["active", "in-progress"] },
+      }),
+      Project.countDocuments({
+        ...engineerFilter,
+        nextMilestoneDueDate: { $gt: new Date() },
+        status: { $ne: "completed" },
+      }),
+      Notification.find({ recipient: req.user.userId })
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_LIMIT)
+        .exec(),
+      Bid.countDocuments({ engineer: req.user.userId, status: "pending" }),
+      getTotalUnreadMessageCount(req.user.userId),
+      Bid.find({ engineer: req.user.userId })
+        .populate("project", "title name")
+        .sort({ createdAt: -1 })
+        .limit(RECENT_ACTIVITY_LIMIT)
+        .exec(),
+      Project.find(engineerFilter).select("_id title name").exec(),
+    ]);
+
+    // Phases carry no engineer reference, so they can only be scoped through
+    // the engineer's projects - this query depends on the lookup above.
+    const projectTitleById = new Map(
+      engineerProjects.map((project) => [
+        project._id.toString(),
+        project.title ?? project.name ?? "Untitled project",
+      ]),
+    );
+    const completedPhases = await ProjectPhase.find({
+      project: { $in: engineerProjects.map((project) => project._id) },
+      status: "completed",
+      completedAt: { $ne: null },
+    })
+      .sort({ completedAt: -1 })
+      .limit(RECENT_ACTIVITY_LIMIT)
+      .exec();
+
+    const notificationEntries: RecentActivity[] = notifications.map(
+      (notification) => ({
+        source: "notification",
+        type: notification.type,
+        message: notification.message,
+        timestamp: notification.createdAt.toISOString(),
+        projectId: notification.project?.toString() ?? null,
+        equipmentId: notification.equipment?.toString() ?? null,
+        bidId: notification.bid?.toString() ?? null,
+        conversationId: notification.conversation?.toString() ?? null,
+        messageId: notification.messageRef?.toString() ?? null,
+      }),
+    );
+
+    const bidEntries: RecentActivity[] = ownBids.map((bid) => {
+      const project = bid.project as unknown as {
+        _id: { toString: () => string };
+        title?: string;
+        name?: string;
+      };
+      return {
+        source: "own_bid",
+        bidId: bid._id.toString(),
+        projectId: project._id.toString(),
+        projectTitle: project.title ?? project.name ?? "Untitled project",
+        timestamp: bid.createdAt.toISOString(),
+      };
+    });
+
+    const phaseEntries: RecentActivity[] = completedPhases.map((phase) => ({
+      source: "own_phase_completion",
+      phaseId: phase._id.toString(),
+      projectId: phase.project.toString(),
+      projectTitle:
+        projectTitleById.get(phase.project.toString()) ?? "Untitled project",
+      phaseTitle: phase.name,
+      timestamp: (phase.completedAt ?? phase.updatedAt).toISOString(),
+    }));
 
     const overview: EngineerOverviewResponse = {
       activeProjects,
-      pendingBids: 0,
-      unreadMessages: 0,
+      pendingBids,
+      unreadMessages,
       upcomingMilestones,
-      recentActivity: notifications.map((notification) => ({
-        type: notification.type === "bid_accepted" ? "success" : "review",
-        message: notification.message,
-        timestamp: notification.createdAt.toISOString(),
-      })),
+      recentActivity: [...notificationEntries, ...bidEntries, ...phaseEntries]
+        .sort(
+          (first, second) =>
+            new Date(second.timestamp).getTime() -
+            new Date(first.timestamp).getTime(),
+        )
+        .slice(0, RECENT_ACTIVITY_LIMIT),
     };
 
     res.status(200).json(overview);

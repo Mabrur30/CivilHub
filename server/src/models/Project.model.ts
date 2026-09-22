@@ -132,6 +132,7 @@ const projectSchema = new Schema<IProject>(
     },
     nextMilestoneDueDate: {
       type: Date,
+      index: true,
     },
     phasePlanStatus: {
       type: String,
