@@ -1,5 +1,6 @@
 import { type ReactElement } from "react";
 import { GetStartedMenu } from "./GetStartedMenu";
+import { Reveal } from "./Reveal";
 
 interface CTASectionProps {}
 
@@ -9,7 +10,7 @@ export function CTASection(_props: CTASectionProps): ReactElement {
       id="pricing"
       className="bg-gradient-to-r from-primary via-primary to-glow px-4 py-20 sm:px-6 lg:px-8"
     >
-      <div className="mx-auto max-w-5xl rounded-[32px] border border-white/10 bg-white/5 px-6 py-10 shadow-[0_0_40px_rgba(255,59,78,0.18)] backdrop-blur-sm sm:px-10 lg:px-14">
+      <Reveal className="mx-auto max-w-5xl rounded-[32px] border border-white/10 bg-white/5 px-6 py-10 shadow-[0_0_40px_rgba(255,59,78,0.18)] backdrop-blur-sm sm:px-10 lg:px-14">
         <div className="flex flex-col items-center justify-between gap-8 text-center lg:flex-row lg:text-left">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-white/75">
@@ -22,7 +23,7 @@ export function CTASection(_props: CTASectionProps): ReactElement {
 
           <GetStartedMenu />
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }

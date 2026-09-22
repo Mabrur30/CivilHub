@@ -1,4 +1,5 @@
 import { type ReactElement } from "react";
+import { Reveal } from "./Reveal";
 
 interface RoleCardProps {
   role: "Clients" | "Engineers";
@@ -62,16 +63,16 @@ export function ForClientsForEngineers(
       className="bg-void px-4 py-20 sm:px-6 lg:px-8"
     >
       <div className="mx-auto max-w-7xl">
-        <div className="mx-auto max-w-2xl text-center">
+        <Reveal variant="head" className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
             Built for both sides
           </p>
           <h2 className="mt-4 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
             Purpose-built collaboration for every stakeholder.
           </h2>
-        </div>
+        </Reveal>
 
-        <div className="mt-12 grid gap-8 lg:grid-cols-2">
+        <Reveal className="mt-12 grid gap-8 lg:grid-cols-2">
           <RoleCard
             role="Clients"
             title="Control quality and certainty"
@@ -94,7 +95,7 @@ export function ForClientsForEngineers(
             ]}
             accent="bg-glow/90"
           />
-        </div>
+        </Reveal>
       </div>
     </section>
   );

@@ -5,7 +5,9 @@ import { Footer } from "../components/landing/Footer";
 import { ForClientsForEngineers } from "../components/landing/ForClientsForEngineers";
 import { Hero } from "../components/landing/Hero";
 import { HowItWorks } from "../components/landing/HowItWorks";
+import { MissionSection } from "../components/landing/MissionSection";
 import { Navbar } from "../components/landing/Navbar";
+import { Testimonials } from "../components/landing/Testimonials";
 import { TrustStats } from "../components/landing/TrustStats";
 
 export function LandingPage(): ReactElement {
@@ -28,7 +30,9 @@ export function LandingPage(): ReactElement {
       <Navbar />
       <Hero />
       <HowItWorks />
+      <MissionSection />
       <TrustStats />
+      <Testimonials />
       <ForClientsForEngineers />
       <CTASection />
       <Footer />

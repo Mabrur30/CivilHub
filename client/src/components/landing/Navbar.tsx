@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { scrollToSection } from "../../lib/scrollToSection";
 import { GetStartedMenu } from "./GetStartedMenu";
 
 interface NavbarProps {}
@@ -21,22 +22,8 @@ export function Navbar(_props: NavbarProps): ReactElement {
 
   const homeTarget = currentUser ? `/dashboard/${currentUser.role}` : "/";
 
-  const scrollToSection = (targetId: string): void => {
-    if (location.pathname !== "/") {
-      navigate("/");
-      window.setTimeout(() => {
-        document.getElementById(targetId)?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 50);
-      return;
-    }
-
-    document.getElementById(targetId)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+  const goToSection = (targetId: string): void => {
+    scrollToSection(targetId, location.pathname, navigate);
   };
 
   return (
@@ -65,7 +52,7 @@ export function Navbar(_props: NavbarProps): ReactElement {
             <button
               key={item.label}
               type="button"
-              onClick={() => scrollToSection(item.targetId)}
+              onClick={() => goToSection(item.targetId)}
               className="transition-colors duration-300 hover:text-white"
             >
               {item.label}
@@ -106,7 +93,7 @@ export function Navbar(_props: NavbarProps): ReactElement {
                 type="button"
                 onClick={() => {
                   setIsOpen(false);
-                  scrollToSection(item.targetId);
+                  goToSection(item.targetId);
                 }}
                 className="text-left transition-colors duration-300 hover:text-white"
               >
