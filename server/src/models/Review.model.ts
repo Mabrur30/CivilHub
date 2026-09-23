@@ -68,7 +68,7 @@ reviewSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      project: { $exists: true, $ne: null },
+      project: { $exists: true },
     },
   },
 );
@@ -78,7 +78,7 @@ reviewSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      equipmentBooking: { $exists: true, $ne: null },
+      equipmentBooking: { $exists: true },
     },
   },
 );

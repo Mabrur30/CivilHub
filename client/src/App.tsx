@@ -14,7 +14,8 @@ import { EngineerMarketplacePage } from "./pages/EngineerMarketplacePage";
 import { EngineerBidsPage } from "./pages/EngineerBidsPage";
 import { EngineerOverviewPage } from "./pages/EngineerOverviewPage";
 import { EngineerProjectsPage } from "./pages/EngineerProjectsPage";
-import { MyNetworkPage } from "./pages/MyNetworkPage";
+import { EngineerNetworkPage } from "./pages/EngineerNetworkPage";
+import { ClientBrowseEngineersPage } from "./pages/ClientBrowseEngineersPage";
 import { PublicProfilePage } from "./pages/PublicProfilePage";
 import { ProjectProgressPage } from "./pages/ProjectProgressPage";
 import { PostProjectPage } from "./pages/PostProjectPage";
@@ -99,7 +100,7 @@ function App(): ReactElement {
         />
         <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<EngineerBidsPage />} />
-        <Route path="network" element={<MyNetworkPage />} />
+        <Route path="network" element={<EngineerNetworkPage />} />
       </Route>
       <Route
         path="/dashboard/client"
@@ -117,7 +118,7 @@ function App(): ReactElement {
         <Route path="post-project" element={<PostProjectPage />} />
         <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<ClientBidsPage />} />
-        <Route path="network" element={<MyNetworkPage />} />
+        <Route path="network" element={<ClientBrowseEngineersPage />} />
       </Route>
       <Route path="/cost-estimator" element={<CostEstimatorRedirect />} />
       <Route

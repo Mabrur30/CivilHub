@@ -2,7 +2,10 @@ import { type NextFunction, type Request, type Response } from "express";
 import { getTotalUnreadMessageCount } from "./message.controller";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Bid } from "../models/Bid.model";
-import { Notification, type NotificationType } from "../models/Notification.model";
+import {
+  Notification,
+  type NotificationType,
+} from "../models/Notification.model";
 import {
   Project,
   type IProject,
@@ -511,6 +514,8 @@ export interface PhasePlanResponse {
   advanceRequiredAmount: number | null | undefined;
   advancePaid: boolean;
   advancePaidAt: string | undefined;
+  fullPaymentPaid: boolean;
+  fullPaymentPaidAt: string | undefined;
   phases: PhasePlanPhaseResponse[];
 }
 
@@ -608,6 +613,8 @@ export const createPhasePlan = async (
       advanceRequiredAmount: project.advanceRequiredAmount,
       advancePaid: project.advancePaid,
       advancePaidAt: project.advancePaidAt?.toISOString(),
+      fullPaymentPaid: project.fullPaymentPaid,
+      fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
       phases: createdPhases.map((phase) => ({
         id: phase._id.toString(),
         title: phase.name,
@@ -740,6 +747,8 @@ export const getPhasePlan = async (
       advanceRequiredAmount: project.advanceRequiredAmount,
       advancePaid: project.advancePaid,
       advancePaidAt: project.advancePaidAt?.toISOString(),
+      fullPaymentPaid: project.fullPaymentPaid,
+      fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
       phases: phases.map((phase) => ({
         id: phase._id.toString(),
         title: phase.name,

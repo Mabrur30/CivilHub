@@ -54,10 +54,6 @@ export interface EquipmentBrowseResponse {
   hasMore: boolean;
 }
 
-interface ErrorResponse {
-  message?: string;
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
@@ -505,10 +501,12 @@ const isBookingBucket = (value: unknown): value is EquipmentBookingBucket =>
 const isIncomingBooking = (
   value: unknown,
 ): value is EquipmentIncomingBooking => {
+  if (!isRecord(value)) return false;
   return isBookingBase(value) && isBookingBucket(value.bucket);
 };
 
 const isMyBooking = (value: unknown): value is EquipmentMyBooking => {
+  if (!isRecord(value)) return false;
   return isBookingBase(value) && isBookingBucket(value.bucket);
 };
 

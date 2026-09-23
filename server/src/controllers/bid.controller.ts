@@ -48,6 +48,18 @@ export interface EngineerBidResponse {
   projectStatus: string;
 }
 
+interface CreateBidInput {
+  engineerUserId: string;
+  projectId: string;
+  amount: number;
+  message: string;
+}
+
+interface CreatedBidResult {
+  bid: HydratedDocument<IBid>;
+  project: HydratedDocument<IProject>;
+}
+
 const createBidError = (message: string, statusCode: number): BidError => {
   const error = new Error(message) as BidError;
   error.statusCode = statusCode;
@@ -67,6 +79,40 @@ const extractUserId = (value: unknown): string => {
   }
 
   return "";
+};
+
+export const createBidForProject = async ({
+  engineerUserId,
+  projectId,
+  amount,
+  message,
+}: CreateBidInput): Promise<CreatedBidResult> => {
+  const project = await Project.findOne({
+    _id: projectId,
+    status: "open_for_bids",
+  }).exec();
+  if (!project) {
+    throw createBidError("Project is not open for bidding", 404);
+  }
+
+  const existingBid = await Bid.findOne({
+    engineer: engineerUserId,
+    project: project._id,
+    status: "pending",
+  }).exec();
+  if (existingBid) {
+    throw createBidError("You already have a pending bid on this project", 409);
+  }
+
+  const bid = await Bid.create({
+    engineer: engineerUserId,
+    project: project._id,
+    amount,
+    message: message.trim(),
+    status: "pending",
+  });
+
+  return { bid, project };
 };
 
 export const submitBid = async (
@@ -92,32 +138,11 @@ export const submitBid = async (
       );
     }
 
-    const project = await Project.findOne({
-      _id: projectId,
-      status: "open_for_bids",
-    });
-    if (!project) {
-      throw createBidError("Project is not open for bidding", 404);
-    }
-
-    const existingBid = await Bid.findOne({
-      engineer: req.user.userId,
-      project: project._id,
-      status: "pending",
-    });
-    if (existingBid) {
-      throw createBidError(
-        "You already have a pending bid on this project",
-        409,
-      );
-    }
-
-    const bid = await Bid.create({
-      engineer: req.user.userId,
-      project: project._id,
+    const { bid, project } = await createBidForProject({
+      engineerUserId: req.user.userId,
+      projectId,
       amount,
-      message: message.trim(),
-      status: "pending",
+      message,
     });
 
     res.status(201).json({

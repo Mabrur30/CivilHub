@@ -49,6 +49,8 @@ interface PhasePlan {
   advanceRequiredAmount?: number | null;
   advancePaid: boolean;
   advancePaidAt?: string;
+  fullPaymentPaid: boolean;
+  fullPaymentPaidAt?: string;
   phases: PhasePlanPhase[];
 }
 
@@ -1318,78 +1320,114 @@ export function ProjectProgressPage(): ReactElement {
                 </div>
               )}
 
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                {/* Advance Payment */}
-                <div
-                  className={`rounded-xl border p-5 transition-all duration-200 ${phasePlan.advancePaid ? "border-emerald-300/25 bg-emerald-300/[0.04]" : "border-primary/35 bg-primary/[0.045] shadow-[inset_3px_0_0_rgba(227,63,63,0.85)]"}`}
-                >
+              {phasePlan.paymentPlan === "full_upfront" &&
+              phasePlan.fullPaymentPaid ? (
+                <div className="mt-6 rounded-xl border border-emerald-300/30 bg-emerald-300/[0.045] p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                      Advance Payment
-                    </p>
-                    <CardAccentIcon paid={phasePlan.advancePaid} />
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.14em] text-emerald-100/75">
+                        Payment Status
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-white">
+                        Paid in full
+                      </p>
+                    </div>
+                    <CardAccentIcon paid={true} />
                   </div>
-                  <p className="mt-2 text-xl font-bold text-white">
-                    {formatCurrency(phasePlan.advanceRequiredAmount || 0)}
+                  <p className="mt-3 text-2xl font-bold text-white">
+                    {formatCurrency(phasePlan.totalAgreedValue || 0)}
                   </p>
-                  <p
-                    className={`mt-2 flex items-center gap-1.5 text-xs ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}
-                  >
-                    {phasePlan.advancePaid && <CheckIcon />}
-                    {phasePlan.advancePaid
-                      ? "Paid"
-                      : "Required before work begins"}
-                  </p>
-                  {!phasePlan.advancePaid && currentUser?.role === "client" && (
-                    <button
-                      type="button"
-                      onClick={() => void handlePayAdvance()}
-                      disabled={isProcessingPayment}
-                      className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
-                    >
-                      {isProcessingPayment
-                        ? "Processing..."
-                        : "Pay Advance (Mock)"}
-                    </button>
-                  )}
+                  <div className="mt-3 space-y-1 text-xs text-emerald-100/80">
+                    <p>
+                      Advance paid:{" "}
+                      {phasePlan.advancePaidAt
+                        ? formatDate(phasePlan.advancePaidAt)
+                        : "Recorded"}
+                    </p>
+                    <p>
+                      Remaining paid:{" "}
+                      {phasePlan.fullPaymentPaidAt
+                        ? formatDate(phasePlan.fullPaymentPaidAt)
+                        : "Recorded"}
+                    </p>
+                  </div>
                 </div>
-
-                {/* Remaining Payment */}
-                {phasePlan.paymentPlan === "full_upfront" && (
-                  <div className="rounded-xl border border-primary/25 bg-primary/[0.035] p-5 transition-all duration-200 hover:border-primary/40">
+              ) : (
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  {/* Advance Payment */}
+                  <div
+                    className={`rounded-xl border p-5 transition-all duration-200 ${phasePlan.advancePaid ? "border-emerald-300/25 bg-emerald-300/[0.04]" : "border-primary/35 bg-primary/[0.045] shadow-[inset_3px_0_0_rgba(227,63,63,0.85)]"}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                        Remaining Balance
+                        Advance Payment
                       </p>
-                      <CardAccentIcon paid={false} />
+                      <CardAccentIcon paid={phasePlan.advancePaid} />
                     </div>
                     <p className="mt-2 text-xl font-bold text-white">
-                      {formatCurrency(
-                        (phasePlan.totalAgreedValue || 0) -
-                          (phasePlan.advanceRequiredAmount || 0),
-                      )}
+                      {formatCurrency(phasePlan.advanceRequiredAmount || 0)}
                     </p>
-                    <p className="mt-1 text-xs text-white/50">
+                    <p
+                      className={`mt-2 flex items-center gap-1.5 text-xs ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}
+                    >
+                      {phasePlan.advancePaid && <CheckIcon />}
                       {phasePlan.advancePaid
-                        ? "Due before final phase completion"
-                        : "Pay after advance"}
+                        ? "Paid"
+                        : "Required before work begins"}
                     </p>
-                    {phasePlan.advancePaid &&
+                    {!phasePlan.advancePaid &&
                       currentUser?.role === "client" && (
                         <button
                           type="button"
-                          onClick={() => void handlePayFullRemaining()}
+                          onClick={() => void handlePayAdvance()}
                           disabled={isProcessingPayment}
                           className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
                         >
                           {isProcessingPayment
                             ? "Processing..."
-                            : "Pay Remaining (Mock)"}
+                            : "Pay Advance (Mock)"}
                         </button>
                       )}
                   </div>
-                )}
-              </div>
+
+                  {/* Remaining Payment */}
+                  {phasePlan.paymentPlan === "full_upfront" && (
+                    <div className="rounded-xl border border-primary/25 bg-primary/[0.035] p-5 transition-all duration-200 hover:border-primary/40">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-xs uppercase tracking-[0.14em] text-white/60">
+                          Remaining Balance
+                        </p>
+                        <CardAccentIcon paid={false} />
+                      </div>
+                      <p className="mt-2 text-xl font-bold text-white">
+                        {formatCurrency(
+                          (phasePlan.totalAgreedValue || 0) -
+                            (phasePlan.advanceRequiredAmount || 0),
+                        )}
+                      </p>
+                      <p className="mt-1 text-xs text-white/50">
+                        {phasePlan.advancePaid
+                          ? "Due before final phase completion"
+                          : "Pay after advance"}
+                      </p>
+                      {phasePlan.advancePaid &&
+                        !phasePlan.fullPaymentPaid &&
+                        currentUser?.role === "client" && (
+                          <button
+                            type="button"
+                            onClick={() => void handlePayFullRemaining()}
+                            disabled={isProcessingPayment}
+                            className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
+                          >
+                            {isProcessingPayment
+                              ? "Processing..."
+                              : "Pay Remaining (Mock)"}
+                          </button>
+                        )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {currentUser?.role === "client" && (
                 <div className="mt-4 flex items-start gap-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.045] p-4">

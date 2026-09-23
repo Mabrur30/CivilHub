@@ -208,8 +208,9 @@ export function ConversationListPage(): ReactElement {
               No conversations yet
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-white/60">
-              Connect with professionals in My Network, then start your first
-              chat.
+              {currentUser?.role === "client"
+                ? "Browse engineers and open your first conversation."
+                : "Connect with professionals in My Network, then start your first chat."}
             </p>
             <Link
               to={
@@ -258,7 +259,7 @@ export function ConversationListPage(): ReactElement {
                   </div>
 
                   {conversation.unreadCount > 0 ? (
-                    <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-white">
+                    <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-white">
                       {conversation.unreadCount}
                     </span>
                   ) : null}

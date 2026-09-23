@@ -75,7 +75,13 @@ const getEngineerPhotoMap = async (
 const ensureAcceptedConnection = async (
   userId: string,
   otherUserId: string,
+  requesterRole: UserRole,
+  otherUserRole: UserRole,
 ): Promise<void> => {
+  if (requesterRole === "client" && otherUserRole === "engineer") {
+    return;
+  }
+
   const connection = await Connection.findOne({
     $or: [
       { requester: userId, recipient: otherUserId },
@@ -158,7 +164,9 @@ export const getOrCreateConversation = async (
       );
     }
 
-    const otherUser = await User.findById(otherUserId).select("_id").exec();
+    const otherUser = await User.findById(otherUserId)
+      .select("_id role")
+      .exec();
     if (!otherUser) {
       throw createMessageError("User not found", 404);
     }
@@ -177,7 +185,12 @@ export const getOrCreateConversation = async (
       return;
     }
 
-    await ensureAcceptedConnection(userId, otherUserId);
+    await ensureAcceptedConnection(
+      userId,
+      otherUserId,
+      req.user.role,
+      otherUser.role,
+    );
 
     const conversation = await Conversation.create({
       participants: [
@@ -226,7 +239,9 @@ export const getUnreadMessageCountsByConversation = async (
     },
   ]);
 
-  return new Map(unreadRows.map((row) => [row._id.toString(), row.unreadCount]));
+  return new Map(
+    unreadRows.map((row) => [row._id.toString(), row.unreadCount]),
+  );
 };
 
 export const getTotalUnreadMessageCount = async (

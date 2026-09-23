@@ -32,6 +32,49 @@ interface EngineerCertificateItem {
   uploadedAt: string;
 }
 
+interface CompletedWorkItem {
+  id: string;
+  title: string;
+  category: string;
+  location: string | null;
+  completedAt: string;
+  contractValue: number | null;
+}
+
+interface EngineerEducationItem {
+  id: string;
+  institution: string | null;
+  degree: string | null;
+  fieldOfStudy: string | null;
+  graduationYear: number | null;
+}
+
+interface EngineerExperienceItem {
+  id: string;
+  title: string | null;
+  organization: string | null;
+  startYear: number | null;
+  endYear: number | null;
+  description: string | null;
+}
+
+interface OwnEngineerEducationItem {
+  _id: string;
+  institution: string | null;
+  degree: string | null;
+  fieldOfStudy: string | null;
+  graduationYear: number | null;
+}
+
+interface OwnEngineerExperienceItem {
+  _id: string;
+  title: string | null;
+  organization: string | null;
+  startYear: number | null;
+  endYear: number | null;
+  description: string | null;
+}
+
 interface OwnEngineerCertificate {
   _id: string;
   title: string;
@@ -48,6 +91,11 @@ interface OwnEngineerPortfolioItem {
 }
 
 interface OwnEngineerData {
+  startingRateMin: number | null;
+  startingRateMax: number | null;
+  location: string | null;
+  education: OwnEngineerEducationItem[];
+  experience: OwnEngineerExperienceItem[];
   certificates: OwnEngineerCertificate[];
   portfolio: OwnEngineerPortfolioItem[];
 }
@@ -94,8 +142,20 @@ interface BasePublicProfile {
 
 interface EngineerPublicProfile extends BasePublicProfile {
   role: "engineer";
+  startingRateMin: number | null;
+  startingRateMax: number | null;
+  location: string | null;
+  education: EngineerEducationItem[];
+  experience: EngineerExperienceItem[];
+  typicalRate: number | null;
+  rateMin: number | null;
+  rateMax: number | null;
+  acceptedBidCount: number;
+  derivedLocation: string | null;
+  completedLocationProjectCount: number;
   portfolio: EngineerPortfolioItem[];
   certificates: EngineerCertificateItem[];
+  completedWork: CompletedWorkItem[];
 }
 
 interface ClientPublicProfile extends BasePublicProfile {
@@ -106,13 +166,40 @@ interface ClientPublicProfile extends BasePublicProfile {
 
 type PublicProfile = EngineerPublicProfile | ClientPublicProfile;
 
-type ProfileTab = "posts" | "portfolio" | "certificates" | "reviews";
+interface PaginatedPostsResponse {
+  posts: FeedPost[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+interface InvitationStatusView {
+  id: string;
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+  respondedAt: string | null;
+  resultingBidId: string | null;
+}
+
+interface InviteProjectView {
+  id: string;
+  title: string;
+  status: string;
+  canInvite: boolean;
+  invitation: InvitationStatusView | null;
+}
+
+interface InviteProjectsResponse {
+  engineerId: string;
+  projects: InviteProjectView[];
+}
 
 interface ErrorResponse {
   message?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const PROFILE_POSTS_PAGE_LIMIT = 10;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const CERTIFICATE_TYPES = [...IMAGE_TYPES, "application/pdf"];
 const IMAGE_LIMIT = 5 * 1024 * 1024;
@@ -165,6 +252,119 @@ const isEngineerCertificateItem = (
   return typeof item.title === "string" && typeof item.uploadedAt === "string";
 };
 
+const isCompletedWorkItem = (value: unknown): value is CompletedWorkItem => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.title === "string" &&
+    typeof item.category === "string" &&
+    (typeof item.location === "string" || item.location === null) &&
+    typeof item.completedAt === "string" &&
+    (typeof item.contractValue === "number" || item.contractValue === null)
+  );
+};
+
+const isEngineerEducationItem = (
+  value: unknown,
+): value is EngineerEducationItem => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    (typeof item.institution === "string" || item.institution === null) &&
+    (typeof item.degree === "string" || item.degree === null) &&
+    (typeof item.fieldOfStudy === "string" || item.fieldOfStudy === null) &&
+    (typeof item.graduationYear === "number" || item.graduationYear === null)
+  );
+};
+
+const isEngineerExperienceItem = (
+  value: unknown,
+): value is EngineerExperienceItem => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    (typeof item.title === "string" || item.title === null) &&
+    (typeof item.organization === "string" || item.organization === null) &&
+    (typeof item.startYear === "number" || item.startYear === null) &&
+    (typeof item.endYear === "number" || item.endYear === null) &&
+    (typeof item.description === "string" || item.description === null)
+  );
+};
+
+const isOwnEngineerEducationItem = (
+  value: unknown,
+): value is OwnEngineerEducationItem => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item._id === "string" &&
+    (typeof item.institution === "string" || item.institution === null) &&
+    (typeof item.degree === "string" || item.degree === null) &&
+    (typeof item.fieldOfStudy === "string" || item.fieldOfStudy === null) &&
+    (typeof item.graduationYear === "number" || item.graduationYear === null)
+  );
+};
+
+const isOwnEngineerExperienceItem = (
+  value: unknown,
+): value is OwnEngineerExperienceItem => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item._id === "string" &&
+    (typeof item.title === "string" || item.title === null) &&
+    (typeof item.organization === "string" || item.organization === null) &&
+    (typeof item.startYear === "number" || item.startYear === null) &&
+    (typeof item.endYear === "number" || item.endYear === null) &&
+    (typeof item.description === "string" || item.description === null)
+  );
+};
+
+const isInvitationStatusView = (
+  value: unknown,
+): value is InvitationStatusView => {
+  if (typeof value !== "object" || value === null) return false;
+  const invitation = value as Record<string, unknown>;
+  return (
+    typeof invitation.id === "string" &&
+    (invitation.status === "pending" ||
+      invitation.status === "accepted" ||
+      invitation.status === "declined") &&
+    typeof invitation.createdAt === "string" &&
+    (typeof invitation.respondedAt === "string" ||
+      invitation.respondedAt === null) &&
+    (typeof invitation.resultingBidId === "string" ||
+      invitation.resultingBidId === null)
+  );
+};
+
+const isInviteProjectView = (value: unknown): value is InviteProjectView => {
+  if (typeof value !== "object" || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === "string" &&
+    typeof project.title === "string" &&
+    typeof project.status === "string" &&
+    typeof project.canInvite === "boolean" &&
+    (project.invitation === null || isInvitationStatusView(project.invitation))
+  );
+};
+
+const isInviteProjectsResponse = (
+  value: unknown,
+): value is InviteProjectsResponse => {
+  if (typeof value !== "object" || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return (
+    typeof body.engineerId === "string" &&
+    Array.isArray(body.projects) &&
+    body.projects.every(isInviteProjectView)
+  );
+};
+
 const isOwnEngineerCertificate = (
   value: unknown,
 ): value is OwnEngineerCertificate => {
@@ -196,6 +396,15 @@ const isOwnEngineerData = (value: unknown): value is OwnEngineerData => {
   if (typeof value !== "object" || value === null) return false;
   const data = value as Record<string, unknown>;
   return (
+    (typeof data.startingRateMin === "number" ||
+      data.startingRateMin === null) &&
+    (typeof data.startingRateMax === "number" ||
+      data.startingRateMax === null) &&
+    (typeof data.location === "string" || data.location === null) &&
+    Array.isArray(data.education) &&
+    data.education.every(isOwnEngineerEducationItem) &&
+    Array.isArray(data.experience) &&
+    data.experience.every(isOwnEngineerExperienceItem) &&
     Array.isArray(data.certificates) &&
     data.certificates.every(isOwnEngineerCertificate) &&
     Array.isArray(data.portfolio) &&
@@ -277,10 +486,29 @@ const isPublicProfile = (value: unknown): value is PublicProfile => {
 
   if (profile.role === "engineer") {
     return (
+      (typeof profile.startingRateMin === "number" ||
+        profile.startingRateMin === null) &&
+      (typeof profile.startingRateMax === "number" ||
+        profile.startingRateMax === null) &&
+      (typeof profile.location === "string" || profile.location === null) &&
+      Array.isArray(profile.education) &&
+      profile.education.every(isEngineerEducationItem) &&
+      Array.isArray(profile.experience) &&
+      profile.experience.every(isEngineerExperienceItem) &&
+      (typeof profile.typicalRate === "number" ||
+        profile.typicalRate === null) &&
+      (typeof profile.rateMin === "number" || profile.rateMin === null) &&
+      (typeof profile.rateMax === "number" || profile.rateMax === null) &&
+      typeof profile.acceptedBidCount === "number" &&
+      (typeof profile.derivedLocation === "string" ||
+        profile.derivedLocation === null) &&
+      typeof profile.completedLocationProjectCount === "number" &&
       Array.isArray(profile.portfolio) &&
       profile.portfolio.every(isEngineerPortfolioItem) &&
       Array.isArray(profile.certificates) &&
-      profile.certificates.every(isEngineerCertificateItem)
+      profile.certificates.every(isEngineerCertificateItem) &&
+      Array.isArray(profile.completedWork) &&
+      profile.completedWork.every(isCompletedWorkItem)
     );
   }
 
@@ -330,6 +558,20 @@ const isFeedPost = (value: unknown): value is FeedPost => {
     (post.originalPost === null || isFeedOriginalPost(post.originalPost)) &&
     typeof post.createdAt === "string" &&
     typeof post.updatedAt === "string"
+  );
+};
+
+const isPaginatedPostsResponse = (
+  value: unknown,
+): value is PaginatedPostsResponse => {
+  if (typeof value !== "object" || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return (
+    Array.isArray(body.posts) &&
+    body.posts.every(isFeedPost) &&
+    typeof body.page === "number" &&
+    typeof body.limit === "number" &&
+    typeof body.total === "number"
   );
 };
 
@@ -494,10 +736,20 @@ export function PublicProfilePage(): ReactElement {
   const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<string>("");
   const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
+  const [inviteProjects, setInviteProjects] = useState<InviteProjectView[]>([]);
+  const [isInviteProjectsLoading, setIsInviteProjectsLoading] =
+    useState<boolean>(false);
+  const [inviteError, setInviteError] = useState<string>("");
+  const [inviteSuccess, setInviteSuccess] = useState<string>("");
+  const [inviteActionProjectId, setInviteActionProjectId] = useState<
+    string | null
+  >(null);
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [postsPage, setPostsPage] = useState<number>(1);
+  const [postsTotal, setPostsTotal] = useState<number>(0);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState<boolean>(false);
   const [postsError, setPostsError] = useState<string>("");
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>("posts");
   const [isEntranceVisible, setIsEntranceVisible] = useState<boolean>(false);
   const hasPlayedEntrance = useRef<boolean>(false);
 
@@ -521,13 +773,11 @@ export function PublicProfilePage(): ReactElement {
 
   const [ownEngineerData, setOwnEngineerData] =
     useState<OwnEngineerData | null>(null);
-  const [isLoadingOwnEngineerData, setIsLoadingOwnEngineerData] =
-    useState<boolean>(false);
-  const [ownEngineerLoadError, setOwnEngineerLoadError] =
-    useState<string>("");
 
   const certificateFileInputRef = useRef<HTMLInputElement | null>(null);
   const [certificateTitle, setCertificateTitle] = useState<string>("");
+  const [isAddingCertificate, setIsAddingCertificate] =
+    useState<boolean>(false);
   const [isUploadingCertificate, setIsUploadingCertificate] =
     useState<boolean>(false);
   const [certificateError, setCertificateError] = useState<string>("");
@@ -535,6 +785,7 @@ export function PublicProfilePage(): ReactElement {
   const portfolioFileInputRef = useRef<HTMLInputElement | null>(null);
   const [portfolioTitle, setPortfolioTitle] = useState<string>("");
   const [portfolioDescription, setPortfolioDescription] = useState<string>("");
+  const [isAddingPortfolio, setIsAddingPortfolio] = useState<boolean>(false);
   const [isUploadingPortfolio, setIsUploadingPortfolio] =
     useState<boolean>(false);
   const [portfolioError, setPortfolioError] = useState<string>("");
@@ -550,13 +801,41 @@ export function PublicProfilePage(): ReactElement {
 
   const [likeLoadingIds, setLikeLoadingIds] = useState<string[]>([]);
   const [likedPulseId, setLikedPulseId] = useState<string | null>(null);
-  const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(
-    null,
-  );
+  const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
-  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(
-    null,
-  );
+  const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
+
+  const [isEditingEngineerDetails, setIsEditingEngineerDetails] =
+    useState<boolean>(false);
+  const [startingRateMinDraft, setStartingRateMinDraft] = useState<string>("");
+  const [startingRateMaxDraft, setStartingRateMaxDraft] = useState<string>("");
+  const [engineerLocationDraft, setEngineerLocationDraft] =
+    useState<string>("");
+  const [engineerDetailsError, setEngineerDetailsError] = useState<string>("");
+  const [isSavingEngineerDetails, setIsSavingEngineerDetails] =
+    useState<boolean>(false);
+
+  const [isAddingEducation, setIsAddingEducation] = useState<boolean>(false);
+  const [educationInstitutionDraft, setEducationInstitutionDraft] =
+    useState<string>("");
+  const [educationDegreeDraft, setEducationDegreeDraft] = useState<string>("");
+  const [educationFieldDraft, setEducationFieldDraft] = useState<string>("");
+  const [educationYearDraft, setEducationYearDraft] = useState<string>("");
+  const [educationError, setEducationError] = useState<string>("");
+  const [isSavingEducation, setIsSavingEducation] = useState<boolean>(false);
+
+  const [isAddingExperience, setIsAddingExperience] = useState<boolean>(false);
+  const [experienceTitleDraft, setExperienceTitleDraft] = useState<string>("");
+  const [experienceOrganizationDraft, setExperienceOrganizationDraft] =
+    useState<string>("");
+  const [experienceStartYearDraft, setExperienceStartYearDraft] =
+    useState<string>("");
+  const [experienceEndYearDraft, setExperienceEndYearDraft] =
+    useState<string>("");
+  const [experienceDescriptionDraft, setExperienceDescriptionDraft] =
+    useState<string>("");
+  const [experienceError, setExperienceError] = useState<string>("");
+  const [isSavingExperience, setIsSavingExperience] = useState<boolean>(false);
 
   useEffect(() => {
     const loadProfile = async (): Promise<void> => {
@@ -598,8 +877,33 @@ export function PublicProfilePage(): ReactElement {
   useEffect(() => {
     hasPlayedEntrance.current = false;
     setIsEntranceVisible(false);
-    setActiveTab("posts");
+    setPostsPage(1);
+    setPosts([]);
+    setPostsTotal(0);
+    setPostsError("");
   }, [userId]);
+
+  useEffect(() => {
+    if (!profile || profile.role !== "engineer") {
+      setIsEditingEngineerDetails(false);
+      setStartingRateMinDraft("");
+      setStartingRateMaxDraft("");
+      setEngineerLocationDraft("");
+      return;
+    }
+
+    setStartingRateMinDraft(
+      typeof profile.startingRateMin === "number"
+        ? String(profile.startingRateMin)
+        : "",
+    );
+    setStartingRateMaxDraft(
+      typeof profile.startingRateMax === "number"
+        ? String(profile.startingRateMax)
+        : "",
+    );
+    setEngineerLocationDraft(profile.location ?? "");
+  }, [profile]);
 
   useEffect(() => {
     if (!profile || hasPlayedEntrance.current) return;
@@ -637,29 +941,99 @@ export function PublicProfilePage(): ReactElement {
 
   useEffect(() => {
     if (!profile) return;
+
+    let isActive = true;
+
     const loadPosts = async (): Promise<void> => {
+      if (postsPage > 1) {
+        setIsLoadingMorePosts(true);
+      }
+      if (postsPage === 1) {
+        setPostsError("");
+      }
+
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/users/${profile.userId}/posts`,
+          `${API_BASE_URL}/api/users/${profile.userId}/posts?page=${postsPage}&limit=${PROFILE_POSTS_PAGE_LIMIT}`,
           { credentials: "include" },
         );
         const body: unknown = await response.json();
-        const payload = body as { posts?: unknown };
-        if (
-          !response.ok ||
-          !Array.isArray(payload.posts) ||
-          !payload.posts.every(isFeedPost)
-        ) {
+        if (!response.ok || !isPaginatedPostsResponse(body)) {
+          if (!isActive) return;
           setPostsError("Unable to load posts.");
           return;
         }
-        setPosts(payload.posts);
+
+        if (!isActive) return;
+
+        setPostsTotal(body.total);
+        setPosts((current) => {
+          if (postsPage === 1) {
+            return body.posts;
+          }
+
+          const existing = new Set(current.map((post) => post.id));
+          const additions = body.posts.filter((post) => !existing.has(post.id));
+          return [...current, ...additions];
+        });
       } catch {
+        if (!isActive) return;
         setPostsError("Unable to load posts.");
+      } finally {
+        if (isActive) {
+          setIsLoadingMorePosts(false);
+        }
       }
     };
+
     void loadPosts();
-  }, [profile]);
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id, currentUser?.role, postsPage, profile]);
+
+  useEffect(() => {
+    if (
+      !profile ||
+      profile.role !== "engineer" ||
+      currentUser?.role !== "client" ||
+      currentUser.id === profile.userId
+    ) {
+      setInviteProjects([]);
+      setInviteError("");
+      setInviteSuccess("");
+      return;
+    }
+
+    const loadInviteProjects = async (): Promise<void> => {
+      setIsInviteProjectsLoading(true);
+      setInviteError("");
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/bid-invitations/client/engineers/${profile.userId}/projects`,
+          { credentials: "include" },
+        );
+        const body: unknown = await response.json();
+        if (!response.ok || !isInviteProjectsResponse(body)) {
+          setInviteError(
+            getErrorMessageWithFallback(
+              body,
+              "Unable to load your project invitations.",
+            ),
+          );
+          return;
+        }
+        setInviteProjects(body.projects);
+      } catch {
+        setInviteError("Unable to connect to CivilHub. Please try again.");
+      } finally {
+        setIsInviteProjectsLoading(false);
+      }
+    };
+
+    void loadInviteProjects();
+  }, [currentUser?.id, currentUser?.role, profile, reloadKey]);
 
   useEffect(() => {
     if (!profile || !currentUser || currentUser.id !== profile.userId) {
@@ -669,8 +1043,6 @@ export function PublicProfilePage(): ReactElement {
     }
 
     if (profile.role === "engineer") {
-      setIsLoadingOwnEngineerData(true);
-      setOwnEngineerLoadError("");
       const loadOwnEngineerData = async (): Promise<void> => {
         try {
           const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
@@ -678,17 +1050,11 @@ export function PublicProfilePage(): ReactElement {
           });
           const body: unknown = await response.json();
           if (!response.ok || !isOwnEngineerData(body)) {
-            setOwnEngineerLoadError(
-              getErrorMessage(body) ||
-                "Unable to load your editable portfolio and certificates.",
-            );
             return;
           }
           setOwnEngineerData(body);
         } catch {
-          setOwnEngineerLoadError("Unable to connect to CivilHub.");
-        } finally {
-          setIsLoadingOwnEngineerData(false);
+          // Owner-specific edits fall back to public-profile state.
         }
       };
       void loadOwnEngineerData();
@@ -776,6 +1142,42 @@ export function PublicProfilePage(): ReactElement {
     }
   };
 
+  const sendBidInvitation = async (projectId: string): Promise<void> => {
+    if (!profile || profile.role !== "engineer") {
+      return;
+    }
+
+    setInviteActionProjectId(projectId);
+    setInviteError("");
+    setInviteSuccess("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/bid-invitations`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          engineerId: profile.userId,
+        }),
+      });
+      const body: unknown = await response.json();
+
+      if (!response.ok) {
+        setInviteError(
+          getErrorMessageWithFallback(body, "Unable to send invitation."),
+        );
+        return;
+      }
+
+      setInviteSuccess("Invitation sent. Waiting for engineer response.");
+      refreshProfile();
+    } catch {
+      setInviteError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setInviteActionProjectId(null);
+    }
+  };
+
   const submitReply = async (reviewId: string): Promise<void> => {
     if (!replyText.trim()) return;
     setIsSubmittingReply(true);
@@ -856,8 +1258,7 @@ export function PublicProfilePage(): ReactElement {
         );
         return;
       }
-      const photoUrl = (body as { profilePhotoUrl?: unknown })
-        .profilePhotoUrl;
+      const photoUrl = (body as { profilePhotoUrl?: unknown }).profilePhotoUrl;
       if (typeof photoUrl === "string") {
         setProfile((current) =>
           current ? { ...current, profilePhotoUrl: photoUrl } : current,
@@ -910,6 +1311,304 @@ export function PublicProfilePage(): ReactElement {
       setBioSaveError("Unable to connect to CivilHub. Please try again.");
     } finally {
       setIsSavingBio(false);
+    }
+  };
+
+  const toPublicEducation = (
+    entries: OwnEngineerEducationItem[],
+  ): EngineerEducationItem[] =>
+    entries.map((entry) => ({
+      id: entry._id,
+      institution: entry.institution,
+      degree: entry.degree,
+      fieldOfStudy: entry.fieldOfStudy,
+      graduationYear: entry.graduationYear,
+    }));
+
+  const toPublicExperience = (
+    entries: OwnEngineerExperienceItem[],
+  ): EngineerExperienceItem[] =>
+    entries.map((entry) => ({
+      id: entry._id,
+      title: entry.title,
+      organization: entry.organization,
+      startYear: entry.startYear,
+      endYear: entry.endYear,
+      description: entry.description,
+    }));
+
+  const updateEngineerProfileDetails = async (payload: {
+    startingRateMin?: number | null;
+    startingRateMax?: number | null;
+    location?: string | null;
+    education?: Array<{
+      institution?: string;
+      degree?: string;
+      fieldOfStudy?: string;
+      graduationYear?: number | null;
+    }>;
+    experience?: Array<{
+      title?: string;
+      organization?: string;
+      startYear?: number | null;
+      endYear?: number | null;
+      description?: string;
+    }>;
+  }): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const body: unknown = await response.json();
+      if (!response.ok || !isOwnEngineerData(body)) {
+        setEngineerDetailsError(
+          getErrorMessageWithFallback(body, "Unable to save engineer details."),
+        );
+        return false;
+      }
+
+      setOwnEngineerData(body);
+      setProfile((current) => {
+        if (!current || current.role !== "engineer") {
+          return current;
+        }
+
+        return {
+          ...current,
+          startingRateMin: body.startingRateMin,
+          startingRateMax: body.startingRateMax,
+          location: body.location,
+          education: toPublicEducation(body.education),
+          experience: toPublicExperience(body.experience),
+        };
+      });
+
+      return true;
+    } catch {
+      setEngineerDetailsError(
+        "Unable to connect to CivilHub. Please try again.",
+      );
+      return false;
+    }
+  };
+
+  const saveEngineerRateLocation = async (): Promise<void> => {
+    if (!profile || profile.role !== "engineer") return;
+
+    setEngineerDetailsError("");
+    setIsSavingEngineerDetails(true);
+    try {
+      const minRate = startingRateMinDraft.trim()
+        ? Number.parseFloat(startingRateMinDraft)
+        : null;
+      const maxRate = startingRateMaxDraft.trim()
+        ? Number.parseFloat(startingRateMaxDraft)
+        : null;
+      const locationValue = engineerLocationDraft.trim() || null;
+
+      if (minRate !== null && (!Number.isFinite(minRate) || minRate < 0)) {
+        setEngineerDetailsError(
+          "Starting minimum rate must be a positive number.",
+        );
+        return;
+      }
+      if (maxRate !== null && (!Number.isFinite(maxRate) || maxRate < 0)) {
+        setEngineerDetailsError(
+          "Starting maximum rate must be a positive number.",
+        );
+        return;
+      }
+      if (minRate !== null && maxRate !== null && minRate > maxRate) {
+        setEngineerDetailsError(
+          "Starting minimum rate cannot be greater than starting maximum rate.",
+        );
+        return;
+      }
+
+      const didSave = await updateEngineerProfileDetails({
+        startingRateMin: minRate,
+        startingRateMax: maxRate,
+        location: locationValue,
+      });
+
+      if (didSave) {
+        setIsEditingEngineerDetails(false);
+      }
+    } finally {
+      setIsSavingEngineerDetails(false);
+    }
+  };
+
+  const addEducationEntry = async (): Promise<void> => {
+    if (!profile || profile.role !== "engineer") return;
+
+    setEducationError("");
+    const institution = educationInstitutionDraft.trim();
+    const degree = educationDegreeDraft.trim();
+    const fieldOfStudy = educationFieldDraft.trim();
+    const graduationYearValue = educationYearDraft.trim()
+      ? Number.parseInt(educationYearDraft.trim(), 10)
+      : null;
+
+    if (
+      !institution &&
+      !degree &&
+      !fieldOfStudy &&
+      graduationYearValue === null
+    ) {
+      setEducationError("Add at least one field before saving education.");
+      return;
+    }
+
+    if (
+      graduationYearValue !== null &&
+      (!Number.isInteger(graduationYearValue) ||
+        graduationYearValue < 1900 ||
+        graduationYearValue > 2100)
+    ) {
+      setEducationError("Graduation year must be between 1900 and 2100.");
+      return;
+    }
+
+    setIsSavingEducation(true);
+    const didSave = await updateEngineerProfileDetails({
+      education: [
+        ...profile.education.map((entry) => ({
+          institution: entry.institution ?? undefined,
+          degree: entry.degree ?? undefined,
+          fieldOfStudy: entry.fieldOfStudy ?? undefined,
+          graduationYear: entry.graduationYear ?? null,
+        })),
+        {
+          institution: institution || undefined,
+          degree: degree || undefined,
+          fieldOfStudy: fieldOfStudy || undefined,
+          graduationYear: graduationYearValue,
+        },
+      ],
+    });
+    setIsSavingEducation(false);
+
+    if (didSave) {
+      setIsAddingEducation(false);
+      setEducationInstitutionDraft("");
+      setEducationDegreeDraft("");
+      setEducationFieldDraft("");
+      setEducationYearDraft("");
+    }
+  };
+
+  const removeEducationEntry = async (entryId: string): Promise<void> => {
+    if (!profile || profile.role !== "engineer") return;
+    setEducationError("");
+    setIsSavingEducation(true);
+    const didSave = await updateEngineerProfileDetails({
+      education: profile.education
+        .filter((entry) => entry.id !== entryId)
+        .map((entry) => ({
+          institution: entry.institution ?? undefined,
+          degree: entry.degree ?? undefined,
+          fieldOfStudy: entry.fieldOfStudy ?? undefined,
+          graduationYear: entry.graduationYear ?? null,
+        })),
+    });
+    setIsSavingEducation(false);
+    if (!didSave) {
+      setEducationError("Unable to remove education entry.");
+    }
+  };
+
+  const addExperienceEntry = async (): Promise<void> => {
+    if (!profile || profile.role !== "engineer") return;
+
+    setExperienceError("");
+    const title = experienceTitleDraft.trim();
+    const organization = experienceOrganizationDraft.trim();
+    const description = experienceDescriptionDraft.trim();
+    const startYear = experienceStartYearDraft.trim()
+      ? Number.parseInt(experienceStartYearDraft.trim(), 10)
+      : null;
+    const endYear = experienceEndYearDraft.trim()
+      ? Number.parseInt(experienceEndYearDraft.trim(), 10)
+      : null;
+
+    if (
+      !title &&
+      !organization &&
+      !description &&
+      startYear === null &&
+      endYear === null
+    ) {
+      setExperienceError("Add at least one field before saving experience.");
+      return;
+    }
+
+    const isYearValid = (year: number | null): boolean =>
+      year === null || (Number.isInteger(year) && year >= 1900 && year <= 2100);
+
+    if (!isYearValid(startYear) || !isYearValid(endYear)) {
+      setExperienceError("Years must be between 1900 and 2100.");
+      return;
+    }
+
+    if (startYear !== null && endYear !== null && endYear < startYear) {
+      setExperienceError("End year cannot be earlier than start year.");
+      return;
+    }
+
+    setIsSavingExperience(true);
+    const didSave = await updateEngineerProfileDetails({
+      experience: [
+        ...profile.experience.map((entry) => ({
+          title: entry.title ?? undefined,
+          organization: entry.organization ?? undefined,
+          startYear: entry.startYear ?? null,
+          endYear: entry.endYear ?? null,
+          description: entry.description ?? undefined,
+        })),
+        {
+          title: title || undefined,
+          organization: organization || undefined,
+          startYear,
+          endYear,
+          description: description || undefined,
+        },
+      ],
+    });
+    setIsSavingExperience(false);
+
+    if (didSave) {
+      setIsAddingExperience(false);
+      setExperienceTitleDraft("");
+      setExperienceOrganizationDraft("");
+      setExperienceStartYearDraft("");
+      setExperienceEndYearDraft("");
+      setExperienceDescriptionDraft("");
+    }
+  };
+
+  const removeExperienceEntry = async (entryId: string): Promise<void> => {
+    if (!profile || profile.role !== "engineer") return;
+    setExperienceError("");
+    setIsSavingExperience(true);
+    const didSave = await updateEngineerProfileDetails({
+      experience: profile.experience
+        .filter((entry) => entry.id !== entryId)
+        .map((entry) => ({
+          title: entry.title ?? undefined,
+          organization: entry.organization ?? undefined,
+          startYear: entry.startYear ?? null,
+          endYear: entry.endYear ?? null,
+          description: entry.description ?? undefined,
+        })),
+    });
+    setIsSavingExperience(false);
+    if (!didSave) {
+      setExperienceError("Unable to remove experience entry.");
     }
   };
 
@@ -993,10 +1692,16 @@ export function PublicProfilePage(): ReactElement {
         return;
       }
       setOwnEngineerData((current) => ({
+        startingRateMin: current?.startingRateMin ?? null,
+        startingRateMax: current?.startingRateMax ?? null,
+        location: current?.location ?? null,
+        education: current?.education ?? [],
+        experience: current?.experience ?? [],
         certificates: body.certificates,
         portfolio: current?.portfolio ?? [],
       }));
       setCertificateTitle("");
+      setIsAddingCertificate(false);
       if (certificateFileInputRef.current) {
         certificateFileInputRef.current.value = "";
       }
@@ -1050,11 +1755,17 @@ export function PublicProfilePage(): ReactElement {
         return;
       }
       setOwnEngineerData((current) => ({
+        startingRateMin: current?.startingRateMin ?? null,
+        startingRateMax: current?.startingRateMax ?? null,
+        location: current?.location ?? null,
+        education: current?.education ?? [],
+        experience: current?.experience ?? [],
         certificates: current?.certificates ?? [],
         portfolio: body.portfolio,
       }));
       setPortfolioTitle("");
       setPortfolioDescription("");
+      setIsAddingPortfolio(false);
       if (portfolioFileInputRef.current) {
         portfolioFileInputRef.current.value = "";
       }
@@ -1087,11 +1798,21 @@ export function PublicProfilePage(): ReactElement {
       }
       if (kind === "certificates" && isCertificatesResponse(body)) {
         setOwnEngineerData((current) => ({
+          startingRateMin: current?.startingRateMin ?? null,
+          startingRateMax: current?.startingRateMax ?? null,
+          location: current?.location ?? null,
+          education: current?.education ?? [],
+          experience: current?.experience ?? [],
           certificates: body.certificates,
           portfolio: current?.portfolio ?? [],
         }));
       } else if (kind === "portfolio" && isPortfolioResponse(body)) {
         setOwnEngineerData((current) => ({
+          startingRateMin: current?.startingRateMin ?? null,
+          startingRateMax: current?.startingRateMax ?? null,
+          location: current?.location ?? null,
+          education: current?.education ?? [],
+          experience: current?.experience ?? [],
           certificates: current?.certificates ?? [],
           portfolio: body.portfolio,
         }));
@@ -1162,6 +1883,7 @@ export function PublicProfilePage(): ReactElement {
       }
 
       setPosts((current) => [body, ...current]);
+      setPostsTotal((current) => current + 1);
       setContent("");
       clearImage();
       setIsComposerOpen(false);
@@ -1255,6 +1977,7 @@ export function PublicProfilePage(): ReactElement {
       }
 
       setPosts((current) => current.filter((post) => post.id !== postId));
+      setPostsTotal((current) => Math.max(0, current - 1));
     } catch {
       setPostsError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -1296,7 +2019,18 @@ export function PublicProfilePage(): ReactElement {
 
   const isSelf = currentUser?.id === profile.userId;
   const isEngineerProfile = profile.role === "engineer";
+  const engineerProfile = profile.role === "engineer" ? profile : null;
+  const isClientViewingEngineerProfile =
+    currentUser?.role === "client" && isEngineerProfile && !isSelf;
   const composerFirstName = profile.name.trim().split(/\s+/)[0] || profile.name;
+
+  const reviewBreakdown = [5, 4, 3, 2, 1].map((stars) => {
+    const count =
+      reviews?.reviews.filter((review) => review.rating === stars).length ?? 0;
+    const total = reviews?.totalReviews ?? 0;
+    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+    return { stars, count, percent };
+  });
 
   const entrance = (
     order: number,
@@ -1309,14 +2043,147 @@ export function PublicProfilePage(): ReactElement {
     style: { transitionDelay: `${order * 80}ms` },
   });
 
-  const tabs: Array<{ key: ProfileTab; label: string }> = isEngineerProfile
-    ? [
-        { key: "posts", label: "Posts" },
-        { key: "portfolio", label: "Portfolio" },
-        { key: "certificates", label: "Certificates" },
-        { key: "reviews", label: "Reviews" },
-      ]
-    : [{ key: "posts", label: "Posts" }];
+  const hasMorePosts = posts.length < postsTotal;
+
+  const loadMorePosts = (): void => {
+    if (isLoadingMorePosts || !hasMorePosts) {
+      return;
+    }
+
+    setPostsPage((current) => current + 1);
+  };
+
+  const hasSelfDeclaredRateOrLocation =
+    engineerProfile !== null &&
+    (typeof engineerProfile.startingRateMin === "number" ||
+      typeof engineerProfile.startingRateMax === "number" ||
+      Boolean(engineerProfile.location));
+  const hasDerivedRateOrLocation =
+    engineerProfile !== null &&
+    (typeof engineerProfile.typicalRate === "number" ||
+      Boolean(engineerProfile.derivedLocation));
+
+  const hasAboutSection =
+    isEngineerProfile && (Boolean(profile.bio.trim()) || isSelf);
+  const hasRateLocationSection =
+    isEngineerProfile &&
+    (hasSelfDeclaredRateOrLocation || hasDerivedRateOrLocation || isSelf);
+  const hasExperienceSection =
+    isEngineerProfile &&
+    ((engineerProfile?.experience.length ?? 0) > 0 || isSelf);
+  const hasEducationSection =
+    isEngineerProfile &&
+    ((engineerProfile?.education.length ?? 0) > 0 || isSelf);
+
+  const renderPostsSection = (showComposer: boolean): ReactElement => (
+    <article className="space-y-4 rounded-2xl border border-white/10 bg-surface p-6">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-2xl font-bold text-white">Posts</h2>
+        <p className="text-xs text-white/45">
+          {postsTotal} post{postsTotal === 1 ? "" : "s"}
+        </p>
+      </div>
+
+      {showComposer ? (
+        <>
+          <div className="w-full rounded-2xl border border-white/10 bg-void/40 p-4 transition-colors duration-200 hover:border-primary/30">
+            <div className="flex items-center gap-3">
+              <Avatar
+                name={profile.name}
+                photoUrl={profile.profilePhotoUrl}
+                size="sm"
+              />
+              <button
+                type="button"
+                onClick={() => setIsComposerOpen(true)}
+                className="w-full rounded-full border border-white/20 bg-void/60 px-4 py-2.5 text-left text-sm font-semibold text-white/50 transition-colors duration-200 hover:border-primary hover:text-white/70"
+              >
+                What's on your mind, {composerFirstName}?
+              </button>
+            </div>
+          </div>
+          <PostComposerModal
+            isOpen={isComposerOpen}
+            onClose={() => setIsComposerOpen(false)}
+            authorName={profile.name}
+            authorPhotoUrl={profile.profilePhotoUrl}
+            authorRole={profile.role}
+            content={content}
+            onContentChange={(value) => {
+              setContent(value);
+              setComposerError("");
+            }}
+            maxContentLength={MAX_CONTENT_LENGTH}
+            remainingChars={MAX_CONTENT_LENGTH - content.length}
+            showRemainingCount={MAX_CONTENT_LENGTH - content.length <= 100}
+            selectedImagePreview={selectedImagePreview}
+            onImageChange={handleImageChange}
+            onClearImage={clearImage}
+            composerError={composerError}
+            isPosting={isPosting}
+            onSubmit={(event) => void handleCreatePost(event)}
+          />
+        </>
+      ) : null}
+
+      {postsError ? (
+        <p className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200">
+          {postsError}
+        </p>
+      ) : posts.length === 0 ? (
+        <p className="rounded-xl border border-white/10 bg-void/40 p-4 text-sm text-white/55">
+          No posts yet.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {posts.map((post) => (
+            <FeedPostCard
+              key={post.id}
+              post={post}
+              currentUser={
+                currentUser
+                  ? {
+                      userId: currentUser.id,
+                      name: currentUser.name,
+                      role: currentUser.role,
+                      profilePhotoUrl: currentUser.profilePhotoUrl,
+                    }
+                  : null
+              }
+              isOwner={currentUser?.id === post.author.userId}
+              isLiked={post.likedByMe}
+              isLikeLoading={likeLoadingIds.includes(post.id)}
+              isPulsing={likedPulseId === post.id}
+              onToggleLike={() => void toggleLike(post.id)}
+              isMenuOpen={activeMenuPostId === post.id}
+              onToggleMenu={() =>
+                setActiveMenuPostId((current) =>
+                  current === post.id ? null : post.id,
+                )
+              }
+              onDeletePost={() => void removePost(post.id)}
+              isDeleting={deleteLoadingId === post.id}
+              onOpenImage={setLightboxImageUrl}
+              formatRelativeTime={formatRelativeTime}
+            />
+          ))}
+
+          {hasMorePosts ? (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={loadMorePosts}
+                disabled={isLoadingMorePosts}
+                className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-primary hover:text-white disabled:cursor-wait disabled:opacity-60"
+              >
+                {isLoadingMorePosts ? "Loading more..." : "Load more posts"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </article>
+  );
 
   const portfolioCount = isSelf
     ? (ownEngineerData?.portfolio.length ?? 0)
@@ -1329,6 +2196,21 @@ export function PublicProfilePage(): ReactElement {
       ? profile.certificates.length
       : 0;
 
+  const engineerPortfolioItems: Array<
+    OwnEngineerPortfolioItem | EngineerPortfolioItem
+  > = engineerProfile
+    ? isSelf
+      ? (ownEngineerData?.portfolio ?? [])
+      : engineerProfile.portfolio
+    : [];
+  const engineerCertificateItems: Array<
+    OwnEngineerCertificate | EngineerCertificateItem
+  > = engineerProfile
+    ? isSelf
+      ? (ownEngineerData?.certificates ?? [])
+      : engineerProfile.certificates
+    : [];
+
   return (
     <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
@@ -1338,7 +2220,7 @@ export function PublicProfilePage(): ReactElement {
               className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)] ${entrance(0).className}`}
               style={entrance(0).style}
             >
-              <div className="h-16 w-full bg-gradient-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
+              <div className="h-16 w-full bg-linear-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
               <div className="p-5 pt-0">
                 <div className="-mt-10">
                   <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
@@ -1393,19 +2275,16 @@ export function PublicProfilePage(): ReactElement {
                     <h1 className="font-heading text-2xl font-bold text-white">
                       {profile.name}
                     </h1>
-                    {isEngineerProfile && reviews && reviews.totalReviews > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("reviews")}
-                        className="inline-flex items-center transition-opacity duration-200 hover:opacity-80"
-                        aria-label="View reviews"
-                      >
+                    {isEngineerProfile &&
+                    reviews &&
+                    reviews.totalReviews > 0 ? (
+                      <span className="inline-flex items-center">
                         <RatingBadge
                           rating={reviews.averageRating}
                           reviewCount={reviews.totalReviews}
                           size="sm"
                         />
-                      </button>
+                      </span>
                     ) : null}
                   </div>
                   <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
@@ -1588,57 +2467,165 @@ export function PublicProfilePage(): ReactElement {
                 ) : null}
 
                 {!isSelf ? (
-                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-                    <p className="text-xs font-semibold text-white/50">
-                      {statusLabel(profile.connectionStatus)}
-                    </p>
-                    {profile.connectionStatus === "not_connected" ? (
-                      <button
-                        type="button"
-                        onClick={() => void sendRequest()}
-                        disabled={isActioning}
-                        className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isActioning ? "Sending..." : "Connect"}
-                      </button>
-                    ) : null}
-
-                    {profile.connectionStatus === "pending_received" ? (
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void respondRequest("accept")}
-                          disabled={isActioning}
-                          className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isActioning ? "Updating..." : "Accept"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void respondRequest("decline")}
-                          disabled={isActioning}
-                          className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isActioning ? "Updating..." : "Decline"}
-                        </button>
-                      </div>
-                    ) : null}
-
-                    {profile.connectionStatus === "pending_sent" ? (
-                      <span className="block w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2.5 text-center text-sm font-semibold text-amber-200">
-                        Request sent
-                      </span>
-                    ) : null}
-
-                    {profile.connectionStatus === "connected" ? (
+                  isClientViewingEngineerProfile ? (
+                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                       <Link
                         to={`/messages/${profile.userId}`}
-                        className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
+                        className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
                       >
                         Message
                       </Link>
-                    ) : null}
-                  </div>
+
+                      <div className="rounded-xl border border-white/10 bg-void/40 p-3">
+                        <h3 className="text-sm font-semibold text-white">
+                          Invite to Bid
+                        </h3>
+
+                        {isInviteProjectsLoading ? (
+                          <p className="mt-3 text-xs text-white/55">
+                            Loading your projects...
+                          </p>
+                        ) : inviteProjects.length === 0 ? (
+                          <div className="mt-3">
+                            <p className="text-xs text-white/55">
+                              Post a project to invite this engineer.
+                            </p>
+                            <Link
+                              to="/dashboard/client/post-project"
+                              className="mt-3 inline-flex rounded-full border border-primary px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                            >
+                              Post a project
+                            </Link>
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-2">
+                            {inviteProjects.map((project) => {
+                              const invitation = project.invitation;
+                              const statusLabel = invitation
+                                ? invitation.status === "pending"
+                                  ? "Pending"
+                                  : invitation.status === "accepted"
+                                    ? "Accepted"
+                                    : "Declined"
+                                : null;
+
+                              const statusClass = invitation
+                                ? invitation.status === "pending"
+                                  ? "border-primary/30 bg-primary/10 text-primary"
+                                  : invitation.status === "accepted"
+                                    ? "border-white/20 bg-white/5 text-white"
+                                    : "border-white/20 bg-white/5 text-white/70"
+                                : "";
+
+                              return (
+                                <div
+                                  key={project.id}
+                                  className="rounded-lg border border-white/10 bg-surface p-3"
+                                >
+                                  <p className="text-xs font-semibold text-white">
+                                    {project.title}
+                                  </p>
+                                  <p className="mt-1 text-[11px] capitalize text-white/45">
+                                    {project.status.replaceAll("_", " ")}
+                                  </p>
+
+                                  <div className="mt-2">
+                                    {invitation ? (
+                                      <span
+                                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}
+                                      >
+                                        {statusLabel}
+                                      </span>
+                                    ) : project.canInvite ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void sendBidInvitation(project.id)
+                                        }
+                                        disabled={
+                                          inviteActionProjectId === project.id
+                                        }
+                                        className="rounded-full border border-primary px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:opacity-50"
+                                      >
+                                        {inviteActionProjectId === project.id
+                                          ? "Sending..."
+                                          : "Invite to Bid"}
+                                      </button>
+                                    ) : (
+                                      <span className="text-[11px] text-white/45">
+                                        Not eligible for bidding invitations
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {inviteSuccess ? (
+                        <p className="text-xs text-primary">{inviteSuccess}</p>
+                      ) : null}
+                      {inviteError ? (
+                        <p className="text-xs text-red-300" role="alert">
+                          {inviteError}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+                      <p className="text-xs font-semibold text-white/50">
+                        {statusLabel(profile.connectionStatus)}
+                      </p>
+                      {profile.connectionStatus === "not_connected" ? (
+                        <button
+                          type="button"
+                          onClick={() => void sendRequest()}
+                          disabled={isActioning}
+                          className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isActioning ? "Sending..." : "Connect"}
+                        </button>
+                      ) : null}
+
+                      {profile.connectionStatus === "pending_received" ? (
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void respondRequest("accept")}
+                            disabled={isActioning}
+                            className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isActioning ? "Updating..." : "Accept"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void respondRequest("decline")}
+                            disabled={isActioning}
+                            className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isActioning ? "Updating..." : "Decline"}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {profile.connectionStatus === "pending_sent" ? (
+                        <span className="block w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2.5 text-center text-sm font-semibold text-amber-200">
+                          Request sent
+                        </span>
+                      ) : null}
+
+                      {profile.connectionStatus === "connected" ? (
+                        <Link
+                          to={`/messages/${profile.userId}`}
+                          className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
+                        >
+                          Message
+                        </Link>
+                      ) : null}
+                    </div>
+                  )
                 ) : null}
 
                 {avatarError ? (
@@ -1656,500 +2643,974 @@ export function PublicProfilePage(): ReactElement {
           </aside>
 
           <div className="min-w-0 flex-1 space-y-4">
-            {tabs.length > 1 ? (
-              <nav
-                className={`flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-surface/60 p-1.5 ${entrance(1).className}`}
-                style={entrance(1).style}
-                aria-label="Profile sections"
-              >
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`whitespace-nowrap rounded-xl border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors duration-200 ${
-                      activeTab === tab.key
-                        ? "border-primary bg-primary/10 text-white"
-                        : "border-transparent text-white/50 hover:text-white"
-                    }`}
+            {isEngineerProfile && engineerProfile ? (
+              <>
+                {hasAboutSection ? (
+                  <article
+                    className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(1).className}`}
+                    style={entrance(1).style}
                   >
-                    {tab.label}
-                  </button>
-                ))}
-              </nav>
-            ) : null}
-
-            {activeTab === "posts" ? (
-              <div
-                className={`space-y-4 ${entrance(2).className}`}
-                style={entrance(2).style}
-              >
-                {isSelf && isEngineerProfile ? (
-                  <>
-                    <div className="w-full rounded-2xl border border-white/10 bg-surface p-4 shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-all duration-200 hover:border-primary/30">
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          name={profile.name}
-                          photoUrl={profile.profilePhotoUrl}
-                          size="sm"
-                        />
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        About
+                      </h2>
+                      {isSelf && !isEditingBio ? (
                         <button
                           type="button"
-                          onClick={() => setIsComposerOpen(true)}
-                          className="w-full rounded-full border border-white/20 bg-void/40 px-4 py-2.5 text-left text-sm font-semibold text-white/50 transition-colors duration-200 hover:border-primary hover:text-white/70"
+                          onClick={startEditingBio}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
                         >
-                          What's on your mind, {composerFirstName}?
+                          Edit
                         </button>
-                      </div>
+                      ) : null}
                     </div>
-                    <PostComposerModal
-                      isOpen={isComposerOpen}
-                      onClose={() => setIsComposerOpen(false)}
-                      authorName={profile.name}
-                      authorPhotoUrl={profile.profilePhotoUrl}
-                      authorRole={profile.role}
-                      content={content}
-                      onContentChange={(value) => {
-                        setContent(value);
-                        setComposerError("");
-                      }}
-                      maxContentLength={MAX_CONTENT_LENGTH}
-                      remainingChars={MAX_CONTENT_LENGTH - content.length}
-                      showRemainingCount={
-                        MAX_CONTENT_LENGTH - content.length <= 100
-                      }
-                      selectedImagePreview={selectedImagePreview}
-                      onImageChange={handleImageChange}
-                      onClearImage={clearImage}
-                      composerError={composerError}
-                      isPosting={isPosting}
-                      onSubmit={(event) => void handleCreatePost(event)}
-                    />
-                  </>
-                ) : null}
 
-                {postsError ? (
-                  <p className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200">
-                    {postsError}
-                  </p>
-                ) : posts.length === 0 ? (
-                  <p className="rounded-2xl border border-white/10 bg-surface p-6 text-sm text-white/55">
-                    No posts yet.
-                  </p>
-                ) : (
-                  posts.map((post) => (
-                    <FeedPostCard
-                      key={post.id}
-                      post={post}
-                      currentUser={
-                        currentUser
-                          ? {
-                              userId: currentUser.id,
-                              name: currentUser.name,
-                              role: currentUser.role,
-                              profilePhotoUrl: currentUser.profilePhotoUrl,
-                            }
-                          : null
-                      }
-                      isOwner={currentUser?.id === post.author.userId}
-                      isLiked={post.likedByMe}
-                      isLikeLoading={likeLoadingIds.includes(post.id)}
-                      isPulsing={likedPulseId === post.id}
-                      onToggleLike={() => void toggleLike(post.id)}
-                      isMenuOpen={activeMenuPostId === post.id}
-                      onToggleMenu={() =>
-                        setActiveMenuPostId((current) =>
-                          current === post.id ? null : post.id,
-                        )
-                      }
-                      onDeletePost={() => void removePost(post.id)}
-                      isDeleting={deleteLoadingId === post.id}
-                      onOpenImage={setLightboxImageUrl}
-                      formatRelativeTime={formatRelativeTime}
-                    />
-                  ))
-                )}
-              </div>
-            ) : null}
-
-            {activeTab === "portfolio" && profile.role === "engineer" ? (
-              <article
-                className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
-                style={entrance(2).style}
-              >
-                <h2 className="font-heading text-2xl font-bold text-white">
-                  Portfolio
-                </h2>
-
-                {isSelf ? (
-                  <>
-                    {isLoadingOwnEngineerData && !ownEngineerData ? (
-                      <p className="mt-4 text-sm text-white/50">Loading...</p>
-                    ) : ownEngineerLoadError && !ownEngineerData ? (
-                      <p className="mt-4 text-sm text-red-200">
-                        {ownEngineerLoadError}
-                      </p>
-                    ) : (ownEngineerData?.portfolio.length ?? 0) === 0 ? (
-                      <p className="mt-4 text-sm text-white/55">
-                        No portfolio items uploaded yet.
-                      </p>
-                    ) : (
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        {ownEngineerData?.portfolio.map((item) => (
-                          <div
-                            key={item._id}
-                            className="rounded-xl border border-white/10 bg-void/40 p-4"
-                          >
-                            <img
-                              src={item.imageUrl}
-                              alt={item.title}
-                              className="h-36 w-full rounded-lg object-cover"
-                            />
-                            <div className="mt-3 flex items-start justify-between gap-2">
-                              <h3 className="text-sm font-semibold text-white">
-                                {item.title}
-                              </h3>
-                              <button
-                                type="button"
-                                disabled={deletingItemId === item._id}
-                                onClick={() =>
-                                  void deleteOwnItem("portfolio", item._id)
-                                }
-                                className="shrink-0 text-xs font-semibold text-white/50 transition-colors duration-200 hover:text-red-300"
-                              >
-                                {deletingItemId === item._id
-                                  ? "Removing..."
-                                  : "Delete"}
-                              </button>
-                            </div>
-                            <p className="mt-2 text-xs leading-5 text-white/60">
-                              {item.description}
-                            </p>
-                            <p className="mt-2 text-[11px] text-white/40">
-                              Added {formatDate(item.uploadedAt)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <form
-                      onSubmit={(event) => void uploadPortfolio(event)}
-                      className="mt-6 space-y-3 border-t border-white/10 pt-6"
-                    >
-                      <input
-                        value={portfolioTitle}
-                        onChange={(event) =>
-                          setPortfolioTitle(event.target.value)
-                        }
-                        placeholder="Project title"
-                        className="form-input"
-                      />
-                      <textarea
-                        value={portfolioDescription}
-                        onChange={(event) =>
-                          setPortfolioDescription(event.target.value)
-                        }
-                        placeholder="Describe your contribution"
-                        rows={3}
-                        className="form-input"
-                      />
-                      <input
-                        ref={portfolioFileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isUploadingPortfolio}
-                        className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {isUploadingPortfolio
-                          ? "Uploading..."
-                          : "Add Portfolio Item"}
-                      </button>
-                      {portfolioError ? (
-                        <p className="text-sm text-red-300" role="alert">
-                          {portfolioError}
-                        </p>
-                      ) : null}
-                    </form>
-                  </>
-                ) : profile.portfolio.length === 0 ? (
-                  <p className="mt-4 text-sm text-white/55">
-                    No portfolio items yet.
-                  </p>
-                ) : (
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                    {profile.portfolio.map((item, index) => (
-                      <div
-                        key={`${item.title}-${index}`}
-                        className="rounded-xl border border-white/10 bg-void/40 p-4"
-                      >
-                        <img
-                          src={item.imageUrl}
-                          alt={item.title}
-                          className="h-36 w-full rounded-lg object-cover"
+                    {isEditingBio ? (
+                      <div className="mt-4 space-y-2">
+                        <textarea
+                          value={bioDraft}
+                          onChange={(event) => {
+                            setBioDraft(event.target.value.slice(0, 500));
+                            setBioSaveError("");
+                          }}
+                          maxLength={500}
+                          rows={4}
+                          className="form-input"
+                          placeholder="Add a short introduction"
                         />
-                        <h3 className="mt-3 text-sm font-semibold text-white">
-                          {item.title}
-                        </h3>
-                        <p className="mt-2 text-xs leading-5 text-white/60">
-                          {item.description}
-                        </p>
-                        <p className="mt-2 text-[11px] text-white/40">
-                          Added {formatDate(item.uploadedAt)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </article>
-            ) : null}
-
-            {activeTab === "certificates" && profile.role === "engineer" ? (
-              <article
-                className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
-                style={entrance(2).style}
-              >
-                <h2 className="font-heading text-2xl font-bold text-white">
-                  Certificates
-                </h2>
-
-                {isSelf ? (
-                  <>
-                    {isLoadingOwnEngineerData && !ownEngineerData ? (
-                      <p className="mt-4 text-sm text-white/50">Loading...</p>
-                    ) : ownEngineerLoadError && !ownEngineerData ? (
-                      <p className="mt-4 text-sm text-red-200">
-                        {ownEngineerLoadError}
-                      </p>
-                    ) : (ownEngineerData?.certificates.length ?? 0) === 0 ? (
-                      <p className="mt-4 text-sm text-white/55">
-                        No certificates uploaded yet.
-                      </p>
-                    ) : (
-                      <div className="mt-4 space-y-3">
-                        {ownEngineerData?.certificates.map((certificate) => (
-                          <article
-                            key={certificate._id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void saveBio()}
+                            disabled={isSavingBio}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                           >
-                            <a
-                              href={certificate.fileUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sm font-semibold text-primary transition-colors duration-200 hover:text-glow"
-                            >
-                              {certificate.title}
-                            </a>
-                            <button
-                              type="button"
-                              disabled={deletingItemId === certificate._id}
-                              onClick={() =>
-                                void deleteOwnItem(
-                                  "certificates",
-                                  certificate._id,
-                                )
-                              }
-                              className="shrink-0 text-xs font-semibold text-white/50 transition-colors duration-200 hover:text-red-300"
-                            >
-                              {deletingItemId === certificate._id
-                                ? "Removing..."
-                                : "Delete"}
-                            </button>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                    <form
-                      onSubmit={(event) => void uploadCertificate(event)}
-                      className="mt-6 space-y-3 border-t border-white/10 pt-6"
-                    >
-                      <input
-                        value={certificateTitle}
-                        onChange={(event) =>
-                          setCertificateTitle(event.target.value)
-                        }
-                        placeholder="Certificate title"
-                        className="form-input"
-                      />
-                      <input
-                        ref={certificateFileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,application/pdf"
-                        className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isUploadingCertificate}
-                        className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {isUploadingCertificate
-                          ? "Uploading..."
-                          : "Add Certificate"}
-                      </button>
-                      {certificateError ? (
-                        <p className="text-sm text-red-300" role="alert">
-                          {certificateError}
-                        </p>
-                      ) : null}
-                    </form>
-                  </>
-                ) : profile.certificates.length === 0 ? (
-                  <p className="mt-4 text-sm text-white/55">
-                    No certificates uploaded yet.
-                  </p>
-                ) : (
-                  <ul className="mt-4 space-y-3">
-                    {profile.certificates.map((certificate, index) => (
-                      <li
-                        key={`${certificate.title}-${index}`}
-                        className="rounded-xl border border-white/10 bg-void/40 p-4"
-                      >
-                        <p className="text-sm font-semibold text-white">
-                          {certificate.title}
-                        </p>
-                        <p className="mt-1 text-xs text-white/50">
-                          Uploaded {formatDate(certificate.uploadedAt)}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            ) : null}
-
-            {activeTab === "reviews" && profile.role === "engineer" ? (
-              <article
-                id="engineer-reviews"
-                className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
-                style={entrance(2).style}
-              >
-                <div className="flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                      Client perspectives
-                    </p>
-                    <h2 className="mt-1 font-heading text-2xl font-bold text-white">
-                      Reviews
-                    </h2>
-                  </div>
-                  {reviews && reviews.totalReviews > 0 && (
-                    <span className="text-sm font-semibold text-amber-300">
-                      {reviews.averageRating.toFixed(1)} ★
-                    </span>
-                  )}
-                </div>
-                {reviewsError ? (
-                  <p className="mt-4 text-sm text-red-200">{reviewsError}</p>
-                ) : !reviews ? (
-                  <p className="mt-4 text-sm text-white/50">
-                    Loading reviews...
-                  </p>
-                ) : reviews.reviews.length === 0 ? (
-                  <p className="mt-4 text-sm text-white/55">
-                    No reviews yet. Completed projects will appear here.
-                  </p>
-                ) : (
-                  <div className="mt-5 space-y-4">
-                    {reviews.reviews.map((review) => (
-                      <div
-                        key={review.id}
-                        className="rounded-xl border border-white/10 bg-void/40 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar
-                              name={review.client.name}
-                              photoUrl={review.client.profilePhotoUrl}
-                              size="sm"
-                            />
-                            <div>
-                              <p className="text-sm font-semibold text-white">
-                                {review.client.name}
-                              </p>
-                              <p className="text-xs text-white/40">
-                                {formatDate(review.createdAt)}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-sm tracking-wide text-amber-300">
-                            {Array.from({ length: 5 }, (_, index) =>
-                              index < review.rating ? "★" : "☆",
-                            ).join("")}
+                            {isSavingBio ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditingBio}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                          <span className="text-xs text-white/45">
+                            {bioDraft.length}/500
                           </span>
                         </div>
-                        <p className="mt-4 text-sm leading-6 text-white/75">
-                          {review.reviewText}
-                        </p>
-                        {review.engineerReply ? (
-                          <div className="mt-4 border-l-2 border-primary/50 pl-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                              Engineer reply
-                            </p>
-                            <p className="mt-1 text-sm leading-6 text-white/65">
-                              {review.engineerReply}
-                            </p>
-                            {review.engineerRepliedAt && (
-                              <p className="mt-1 text-xs text-white/35">
-                                {formatDate(review.engineerRepliedAt)}
-                              </p>
-                            )}
-                          </div>
-                        ) : isSelf && currentUser?.role === "engineer" ? (
-                          <div className="mt-4">
-                            {replyingReviewId === review.id ? (
-                              <>
-                                <textarea
-                                  value={replyText}
-                                  onChange={(event) =>
-                                    setReplyText(
-                                      event.target.value.slice(0, 500),
-                                    )
-                                  }
-                                  maxLength={500}
-                                  rows={3}
-                                  placeholder="Write a thoughtful reply..."
-                                  className="w-full rounded-lg border border-white/15 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/35 outline-none focus:border-primary/60"
-                                />
-                                <div className="mt-2 flex justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setReplyingReviewId(null)}
-                                    className="rounded-lg px-3 py-2 text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void submitReply(review.id)}
-                                    disabled={isSubmittingReply}
-                                    className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                                  >
-                                    {isSubmittingReply
-                                      ? "Sending..."
-                                      : "Send reply"}
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setReplyingReviewId(review.id)}
-                                className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                              >
-                                Reply
-                              </button>
-                            )}
-                          </div>
+                        {bioSaveError ? (
+                          <p className="text-xs text-red-300" role="alert">
+                            {bioSaveError}
+                          </p>
                         ) : null}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </article>
-            ) : null}
+                    ) : profile.bio.trim() ? (
+                      <p className="mt-4 text-sm leading-6 text-white/70">
+                        {profile.bio}
+                      </p>
+                    ) : isSelf ? (
+                      <button
+                        type="button"
+                        onClick={startEditingBio}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add about
+                      </button>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {hasRateLocationSection ? (
+                  <article
+                    className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
+                    style={entrance(2).style}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        Rate & Location
+                      </h2>
+                      {isSelf && !isEditingEngineerDetails ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingEngineerDetails(true)}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {isEditingEngineerDetails ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <input
+                          value={startingRateMinDraft}
+                          onChange={(event) =>
+                            setStartingRateMinDraft(event.target.value)
+                          }
+                          placeholder="Starting min rate"
+                          type="number"
+                          min={0}
+                          className="form-input"
+                        />
+                        <input
+                          value={startingRateMaxDraft}
+                          onChange={(event) =>
+                            setStartingRateMaxDraft(event.target.value)
+                          }
+                          placeholder="Starting max rate"
+                          type="number"
+                          min={0}
+                          className="form-input"
+                        />
+                        <input
+                          value={engineerLocationDraft}
+                          onChange={(event) =>
+                            setEngineerLocationDraft(event.target.value)
+                          }
+                          placeholder="Your location"
+                          className="form-input"
+                        />
+                        <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void saveEngineerRateLocation()}
+                            disabled={isSavingEngineerDetails}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            {isSavingEngineerDetails ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingEngineerDetails(false);
+                              setEngineerDetailsError("");
+                              setStartingRateMinDraft(
+                                typeof engineerProfile.startingRateMin ===
+                                  "number"
+                                  ? String(engineerProfile.startingRateMin)
+                                  : "",
+                              );
+                              setStartingRateMaxDraft(
+                                typeof engineerProfile.startingRateMax ===
+                                  "number"
+                                  ? String(engineerProfile.startingRateMax)
+                                  : "",
+                              );
+                              setEngineerLocationDraft(
+                                engineerProfile.location ?? "",
+                              );
+                            }}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {engineerDetailsError ? (
+                          <p
+                            className="sm:col-span-3 text-xs text-red-300"
+                            role="alert"
+                          >
+                            {engineerDetailsError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                          <dt className="text-xs text-white/50">
+                            Starting rate
+                          </dt>
+                          <dd className="mt-1 text-sm font-semibold text-white">
+                            {typeof engineerProfile.startingRateMin ===
+                              "number" ||
+                            typeof engineerProfile.startingRateMax === "number"
+                              ? `${
+                                  typeof engineerProfile.startingRateMin ===
+                                  "number"
+                                    ? `$${engineerProfile.startingRateMin.toLocaleString()}`
+                                    : "-"
+                                } to ${
+                                  typeof engineerProfile.startingRateMax ===
+                                  "number"
+                                    ? `$${engineerProfile.startingRateMax.toLocaleString()}`
+                                    : "-"
+                                }`
+                              : isSelf
+                                ? "Not added yet"
+                                : ""}
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                          <dt className="text-xs text-white/50">
+                            Typical rate (accepted bids)
+                          </dt>
+                          <dd className="mt-1 text-sm font-semibold text-white">
+                            {typeof engineerProfile.typicalRate === "number"
+                              ? `$${engineerProfile.typicalRate.toLocaleString()} (${engineerProfile.acceptedBidCount})`
+                              : "No accepted bid history yet"}
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                          <dt className="text-xs text-white/50">
+                            Self-declared location
+                          </dt>
+                          <dd className="mt-1 text-sm font-semibold text-white">
+                            {engineerProfile.location ||
+                              (isSelf ? "Not added yet" : "")}
+                          </dd>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                          <dt className="text-xs text-white/50">
+                            Derived location (completed work)
+                          </dt>
+                          <dd className="mt-1 text-sm font-semibold text-white">
+                            {engineerProfile.derivedLocation
+                              ? `${engineerProfile.derivedLocation} (${engineerProfile.completedLocationProjectCount})`
+                              : "No completed-work location history yet"}
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
+
+                    {!hasSelfDeclaredRateOrLocation &&
+                    !hasDerivedRateOrLocation &&
+                    isSelf &&
+                    !isEditingEngineerDetails ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingEngineerDetails(true)}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add rate & location
+                      </button>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {hasExperienceSection ? (
+                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        Experience
+                      </h2>
+                      {isSelf && !isAddingExperience ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingExperience(true)}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                        >
+                          + Add
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {engineerProfile.experience.length === 0 &&
+                    isSelf &&
+                    !isAddingExperience ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingExperience(true)}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add experience
+                      </button>
+                    ) : null}
+
+                    {engineerProfile.experience.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {engineerProfile.experience.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="rounded-xl border border-white/10 bg-void/40 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {entry.title || "Untitled role"}
+                                </p>
+                                <p className="text-xs text-white/60">
+                                  {entry.organization || "Organization"}
+                                </p>
+                                <p className="mt-1 text-xs text-white/45">
+                                  {entry.startYear ?? "-"} -{" "}
+                                  {entry.endYear ?? "Present"}
+                                </p>
+                              </div>
+                              {isSelf ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void removeExperienceEntry(entry.id)
+                                  }
+                                  className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                            {entry.description ? (
+                              <p className="mt-3 text-xs leading-5 text-white/65">
+                                {entry.description}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {isSelf && isAddingExperience ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <input
+                          value={experienceTitleDraft}
+                          onChange={(event) =>
+                            setExperienceTitleDraft(event.target.value)
+                          }
+                          placeholder="Title"
+                          className="form-input"
+                        />
+                        <input
+                          value={experienceOrganizationDraft}
+                          onChange={(event) =>
+                            setExperienceOrganizationDraft(event.target.value)
+                          }
+                          placeholder="Organization"
+                          className="form-input"
+                        />
+                        <input
+                          value={experienceStartYearDraft}
+                          onChange={(event) =>
+                            setExperienceStartYearDraft(event.target.value)
+                          }
+                          type="number"
+                          placeholder="Start year"
+                          className="form-input"
+                        />
+                        <input
+                          value={experienceEndYearDraft}
+                          onChange={(event) =>
+                            setExperienceEndYearDraft(event.target.value)
+                          }
+                          type="number"
+                          placeholder="End year (blank for present)"
+                          className="form-input"
+                        />
+                        <textarea
+                          value={experienceDescriptionDraft}
+                          onChange={(event) =>
+                            setExperienceDescriptionDraft(event.target.value)
+                          }
+                          placeholder="Description"
+                          rows={3}
+                          className="form-input sm:col-span-2"
+                        />
+                        <div className="sm:col-span-2 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void addExperienceEntry()}
+                            disabled={isSavingExperience}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            {isSavingExperience
+                              ? "Saving..."
+                              : "Save experience"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingExperience(false);
+                              setExperienceError("");
+                            }}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {experienceError ? (
+                          <p
+                            className="sm:col-span-2 text-xs text-red-300"
+                            role="alert"
+                          >
+                            {experienceError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {hasEducationSection ? (
+                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        Education
+                      </h2>
+                      {isSelf && !isAddingEducation ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingEducation(true)}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                        >
+                          + Add
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {engineerProfile.education.length === 0 &&
+                    isSelf &&
+                    !isAddingEducation ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingEducation(true)}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add education
+                      </button>
+                    ) : null}
+
+                    {engineerProfile.education.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {engineerProfile.education.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="rounded-xl border border-white/10 bg-void/40 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {entry.institution || "Institution"}
+                                </p>
+                                <p className="text-xs text-white/60">
+                                  {entry.degree || "Degree"}
+                                  {entry.fieldOfStudy
+                                    ? `, ${entry.fieldOfStudy}`
+                                    : ""}
+                                </p>
+                                <p className="mt-1 text-xs text-white/45">
+                                  {entry.graduationYear ?? "Year not set"}
+                                </p>
+                              </div>
+                              {isSelf ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void removeEducationEntry(entry.id)
+                                  }
+                                  className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {isSelf && isAddingEducation ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <input
+                          value={educationInstitutionDraft}
+                          onChange={(event) =>
+                            setEducationInstitutionDraft(event.target.value)
+                          }
+                          placeholder="Institution"
+                          className="form-input"
+                        />
+                        <input
+                          value={educationDegreeDraft}
+                          onChange={(event) =>
+                            setEducationDegreeDraft(event.target.value)
+                          }
+                          placeholder="Degree"
+                          className="form-input"
+                        />
+                        <input
+                          value={educationFieldDraft}
+                          onChange={(event) =>
+                            setEducationFieldDraft(event.target.value)
+                          }
+                          placeholder="Field of study"
+                          className="form-input"
+                        />
+                        <input
+                          value={educationYearDraft}
+                          onChange={(event) =>
+                            setEducationYearDraft(event.target.value)
+                          }
+                          type="number"
+                          placeholder="Graduation year"
+                          className="form-input"
+                        />
+                        <div className="sm:col-span-2 flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void addEducationEntry()}
+                            disabled={isSavingEducation}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            {isSavingEducation ? "Saving..." : "Save education"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingEducation(false);
+                              setEducationError("");
+                            }}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {educationError ? (
+                          <p
+                            className="sm:col-span-2 text-xs text-red-300"
+                            role="alert"
+                          >
+                            {educationError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {engineerPortfolioItems.length > 0 || isSelf ? (
+                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        Portfolio
+                      </h2>
+                      {isSelf && !isAddingPortfolio ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingPortfolio(true)}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                        >
+                          + Add
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {engineerPortfolioItems.length === 0 &&
+                    isSelf &&
+                    !isAddingPortfolio ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingPortfolio(true)}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add portfolio
+                      </button>
+                    ) : null}
+
+                    {engineerPortfolioItems.length > 0 ? (
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        {engineerPortfolioItems.map((item, index) => {
+                          const key =
+                            "_id" in item ? item._id : `${item.title}-${index}`;
+                          return (
+                            <div
+                              key={key}
+                              className="rounded-xl border border-white/10 bg-void/40 p-4"
+                            >
+                              <img
+                                src={item.imageUrl}
+                                alt={item.title}
+                                className="h-36 w-full rounded-lg object-cover"
+                              />
+                              <div className="mt-3 flex items-start justify-between gap-2">
+                                <h3 className="text-sm font-semibold text-white">
+                                  {item.title}
+                                </h3>
+                                {isSelf && "_id" in item ? (
+                                  <button
+                                    type="button"
+                                    disabled={deletingItemId === item._id}
+                                    onClick={() =>
+                                      void deleteOwnItem("portfolio", item._id)
+                                    }
+                                    className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                  >
+                                    {deletingItemId === item._id
+                                      ? "Removing..."
+                                      : "Delete"}
+                                  </button>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-white/60">
+                                {item.description}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {isSelf && isAddingPortfolio ? (
+                      <form
+                        onSubmit={(event) => void uploadPortfolio(event)}
+                        className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                      >
+                        <input
+                          value={portfolioTitle}
+                          onChange={(event) =>
+                            setPortfolioTitle(event.target.value)
+                          }
+                          placeholder="Project title"
+                          className="form-input"
+                        />
+                        <textarea
+                          value={portfolioDescription}
+                          onChange={(event) =>
+                            setPortfolioDescription(event.target.value)
+                          }
+                          placeholder="Describe your contribution"
+                          rows={3}
+                          className="form-input"
+                        />
+                        <input
+                          ref={portfolioFileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                        />
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="submit"
+                            disabled={isUploadingPortfolio}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            {isUploadingPortfolio
+                              ? "Uploading..."
+                              : "Save portfolio"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingPortfolio(false)}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {portfolioError ? (
+                          <p className="text-xs text-red-300" role="alert">
+                            {portfolioError}
+                          </p>
+                        ) : null}
+                      </form>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {engineerCertificateItems.length > 0 || isSelf ? (
+                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-heading text-2xl font-bold text-white">
+                        Certificates
+                      </h2>
+                      {isSelf && !isAddingCertificate ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingCertificate(true)}
+                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                        >
+                          + Add
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {engineerCertificateItems.length === 0 &&
+                    isSelf &&
+                    !isAddingCertificate ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingCertificate(true)}
+                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                      >
+                        + Add certificate
+                      </button>
+                    ) : null}
+
+                    {engineerCertificateItems.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        {engineerCertificateItems.map((certificate, index) => {
+                          const key =
+                            "_id" in certificate
+                              ? certificate._id
+                              : `${certificate.title}-${index}`;
+                          const href =
+                            "fileUrl" in certificate
+                              ? certificate.fileUrl
+                              : null;
+                          return (
+                            <article
+                              key={key}
+                              className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                            >
+                              <div>
+                                {href ? (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm font-semibold text-primary transition-colors hover:text-glow"
+                                  >
+                                    {certificate.title}
+                                  </a>
+                                ) : (
+                                  <p className="text-sm font-semibold text-white">
+                                    {certificate.title}
+                                  </p>
+                                )}
+                                <p className="mt-1 text-xs text-white/45">
+                                  Uploaded {formatDate(certificate.uploadedAt)}
+                                </p>
+                              </div>
+                              {isSelf && "_id" in certificate ? (
+                                <button
+                                  type="button"
+                                  disabled={deletingItemId === certificate._id}
+                                  onClick={() =>
+                                    void deleteOwnItem(
+                                      "certificates",
+                                      certificate._id,
+                                    )
+                                  }
+                                  className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                >
+                                  {deletingItemId === certificate._id
+                                    ? "Removing..."
+                                    : "Delete"}
+                                </button>
+                              ) : null}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {isSelf && isAddingCertificate ? (
+                      <form
+                        onSubmit={(event) => void uploadCertificate(event)}
+                        className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                      >
+                        <input
+                          value={certificateTitle}
+                          onChange={(event) =>
+                            setCertificateTitle(event.target.value)
+                          }
+                          placeholder="Certificate title"
+                          className="form-input"
+                        />
+                        <input
+                          ref={certificateFileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                          className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                        />
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="submit"
+                            disabled={isUploadingCertificate}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                          >
+                            {isUploadingCertificate
+                              ? "Uploading..."
+                              : "Save certificate"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingCertificate(false)}
+                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {certificateError ? (
+                          <p className="text-xs text-red-300" role="alert">
+                            {certificateError}
+                          </p>
+                        ) : null}
+                      </form>
+                    ) : null}
+                  </article>
+                ) : null}
+
+                {(reviews?.reviews.length ?? 0) > 0 || isSelf ? (
+                  <article
+                    id="engineer-reviews"
+                    className="rounded-2xl border border-white/10 bg-surface p-6"
+                  >
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                          Client perspectives
+                        </p>
+                        <h2 className="mt-1 font-heading text-2xl font-bold text-white">
+                          Reviews
+                        </h2>
+                      </div>
+                      {reviews && reviews.totalReviews > 0 ? (
+                        <span className="text-sm font-semibold text-amber-300">
+                          {reviews.averageRating.toFixed(1)} ★
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {reviewsError ? (
+                      <p className="mt-4 text-sm text-red-200">
+                        {reviewsError}
+                      </p>
+                    ) : !reviews ? (
+                      <p className="mt-4 text-sm text-white/50">
+                        Loading reviews...
+                      </p>
+                    ) : reviews.reviews.length === 0 ? (
+                      <p className="mt-4 text-sm text-white/55">
+                        No reviews yet.
+                      </p>
+                    ) : (
+                      <div className="mt-5 space-y-4">
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                          <p className="text-xs font-semibold text-white/60">
+                            Rating breakdown
+                          </p>
+                          <div className="mt-3 space-y-2">
+                            {reviewBreakdown.map((row) => (
+                              <div
+                                key={row.stars}
+                                className="grid grid-cols-[30px_1fr_38px] items-center gap-2"
+                              >
+                                <span className="text-xs text-white/65">
+                                  {row.stars}★
+                                </span>
+                                <div className="h-2 rounded-full bg-white/10">
+                                  <div
+                                    className="h-2 rounded-full bg-primary"
+                                    style={{ width: `${row.percent}%` }}
+                                  />
+                                </div>
+                                <span className="text-right text-xs text-white/60">
+                                  {row.count}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {reviews.reviews.map((review) => (
+                          <div
+                            key={review.id}
+                            className="rounded-xl border border-white/10 bg-void/40 p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <Avatar
+                                  name={review.client.name}
+                                  photoUrl={review.client.profilePhotoUrl}
+                                  size="sm"
+                                />
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    {review.client.name}
+                                  </p>
+                                  <p className="text-xs text-white/40">
+                                    Client
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-sm tracking-wide text-amber-300">
+                                {Array.from({ length: 5 }, (_, index) =>
+                                  index < review.rating ? "★" : "☆",
+                                ).join("")}
+                              </span>
+                            </div>
+                            <p className="mt-4 text-sm leading-6 text-white/75">
+                              {review.reviewText}
+                            </p>
+                            {review.engineerReply ? (
+                              <div className="mt-4 border-l-2 border-primary/50 pl-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                                  Engineer reply
+                                </p>
+                                <p className="mt-1 text-sm leading-6 text-white/65">
+                                  {review.engineerReply}
+                                </p>
+                              </div>
+                            ) : isSelf && currentUser?.role === "engineer" ? (
+                              <div className="mt-4">
+                                {replyingReviewId === review.id ? (
+                                  <>
+                                    <textarea
+                                      value={replyText}
+                                      onChange={(event) =>
+                                        setReplyText(
+                                          event.target.value.slice(0, 500),
+                                        )
+                                      }
+                                      maxLength={500}
+                                      rows={3}
+                                      placeholder="Write a thoughtful reply..."
+                                      className="w-full rounded-lg border border-white/15 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/35 outline-none focus:border-primary/60"
+                                    />
+                                    <div className="mt-2 flex justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setReplyingReviewId(null)
+                                        }
+                                        className="rounded-lg px-3 py-2 text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void submitReply(review.id)
+                                        }
+                                        disabled={isSubmittingReply}
+                                        className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                                      >
+                                        {isSubmittingReply
+                                          ? "Sending..."
+                                          : "Send reply"}
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setReplyingReviewId(review.id)
+                                    }
+                                    className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                                  >
+                                    Reply
+                                  </button>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ) : null}
+
+                <div
+                  className={entrance(3).className}
+                  style={entrance(3).style}
+                >
+                  {renderPostsSection(
+                    isSelf && currentUser?.role === "engineer",
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className={entrance(2).className} style={entrance(2).style}>
+                {renderPostsSection(false)}
+              </div>
+            )}
           </div>
         </div>
       </div>

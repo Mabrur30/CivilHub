@@ -13,7 +13,7 @@ const tabs = [
   { label: "Post a Project", to: "/dashboard/client/post-project" },
   { label: "Cost Estimator", to: "/dashboard/client/cost-estimator" },
   { label: "Bids", to: "/dashboard/client/bids" },
-  { label: "My Network", to: "/dashboard/client/network" },
+  { label: "Browse Engineers", to: "/dashboard/client/network" },
 ];
 
 export function ClientDashboardLayout(

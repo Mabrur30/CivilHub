@@ -488,19 +488,30 @@ export const getUserPosts = async (
 ): Promise<void> => {
   try {
     const viewerUserId = requireUser(req);
+    const query = getQuery(req);
+    const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
+    const limit = Math.min(
+      30,
+      Math.max(1, Number.parseInt(query.limit ?? "10", 10) || 10),
+    );
     const { userId } = getParams(req);
     if (!userId || !Types.ObjectId.isValid(userId)) {
       throw createPostError("User not found", 404);
     }
 
-    const posts = await Post.find({ author: userId })
-      .sort({ createdAt: -1 })
-      .populate("author", "name role")
-      .populate({
-        path: "originalPost",
-        populate: { path: "author", select: "name role" },
-      })
-      .exec();
+    const [posts, total] = await Promise.all([
+      Post.find({ author: userId })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate("author", "name role")
+        .populate({
+          path: "originalPost",
+          populate: { path: "author", select: "name role" },
+        })
+        .exec(),
+      Post.countDocuments({ author: userId }),
+    ]);
     const photoOwnerIds = new Set<string>([userId]);
     posts.forEach((post) => {
       if (post.originalPost) {
@@ -530,6 +541,9 @@ export const getUserPosts = async (
           ),
         ),
       ),
+      page,
+      limit,
+      total,
     });
   } catch (error: unknown) {
     next(error);
