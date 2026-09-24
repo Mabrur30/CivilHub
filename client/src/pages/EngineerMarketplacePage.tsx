@@ -1,4 +1,27 @@
-import { type FormEvent, type ReactElement, useEffect, useState } from "react";
+import {
+  CheckIcon,
+  MagnifyingGlassIcon,
+  MapPinIcon,
+} from "@phosphor-icons/react";
+import {
+  type FormEvent,
+  type ReactElement,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import { formatRelativeTime } from "../components/dashboard/notificationUtils";
+import {
+  inputClassName,
+  panelClassName,
+  primaryButtonBaseClassName,
+  primaryButtonClassName,
+  quietLinkClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { Dialog } from "../components/dashboard/ui/Dialog";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import { countOf, formatDate } from "../lib/format";
 
 interface MarketplaceProject {
   id: string;
@@ -27,7 +50,17 @@ interface EngineerBidSummary {
   status: "pending" | "accepted" | "declined";
 }
 
+type BudgetFilter = "any" | "under-250k" | "250k-500k" | "over-500k";
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const ALL_CATEGORIES = "All categories";
+
+const budgetOptions: { key: BudgetFilter; label: string }[] = [
+  { key: "any", label: "Any budget" },
+  { key: "under-250k", label: "Under $250k" },
+  { key: "250k-500k", label: "$250k to $500k" },
+  { key: "over-500k", label: "Over $500k" },
+];
 
 const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
   if (typeof value !== "object" || value === null) return false;
@@ -63,27 +96,142 @@ const getErrorMessage = (value: unknown, fallback: string): string => {
   return fallback;
 };
 
-const formatPostedDate = (date: string): string => {
-  const parsed = new Date(date);
-  return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString();
+const BUDGET_NUMBER = /([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/g;
+
+// Budgets arrive as display strings ("$250,000 - $500,000", occasionally
+// "$250k"). Pull the numbers out so the budget filter compares real values;
+// a budget with no numbers ("Budget to be discussed") only matches "Any".
+const parseBudgetRange = (
+  budgetRange: string,
+): { min: number; max: number } | null => {
+  const values = [...budgetRange.matchAll(BUDGET_NUMBER)]
+    .map(([, digits, suffix]) => {
+      const base = Number(digits.replace(/,/g, ""));
+      const multiplier =
+        suffix?.toLowerCase() === "m"
+          ? 1_000_000
+          : suffix?.toLowerCase() === "k"
+            ? 1_000
+            : 1;
+      return base * multiplier;
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
 };
 
-const ProjectSkeleton = (): ReactElement => (
-  <div className="animate-pulse rounded-2xl border border-white/10 bg-surface p-6">
-    <div className="h-4 w-1/3 rounded bg-white/10" />
-    <div className="mt-5 h-7 w-2/3 rounded bg-white/10" />
-    <div className="mt-4 h-16 rounded bg-white/10" />
-    <div className="mt-6 h-11 rounded bg-white/10" />
-  </div>
-);
+// A brief matches a budget band when its range overlaps the band at all.
+const matchesBudget = (budgetRange: string, filter: BudgetFilter): boolean => {
+  if (filter === "any") return true;
+  const range = parseBudgetRange(budgetRange);
+  if (!range) return false;
+  if (filter === "under-250k") return range.min < 250_000;
+  if (filter === "250k-500k") {
+    return range.min <= 500_000 && range.max >= 250_000;
+  }
+  return range.max > 500_000;
+};
+
+function BriefListSkeleton(): ReactElement {
+  return (
+    <section className={panelClassName} aria-label="Loading marketplace">
+      <ul className="divide-y divide-white/10">
+        {[1, 2, 3].map((item) => (
+          <li
+            key={item}
+            className="grid animate-pulse gap-5 px-5 py-6 sm:px-6 lg:grid-cols-12 lg:gap-8"
+          >
+            <div className="lg:col-span-8">
+              <div className="h-5 w-40 rounded-full bg-white/10" />
+              <div className="mt-4 h-6 w-2/3 rounded bg-white/10" />
+              <div className="mt-2 h-3.5 w-1/4 rounded bg-white/10" />
+              <div className="mt-4 h-3.5 w-full rounded bg-white/10" />
+              <div className="mt-2 h-3.5 w-4/5 rounded bg-white/10" />
+            </div>
+            <div className="lg:col-span-4">
+              <div className="h-3 w-16 rounded bg-white/10" />
+              <div className="mt-2 h-5 w-40 rounded bg-white/10" />
+              <div className="mt-4 h-3.5 w-28 rounded bg-white/10" />
+              <div className="mt-5 h-11 w-32 rounded-full bg-white/10" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+interface BriefRowProps {
+  project: MarketplaceProject;
+  hasSubmittedBid: boolean;
+  onBid: () => void;
+}
+
+function BriefRow({
+  project,
+  hasSubmittedBid,
+  onBid,
+}: BriefRowProps): ReactElement {
+  const posted = formatRelativeTime(project.postedDate);
+
+  return (
+    <li className="grid gap-5 px-5 py-6 sm:px-6 lg:grid-cols-12 lg:gap-8">
+      <div className="min-w-0 lg:col-span-8">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+          <span className="rounded-full bg-white/5 px-2.5 py-1 font-semibold text-white/70">
+            {project.category}
+          </span>
+          <span className="text-white/40" title={formatDate(project.postedDate)}>
+            Posted {posted ? posted.toLowerCase() : formatDate(project.postedDate)}
+          </span>
+        </div>
+        <h2 className="mt-3 font-heading text-2xl font-bold text-white">
+          {project.title}
+        </h2>
+        <p className="mt-1 text-sm text-white/55">{project.clientName}</p>
+        <p className="mt-3 line-clamp-3 max-w-[65ch] text-sm leading-6 text-white/60">
+          {project.description}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-4 lg:col-span-4 lg:border-l lg:border-white/10 lg:pl-8">
+        <div>
+          <p className="text-xs font-semibold text-white/40">Budget</p>
+          <p className="mt-1 font-semibold text-white/90">
+            {project.budgetRange}
+          </p>
+        </div>
+        <p className="flex items-center gap-1.5 text-sm text-white/60">
+          <MapPinIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {project.location}
+        </p>
+        {hasSubmittedBid ? (
+          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
+            <CheckIcon className="h-4 w-4" aria-hidden="true" />
+            Bid submitted
+          </p>
+        ) : (
+          <button
+            type="button"
+            onClick={onBid}
+            className={primaryButtonClassName}
+          >
+            Submit bid
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
 
 export function EngineerMarketplacePage(): ReactElement {
   const [projects, setProjects] = useState<MarketplaceProject[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string>("");
   const [retryKey, setRetryKey] = useState<number>(0);
-  const [category, setCategory] = useState<string>("All categories");
-  const [budget, setBudget] = useState<string>("Any budget");
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+  const [budget, setBudget] = useState<BudgetFilter>("any");
   const [search, setSearch] = useState<string>("");
   const [selectedProject, setSelectedProject] =
     useState<MarketplaceProject | null>(null);
@@ -142,27 +290,46 @@ export function EngineerMarketplacePage(): ReactElement {
     void loadProjects();
   }, [retryKey]);
 
+  useEffect(() => {
+    if (!successMessage) return;
+    const timeoutId = window.setTimeout(() => setSuccessMessage(""), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [successMessage]);
+
   const categories = [
-    "All categories",
+    ALL_CATEGORIES,
     ...new Set(projects.map((project) => project.category)),
   ];
+  const searchTerm = search.trim().toLowerCase();
   const filteredProjects = projects.filter((project) => {
     const matchesCategory =
-      category === "All categories" || project.category === category;
+      category === ALL_CATEGORIES || project.category === category;
     const matchesSearch =
+      !searchTerm ||
       `${project.title} ${project.clientName} ${project.location}`
         .toLowerCase()
-        .includes(search.toLowerCase());
-    const matchesBudget =
-      budget === "Any budget" ||
-      (budget === "Under $250k" &&
-        /\$([0-2]?\d\d)k/.test(project.budgetRange)) ||
-      (budget === "$250k - $500k" && project.budgetRange.includes("320")) ||
-      (budget === "Over $500k" && project.budgetRange.includes("500"));
-    return matchesCategory && matchesSearch && matchesBudget;
+        .includes(searchTerm);
+    return (
+      matchesCategory &&
+      matchesSearch &&
+      matchesBudget(project.budgetRange, budget)
+    );
   });
+  const hasActiveFilters =
+    searchTerm !== "" || category !== ALL_CATEGORIES || budget !== "any";
+  const openToBid = projects.filter(
+    (project) => !submittedProjectIds.has(project.id),
+  ).length;
 
-  const openBidModal = (project: MarketplaceProject): void => {
+  const clearFilters = (): void => {
+    setSearch("");
+    setCategory(ALL_CATEGORIES);
+    setBudget("any");
+  };
+
+  const closeBidDialog = useCallback((): void => setSelectedProject(null), []);
+
+  const openBidDialog = (project: MarketplaceProject): void => {
     setSelectedProject(project);
     setBid({ amount: "", message: "" });
     setBidError("");
@@ -175,7 +342,11 @@ export function EngineerMarketplacePage(): ReactElement {
     if (!selectedProject) return;
     const amount = Number(bid.amount.replace(/[$,]/g, ""));
     if (!Number.isFinite(amount) || amount <= 0) {
-      setBidError("Enter a positive bid amount.");
+      setBidError("Enter a price greater than zero.");
+      return;
+    }
+    if (!bid.message.trim()) {
+      setBidError("Add a short message for the client.");
       return;
     }
     setBidError("");
@@ -183,7 +354,7 @@ export function EngineerMarketplacePage(): ReactElement {
     const requestBody: SubmitBidRequestBody = {
       projectId: selectedProject.id,
       amount,
-      message: bid.message,
+      message: bid.message.trim(),
     };
     try {
       const response = await fetch(`${API_BASE_URL}/api/bids`, {
@@ -202,7 +373,6 @@ export function EngineerMarketplacePage(): ReactElement {
       );
       setSelectedProject(null);
       setSuccessMessage(`Bid submitted for ${selectedProject.title}.`);
-      window.setTimeout(() => setSuccessMessage(""), 4000);
     } catch {
       setBidError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -211,238 +381,227 @@ export function EngineerMarketplacePage(): ReactElement {
   };
 
   return (
-    <div className="space-y-10">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Find your next brief
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Marketplace
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          Explore open civil opportunities from clients looking for the right
-          technical partner.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Marketplace"
+        summary={
+          isLoading || loadError
+            ? "Open briefs from clients looking for an engineer."
+            : projects.length === 0
+              ? "There are no open briefs right now."
+              : `${countOf(projects.length, "open brief", "open briefs")}. ${
+                  openToBid === projects.length
+                    ? "You haven't bid on any yet."
+                    : openToBid === 0
+                      ? "You've bid on all of them."
+                      : `${countOf(openToBid, "is", "are")} still open to your bid.`
+                }`
+        }
+      />
+
       {successMessage ? (
         <p
           role="status"
-          className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-200"
+          className="flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-5 py-3.5 text-sm font-semibold text-emerald-200"
         >
+          <CheckIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
           {successMessage}
         </p>
       ) : null}
-      <div className="grid gap-3 rounded-2xl border border-white/10 bg-surface p-4 md:grid-cols-[1.2fr_1fr_1fr]">
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search projects, clients, or locations"
-          className="rounded-xl border border-white/10 bg-void px-4 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-primary"
-        />
-        <select
-          value={category}
-          onChange={(event) => setCategory(event.target.value)}
-          className="rounded-xl border border-white/10 bg-void px-4 py-3 text-sm text-white outline-none focus:border-primary"
-          aria-label="Filter by category"
-        >
-          {categories.map((option) => (
-            <option key={option}>{option}</option>
-          ))}
-        </select>
-        <select
-          value={budget}
-          onChange={(event) => setBudget(event.target.value)}
-          className="rounded-xl border border-white/10 bg-void px-4 py-3 text-sm text-white outline-none focus:border-primary"
-        >
-          <option>Any budget</option>
-          <option>Under $250k</option>
-          <option>$250k - $500k</option>
-          <option>Over $500k</option>
-        </select>
+
+      <div className="grid gap-4 rounded-2xl border border-white/10 bg-surface p-4 sm:p-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid gap-2">
+          <label
+            htmlFor="marketplace-search"
+            className="text-xs font-semibold text-white/55"
+          >
+            Search
+          </label>
+          <div className="relative">
+            <MagnifyingGlassIcon
+              className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+              aria-hidden="true"
+            />
+            <input
+              id="marketplace-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Project, client or location"
+              className={`${inputClassName} pl-10`}
+            />
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <label
+            htmlFor="marketplace-category"
+            className="text-xs font-semibold text-white/55"
+          >
+            Category
+          </label>
+          <select
+            id="marketplace-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className={inputClassName}
+          >
+            {categories.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid gap-2">
+          <label
+            htmlFor="marketplace-budget"
+            className="text-xs font-semibold text-white/55"
+          >
+            Budget
+          </label>
+          <select
+            id="marketplace-budget"
+            value={budget}
+            onChange={(event) => setBudget(event.target.value as BudgetFilter)}
+            className={inputClassName}
+          >
+            {budgetOptions.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Loading marketplace projects"
-        >
-          <ProjectSkeleton />
-          <ProjectSkeleton />
-        </section>
+        <BriefListSkeleton />
       ) : loadError ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{loadError}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel
+          message={loadError}
+          onRetry={() => setRetryKey((key) => key + 1)}
+        />
+      ) : projects.length === 0 ? (
+        <EmptyPanel
+          title="No open briefs yet"
+          body="New briefs appear here as soon as clients post them."
+        />
       ) : filteredProjects.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/15 bg-surface/50 p-12 text-center">
-          <h2 className="font-heading text-3xl font-bold text-white">
-            No open projects yet
-          </h2>
-          <p className="mt-3 text-sm text-white/55">
-            Check back soon for new opportunities that match your expertise.
-          </p>
-        </section>
+        <EmptyPanel
+          title="No briefs match these filters"
+          body="Try a broader search, or clear the filters to see every open brief."
+          action={
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={primaryButtonClassName}
+            >
+              Clear filters
+            </button>
+          }
+        />
       ) : (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Marketplace projects"
-        >
-          {filteredProjects.map((project) => {
-            const hasSubmittedBid = submittedProjectIds.has(project.id);
-            return (
-              <article
-                key={project.id}
-                className="rounded-2xl border border-white/10 bg-surface p-6 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40"
+        <section className={panelClassName} aria-label="Open briefs">
+          {hasActiveFilters ? (
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-3.5 text-sm text-white/50 sm:px-6">
+              <span>
+                Showing {filteredProjects.length} of {projects.length}
+              </span>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className={quietLinkClassName}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                    {project.category}
-                  </span>
-                  <span className="text-xs text-white/40">
-                    {formatPostedDate(project.postedDate)}
-                  </span>
-                </div>
-                <h2 className="mt-5 font-heading text-2xl font-bold text-white">
-                  {project.title}
-                </h2>
-                <p className="mt-2 text-sm font-semibold text-white/65">
-                  {project.clientName}
-                </p>
-                <p className="mt-4 text-sm leading-6 text-white/55">
-                  {project.description}
-                </p>
-                <div className="mt-6 grid grid-cols-2 gap-4 border-y border-white/10 py-4 text-sm">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.12em] text-white/35">
-                      Budget
-                    </p>
-                    <p className="mt-2 font-semibold text-white/85">
-                      {project.budgetRange}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.12em] text-white/35">
-                      Location
-                    </p>
-                    <p className="mt-2 font-semibold text-white/85">
-                      {project.location}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={hasSubmittedBid}
-                  onClick={() => openBidModal(project)}
-                  className="mt-5 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-glow disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/50"
-                >
-                  {hasSubmittedBid ? "Bid Submitted" : "Submit Bid"}
-                </button>
-              </article>
-            );
-          })}
+                Clear filters
+              </button>
+            </div>
+          ) : null}
+          <ul className="divide-y divide-white/10">
+            {filteredProjects.map((project) => (
+              <BriefRow
+                key={project.id}
+                project={project}
+                hasSubmittedBid={submittedProjectIds.has(project.id)}
+                onBid={() => openBidDialog(project)}
+              />
+            ))}
+          </ul>
         </section>
       )}
 
       {selectedProject ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isSubmitting)
-              setSelectedProject(null);
-          }}
+        <Dialog
+          title="Submit a bid"
+          description={
+            <>
+              <p>
+                {selectedProject.title} for {selectedProject.clientName}
+              </p>
+              <p className="mt-1">
+                {parseBudgetRange(selectedProject.budgetRange)
+                  ? `Client budget: ${selectedProject.budgetRange}`
+                  : selectedProject.budgetRange}
+              </p>
+            </>
+          }
+          onClose={closeBidDialog}
+          isBusy={isSubmitting}
         >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-white/10 bg-surface p-6 shadow-2xl sm:p-8"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="bid-dialog-title"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                  Submit a bid
-                </p>
-                <h2
-                  id="bid-dialog-title"
-                  className="mt-2 font-heading text-2xl font-bold text-white"
-                >
-                  {selectedProject.title}
-                </h2>
-              </div>
-              <button
-                type="button"
-                aria-label="Close bid modal"
-                disabled={isSubmitting}
-                onClick={() => setSelectedProject(null)}
-                className="text-xl text-white/50 hover:text-white disabled:opacity-40"
-              >
-                &times;
-              </button>
-            </div>
-            <form onSubmit={submitBid} className="mt-6 space-y-5">
-              <div>
+            <form onSubmit={submitBid} className="grid gap-5" noValidate>
+              <div className="grid gap-2">
                 <label
                   htmlFor="bid-amount"
-                  className="mb-2 block text-sm font-semibold text-white/75"
+                  className="text-sm font-semibold text-white/80"
                 >
-                  Bid amount
+                  Your price ($)
                 </label>
                 <input
                   id="bid-amount"
-                  required
+                  inputMode="decimal"
                   value={bid.amount}
                   onChange={(event) =>
                     setBid({ ...bid, amount: event.target.value })
                   }
-                  placeholder="$0"
-                  className="w-full rounded-xl border border-white/10 bg-void px-4 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-primary"
+                  aria-describedby={bidError ? "bid-error" : undefined}
+                  className={inputClassName}
+                  autoFocus
                 />
               </div>
-              <div>
+              <div className="grid gap-2">
                 <label
                   htmlFor="bid-message"
-                  className="mb-2 block text-sm font-semibold text-white/75"
+                  className="text-sm font-semibold text-white/80"
                 >
-                  Message
+                  Message to {selectedProject.clientName}
                 </label>
                 <textarea
                   id="bid-message"
-                  required
                   rows={4}
                   value={bid.message}
                   onChange={(event) =>
                     setBid({ ...bid, message: event.target.value })
                   }
-                  placeholder="Tell the client why your team is a strong fit"
-                  className="w-full resize-none rounded-xl border border-white/10 bg-void px-4 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-primary"
+                  aria-describedby={
+                    bidError ? "bid-message-help bid-error" : "bid-message-help"
+                  }
+                  className={`${inputClassName} resize-none`}
                 />
+                <p id="bid-message-help" className="text-xs text-white/45">
+                  Why your team fits, your approach and a rough timeline.
+                </p>
               </div>
               {bidError ? (
-                <p role="alert" className="text-sm text-red-300">
+                <p id="bid-error" role="alert" className="text-sm text-red-300">
                   {bidError}
                 </p>
               ) : null}
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-glow disabled:cursor-wait disabled:opacity-60"
+                className={`${primaryButtonBaseClassName} w-full`}
               >
-                {isSubmitting ? "Submitting..." : "Submit"}
+                {isSubmitting ? "Submitting..." : "Submit bid"}
               </button>
             </form>
-          </div>
-        </div>
+        </Dialog>
       ) : null}
     </div>
   );

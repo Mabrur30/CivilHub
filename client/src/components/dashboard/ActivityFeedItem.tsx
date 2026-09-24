@@ -1,8 +1,14 @@
+import {
+  BuildingsIcon,
+  ChatCircleIcon,
+  GavelIcon,
+  TruckIcon,
+  UsersThreeIcon,
+} from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   formatRelativeTime,
-  getNotificationDotClassName,
   getNotificationTargetPath,
   isNotificationType,
   isNullableId,
@@ -145,13 +151,25 @@ const getFeedEntryMessage = (entry: FeedEntry): string => {
   return entry.message;
 };
 
-// Own actions get a hollow ring so they read as authored-by-you at a glance,
-// rather than sharing the filled dots that mark things that happened to you.
-const getFeedEntryDotClassName = (entry: FeedEntry): string => {
-  if (entry.source === "own_bid") return "border-2 border-primary";
-  if (entry.source === "own_phase_completion") return "border-2 border-white/55";
-  return getNotificationDotClassName(entry.type);
+const iconClassName = "h-4 w-4";
+
+const categoryIcons: Record<Exclude<ActivityCategory, "all">, ReactElement> = {
+  bids: <GavelIcon className={iconClassName} />,
+  messages: <ChatCircleIcon className={iconClassName} />,
+  projects: <BuildingsIcon className={iconClassName} />,
+  bookings: <TruckIcon className={iconClassName} />,
+  network: <UsersThreeIcon className={iconClassName} />,
 };
+
+const getFeedEntryIcon = (entry: FeedEntry): ReactElement => {
+  const category = getFeedEntryCategory(entry);
+  return categoryIcons[category === "all" ? "projects" : category];
+};
+
+// Own actions get a red ring around the icon so they read as authored-by-you
+// at a glance, rather than sharing the plain well of things that happened to you.
+const isOwnAction = (entry: FeedEntry): boolean =>
+  entry.source === "own_bid" || entry.source === "own_phase_completion";
 
 const getFeedEntryTargetPath = (
   entry: FeedEntry,
@@ -182,14 +200,19 @@ export function ActivityFeedItem({
   const rowContent = (
     <>
       <span
-        className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${getFeedEntryDotClassName(entry)}`}
-      />
-      <div className="flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
-        <p className="text-sm font-semibold text-white/85">
-          {getFeedEntryMessage(entry)}
-        </p>
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 ${
+          isOwnAction(entry)
+            ? "text-primary ring-1 ring-primary/50"
+            : "text-white/60"
+        }`}
+        aria-hidden="true"
+      >
+        {getFeedEntryIcon(entry)}
+      </span>
+      <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between sm:gap-4">
+        <p className="text-sm text-white/85">{getFeedEntryMessage(entry)}</p>
         <p
-          className="mt-1 text-xs text-white/40 sm:mt-0"
+          className="mt-1 shrink-0 text-xs text-white/40 sm:mt-0"
           title={entry.timestamp}
         >
           {relativeTime || entry.timestamp}
@@ -199,14 +222,16 @@ export function ActivityFeedItem({
   );
 
   if (!targetPath) {
-    return <div className="flex gap-4 py-5">{rowContent}</div>;
+    return (
+      <div className="flex items-center gap-4 px-3 py-4">{rowContent}</div>
+    );
   }
 
   return (
     <button
       type="button"
       onClick={() => navigate(targetPath)}
-      className="flex w-full gap-4 py-5 text-left transition-colors hover:bg-white/5"
+      className="flex w-full items-center gap-4 px-3 py-4 text-left transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow"
     >
       {rowContent}
     </button>

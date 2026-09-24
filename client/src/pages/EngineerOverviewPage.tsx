@@ -1,11 +1,6 @@
-import {
-  type ReactElement,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { useNavigate } from "react-router-dom";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ActivityFeedItem,
   getFeedEntryCategory,
@@ -14,60 +9,21 @@ import {
   type ActivityCategory,
   type FeedEntry,
 } from "../components/dashboard/ActivityFeedItem";
+import {
+  StatBand,
+  type BandStat,
+} from "../components/dashboard/overview/StatBand";
+import { UpNextProjects } from "../components/dashboard/overview/UpNextProjects";
+import {
+  primaryButtonClassName,
+  quietLinkClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
-
-interface DashboardStat {
-  label: string;
-  value: number;
-  route: string;
-  detail: ReactNode;
-  tier: "primary" | "secondary";
-  icon: ReactElement;
-}
-
-interface StatIconProps {
-  className: string;
-}
-
-const iconBaseProps = {
-  viewBox: "0 0 24 24",
-  "aria-hidden": true,
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: "1.8",
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
-const ProjectsIcon = ({ className }: StatIconProps): ReactElement => (
-  <svg {...iconBaseProps} className={className}>
-    <path d="m12 2 9 5-9 5-9-5 9-5Z" />
-    <path d="m3 12 9 5 9-5" />
-    <path d="m3 17 9 5 9-5" />
-  </svg>
-);
-
-const BidsIcon = ({ className }: StatIconProps): ReactElement => (
-  <svg {...iconBaseProps} className={className}>
-    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" />
-    <path d="M14 3v5h5" />
-    <path d="M9 13h6" />
-    <path d="M9 17h4" />
-  </svg>
-);
-
-const MessagesIcon = ({ className }: StatIconProps): ReactElement => (
-  <svg {...iconBaseProps} className={className}>
-    <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-4 4V6z" />
-  </svg>
-);
-
-const MilestonesIcon = ({ className }: StatIconProps): ReactElement => (
-  <svg {...iconBaseProps} className={className}>
-    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-    <path d="M4 22v-7" />
-  </svg>
-);
+import { countOf } from "../lib/format";
+import { isProjectProgress, type ProjectProgress } from "../lib/projectProgress";
 
 interface EngineerOverview {
   activeProjects: number;
@@ -78,13 +34,8 @@ interface EngineerOverview {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-
-const loadingSkeletonTiers = [
-  "primary",
-  "primary",
-  "secondary",
-  "secondary",
-] as const;
+const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
+const ACTIVITY_SKELETON_ROWS = 4;
 
 const activityFilterTabs: { key: ActivityCategory; label: string }[] = [
   { key: "all", label: "All" },
@@ -108,22 +59,116 @@ const isEngineerOverview = (value: unknown): value is EngineerOverview => {
   );
 };
 
-const getErrorMessage = (value: unknown): string => {
+const getErrorMessage = (value: unknown, fallback: string): string => {
   if (typeof value === "object" && value !== null) {
     const response = value as { message?: unknown };
     if (typeof response.message === "string") return response.message;
   }
-  return "Unable to load your dashboard overview.";
+  return fallback;
 };
+
+const getGreeting = (date: Date): string => {
+  const hour = date.getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+};
+
+const getSummary = (overview: EngineerOverview | null): string => {
+  if (!overview) return "Here is where your projects and bids stand today.";
+
+  const sentences: string[] = [];
+  if (overview.activeProjects > 0) {
+    sentences.push(
+      `${countOf(overview.activeProjects, "project", "projects")} in delivery.`,
+    );
+  }
+  if (overview.pendingBids > 0) {
+    sentences.push(
+      `${countOf(overview.pendingBids, "bid", "bids")} waiting on clients.`,
+    );
+  }
+  if (overview.unreadMessages > 0) {
+    sentences.push(
+      `${countOf(overview.unreadMessages, "unread message", "unread messages")}.`,
+    );
+  }
+
+  return sentences.length
+    ? sentences.join(" ")
+    : "Nothing needs your attention right now.";
+};
+
+const getStats = (overview: EngineerOverview): BandStat[] => [
+  {
+    label: "Active projects",
+    value: overview.activeProjects,
+    route:
+      overview.activeProjects === 0
+        ? MARKETPLACE_ROUTE
+        : "/dashboard/engineer/projects",
+    detail:
+      overview.activeProjects === 0
+        ? "Browse the marketplace for open briefs"
+        : "Assigned to you",
+  },
+  {
+    label: "Pending bids",
+    value: overview.pendingBids,
+    route: "/dashboard/engineer/bids",
+    detail:
+      overview.pendingBids === 0 ? "No bids pending" : "Awaiting client review",
+  },
+  {
+    label: "Unread messages",
+    value: overview.unreadMessages,
+    route: "/messages",
+    detail:
+      overview.unreadMessages === 0
+        ? "You're all caught up"
+        : "Waiting for your reply",
+  },
+  {
+    label: "Milestones ahead",
+    value: overview.upcomingMilestones,
+    route: "/dashboard/engineer/projects",
+    detail:
+      overview.upcomingMilestones === 0
+        ? "No upcoming deadlines"
+        : "Across your active projects",
+  },
+];
+
+function ActivitySkeleton(): ReactElement {
+  return (
+    <div aria-label="Loading activity">
+      {Array.from({ length: ACTIVITY_SKELETON_ROWS }).map((_, index) => (
+        <div
+          key={`activity-skeleton-${index}`}
+          className="flex animate-pulse items-center gap-4 px-3 py-4"
+        >
+          <div className="h-8 w-8 shrink-0 rounded-full bg-white/10" />
+          <div className="flex-1">
+            <div className="h-3.5 w-3/4 rounded bg-white/10" />
+            <div className="mt-2 h-3 w-1/4 rounded bg-white/10" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function EngineerOverviewPage(): ReactElement {
   const [overview, setOverview] = useState<EngineerOverview | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [retryKey, setRetryKey] = useState<number>(0);
+  const [projects, setProjects] = useState<ProjectProgress[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState<boolean>(true);
+  const [projectsError, setProjectsError] = useState<string>("");
+  const [projectsRetryKey, setProjectsRetryKey] = useState<number>(0);
   const [activityFilter, setActivityFilter] = useState<ActivityCategory>("all");
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     const loadOverview = async (): Promise<void> => {
@@ -136,7 +181,9 @@ export function EngineerOverviewPage(): ReactElement {
         );
         const body: unknown = await response.json();
         if (!response.ok || !isEngineerOverview(body)) {
-          setError(getErrorMessage(body));
+          setError(
+            getErrorMessage(body, "Unable to load your dashboard overview."),
+          );
           return;
         }
         setOverview(body);
@@ -149,62 +196,37 @@ export function EngineerOverviewPage(): ReactElement {
     void loadOverview();
   }, [retryKey]);
 
-  const stats: DashboardStat[] = overview
-    ? [
-        {
-          label: "Active Projects",
-          tier: "primary",
-          icon: <ProjectsIcon className="h-6 w-6" />,
-          value: overview.activeProjects,
-          route:
-            overview.activeProjects === 0
-              ? "/dashboard/engineer/marketplace"
-              : "/dashboard/engineer/projects",
-          detail:
-            overview.activeProjects === 0 ? (
-              <>
-                No active projects — browse the{" "}
-                <span className="text-primary">Marketplace</span>
-              </>
-            ) : (
-              "Assigned to you"
-            ),
-        },
-        {
-          label: "Pending Bids",
-          tier: "primary",
-          icon: <BidsIcon className="h-6 w-6" />,
-          value: overview.pendingBids,
-          route: "/dashboard/engineer/bids",
-          detail:
-            overview.pendingBids === 0
-              ? "No pending bids"
-              : "Awaiting client review",
-        },
-        {
-          label: "Unread Messages",
-          tier: "secondary",
-          icon: <MessagesIcon className="h-5 w-5" />,
-          value: overview.unreadMessages,
-          route: "/messages",
-          detail:
-            overview.unreadMessages === 0
-              ? "You're all caught up"
-              : "Waiting for your reply",
-        },
-        {
-          label: "Upcoming Milestones",
-          tier: "secondary",
-          icon: <MilestonesIcon className="h-5 w-5" />,
-          value: overview.upcomingMilestones,
-          route: "/dashboard/engineer/projects",
-          detail:
-            overview.upcomingMilestones === 0
-              ? "No upcoming deadlines"
-              : "Future due dates",
-        },
-      ]
-    : [];
+  // Loaded separately from the overview so a failure in one section never
+  // blanks the other.
+  useEffect(() => {
+    const loadProjects = async (): Promise<void> => {
+      setIsLoadingProjects(true);
+      setProjectsError("");
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/projects/my-projects`,
+          { credentials: "include" },
+        );
+        const body: unknown = await response.json();
+        if (!response.ok) {
+          setProjectsError(
+            getErrorMessage(body, "Unable to load your projects."),
+          );
+          return;
+        }
+        if (!Array.isArray(body) || !body.every(isProjectProgress)) {
+          setProjectsError("The project data returned by CivilHub is invalid.");
+          return;
+        }
+        setProjects(body);
+      } catch {
+        setProjectsError("Unable to connect to CivilHub. Please try again.");
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    };
+    void loadProjects();
+  }, [projectsRetryKey]);
 
   const filteredActivity = useMemo(() => {
     if (!overview) return [];
@@ -214,144 +236,78 @@ export function EngineerOverviewPage(): ReactElement {
     );
   }, [overview, activityFilter]);
 
-  return (
-    <div className="space-y-10">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Engineer workspace
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Good morning, {currentUser?.name.split(" ")[0] ?? "there"}.
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          Keep your active work moving and stay close to every project decision.
-        </p>
-      </div>
+  const firstName = currentUser?.name.split(" ")[0] ?? "there";
 
-      <section
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2"
-        aria-label="Dashboard summary"
-      >
-        {isLoading
-          ? loadingSkeletonTiers.map((tier, index) => (
-              <article
-                key={`${tier}-${index}`}
-                className={`animate-pulse rounded-2xl border border-white/10 bg-surface ${
-                  tier === "primary"
-                    ? "flex flex-col justify-between p-6 lg:row-span-2"
-                    : "flex items-center gap-4 p-4"
-                }`}
-              >
-                {tier === "primary" ? (
-                  <>
-                    <div className="h-6 w-1/2 rounded bg-white/10" />
-                    <div>
-                      <div className="h-14 w-1/3 rounded bg-white/10" />
-                      <div className="mt-4 h-3 w-2/3 rounded bg-white/10" />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="h-9 w-9 shrink-0 rounded bg-white/10" />
-                    <div className="flex-1">
-                      <div className="h-3.5 w-2/3 rounded bg-white/10" />
-                      <div className="mt-2 h-3 w-1/2 rounded bg-white/10" />
-                    </div>
-                  </>
-                )}
-              </article>
-            ))
-          : stats.map((stat) =>
-              stat.tier === "primary" ? (
-                <button
-                  key={stat.label}
-                  type="button"
-                  onClick={() => navigate(stat.route)}
-                  className="flex w-full flex-col justify-between rounded-2xl border border-white/10 bg-surface p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-[0_0_30px_rgba(225,29,46,0.15)] lg:row-span-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-primary">{stat.icon}</span>
-                    <p className="text-base text-white/85">{stat.label}</p>
-                  </div>
-                  <div className="mt-8">
-                    <p className="font-heading text-6xl font-bold text-primary">
-                      {stat.value}
-                    </p>
-                    <p className="mt-3 text-xs text-white/40">{stat.detail}</p>
-                  </div>
-                </button>
-              ) : (
-                <button
-                  key={stat.label}
-                  type="button"
-                  onClick={() => navigate(stat.route)}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-surface p-4 text-left transition-all duration-200 hover:-translate-y-1 hover:border-primary/30"
-                >
-                  <p className="font-heading text-4xl font-bold text-primary">
-                    {stat.value}
-                  </p>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white/85">{stat.label}</p>
-                    <p className="mt-0.5 text-xs text-white/40">
-                      {stat.detail}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-white/30">{stat.icon}</span>
-                </button>
-              ),
-            )}
-      </section>
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title={`${getGreeting(new Date())}, ${firstName}.`}
+        summary={getSummary(isLoading ? null : overview)}
+        action={
+          <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+            <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
+            Find projects
+          </Link>
+        }
+      />
 
       {error ? (
-        <section
-          className="max-w-3xl rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel
+          message={error}
+          onRetry={() => setRetryKey((key) => key + 1)}
+        />
       ) : (
-        <section className="max-w-3xl rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
-          <div className="flex items-end justify-between gap-4 border-b border-white/10 pb-5">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-                Your timeline
+        <StatBand
+          stats={overview ? getStats(overview) : []}
+          isLoading={isLoading}
+        />
+      )}
+
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-7">
+          <UpNextProjects
+            projects={projects}
+            isLoading={isLoadingProjects}
+            error={projectsError}
+            onRetry={() => setProjectsRetryKey((key) => key + 1)}
+          />
+        </div>
+
+        <section
+          className="rounded-2xl border border-white/10 bg-surface p-3 sm:p-4 lg:col-span-5"
+          aria-labelledby="recent-activity-heading"
+        >
+          <div className="flex items-baseline justify-between gap-4 px-2 pt-2">
+            <h2
+              id="recent-activity-heading"
+              className="font-heading text-2xl font-bold text-white"
+            >
+              Recent activity
+            </h2>
+            <Link
+              to="/notifications"
+              className={quietLinkClassName}
+            >
+              All notifications
+            </Link>
+          </div>
+
+          <FilterTabs
+            options={activityFilterTabs}
+            value={activityFilter}
+            onChange={setActivityFilter}
+            label="Filter activity"
+            className="mt-4 px-1 pb-3"
+          />
+
+          <div className="divide-y divide-white/10 border-t border-white/10">
+            {isLoading ? (
+              <ActivitySkeleton />
+            ) : error ? (
+              <p className="px-3 py-8 text-sm text-white/50">
+                Activity will appear once your dashboard loads.
               </p>
-              <h2 className="mt-2 font-heading text-3xl font-bold text-white">
-                Recent Activity
-              </h2>
-            </div>
-            <span className="text-sm text-white/40">Latest updates</span>
-          </div>
-
-          <div className="flex flex-wrap gap-2 pt-5">
-            {activityFilterTabs.map((tab) => {
-              const isActive = tab.key === activityFilter;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActivityFilter(tab.key)}
-                  className={
-                    isActive
-                      ? "rounded-full border border-primary bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors"
-                      : "rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-                  }
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="divide-y divide-white/10">
-            {filteredActivity.length ? (
+            ) : filteredActivity.length ? (
               filteredActivity.map((entry) => (
                 <ActivityFeedItem
                   key={getFeedEntryKey(entry)}
@@ -360,7 +316,7 @@ export function EngineerOverviewPage(): ReactElement {
                 />
               ))
             ) : (
-              <p className="py-8 text-sm text-white/50">
+              <p className="px-3 py-8 text-sm text-white/50">
                 {overview?.recentActivity.length
                   ? "No activity in this category yet."
                   : "No recent activity yet."}
@@ -368,7 +324,7 @@ export function EngineerOverviewPage(): ReactElement {
             )}
           </div>
         </section>
-      )}
+      </div>
     </div>
   );
 }

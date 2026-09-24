@@ -1,5 +1,18 @@
-import { type ReactElement, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { type FormEvent, type ReactElement, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { formatRelativeTime } from "../components/dashboard/notificationUtils";
+import {
+  inlineLinkClassName,
+  inputClassName,
+  panelClassName,
+  primaryButtonClassName,
+  secondaryButtonClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import { countOf, formatCurrency, formatDate } from "../lib/format";
 
 interface EngineerBid {
   id: string;
@@ -30,7 +43,10 @@ interface ErrorResponse {
   message?: string;
 }
 
+type BidFilter = "all" | EngineerBid["status"];
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
 
 const isEngineerBid = (value: unknown): value is EngineerBid => {
   if (typeof value !== "object" || value === null) return false;
@@ -74,42 +90,324 @@ const getErrorMessage = (value: unknown): string => {
   return "Unable to load your bids.";
 };
 
-const formatAmount = (amount: number): string =>
-  `$${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-
-const formatDate = (date: string): string => {
-  const parsed = new Date(date);
-  return Number.isNaN(parsed.getTime()) ? date : parsed.toLocaleDateString();
-};
-
 const statusStyles: Record<EngineerBid["status"], string> = {
-  pending: "border-amber-300/30 bg-amber-300/10 text-amber-200",
-  accepted: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
-  declined: "border-white/15 bg-white/5 text-white/50",
+  pending: "bg-white/10 text-white/80",
+  accepted: "bg-emerald-400/10 text-emerald-300",
+  declined: "bg-white/5 text-white/40",
 };
 
 const statusLabels: Record<EngineerBid["status"], string> = {
-  pending: "Pending",
+  pending: "Awaiting review",
   accepted: "Accepted",
   declined: "Declined",
 };
 
+const filterTabs: { key: BidFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Awaiting review" },
+  { key: "accepted", label: "Accepted" },
+  { key: "declined", label: "Declined" },
+];
+
+const emptyFilterMessages: Record<BidFilter, string> = {
+  all: "You haven't placed any bids yet.",
+  pending: "No bids are waiting on a client right now.",
+  accepted: "None of your bids have been accepted yet.",
+  declined: "None of your bids have been declined.",
+};
+
+const formatProjectStatus = (status: string): string =>
+  status.replaceAll("_", " ").replaceAll("-", " ");
+
+const getSummary = (
+  bids: EngineerBid[],
+  invitations: BidInvitation[],
+): string => {
+  if (bids.length === 0 && invitations.length === 0) {
+    return "Bids you send and invitations from clients show up here.";
+  }
+
+  const pending = bids.filter((bid) => bid.status === "pending").length;
+  const accepted = bids.filter((bid) => bid.status === "accepted").length;
+  const sentences: string[] = [];
+  if (invitations.length > 0) {
+    sentences.push(
+      `${countOf(invitations.length, "invitation needs", "invitations need")} a reply.`,
+    );
+  }
+  if (pending > 0) {
+    sentences.push(`${countOf(pending, "bid", "bids")} awaiting client review.`);
+  }
+  if (accepted > 0) {
+    sentences.push(`${countOf(accepted, "bid", "bids")} accepted.`);
+  }
+  return sentences.length
+    ? sentences.join(" ")
+    : `${countOf(bids.length, "bid", "bids")} placed, none awaiting review.`;
+};
+
+function BidListSkeleton(): ReactElement {
+  return (
+    <section className={panelClassName} aria-label="Loading bids">
+      <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+        <div className="h-7 w-24 animate-pulse rounded bg-white/10" />
+      </div>
+      <ul className="divide-y divide-white/10 border-t border-white/10">
+        {[1, 2, 3].map((item) => (
+          <li
+            key={item}
+            className="grid animate-pulse gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+          >
+            <div className="lg:col-span-5">
+              <div className="h-5 w-2/3 rounded bg-white/10" />
+              <div className="mt-2 h-3.5 w-1/2 rounded bg-white/10" />
+            </div>
+            <div className="h-6 w-24 rounded bg-white/10 lg:col-span-2" />
+            <div className="h-3.5 w-20 rounded bg-white/10 lg:col-span-2" />
+            <div className="h-6 w-28 rounded-full bg-white/10 lg:col-span-3 lg:ml-auto" />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+interface InvitationRowProps {
+  invitation: BidInvitation;
+  isAccepting: boolean;
+  isBusy: boolean;
+  error: string;
+  onStartAccept: () => void;
+  onCancelAccept: () => void;
+  onAccept: (amount: string, message: string) => void;
+  onDecline: () => void;
+}
+
+function InvitationRow({
+  invitation,
+  isAccepting,
+  isBusy,
+  error,
+  onStartAccept,
+  onCancelAccept,
+  onAccept,
+  onDecline,
+}: InvitationRowProps): ReactElement {
+  const [amount, setAmount] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
+  const amountId = `invitation-amount-${invitation.id}`;
+  const messageId = `invitation-message-${invitation.id}`;
+  const errorId = `invitation-error-${invitation.id}`;
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    onAccept(amount, message);
+  };
+
+  return (
+    <li className="px-5 py-5 sm:px-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-heading text-xl font-bold text-white">
+            {invitation.projectTitle}
+          </p>
+          <p className="mt-1 text-sm text-white/50">
+            Invited by{" "}
+            <Link
+              to={`/users/${invitation.client.id}`}
+              className={inlineLinkClassName}
+            >
+              {invitation.client.name}
+            </Link>{" "}
+            <span title={formatDate(invitation.createdAt)}>
+              {formatRelativeTime(invitation.createdAt).toLowerCase()}
+            </span>
+          </p>
+        </div>
+        {isAccepting ? null : (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={onDecline}
+              disabled={isBusy}
+              className={secondaryButtonClassName}
+            >
+              {isBusy ? "Declining..." : "Decline"}
+            </button>
+            <button
+              type="button"
+              onClick={onStartAccept}
+              disabled={isBusy}
+              className={primaryButtonClassName}
+            >
+              Accept
+            </button>
+          </div>
+        )}
+      </div>
+
+      {isAccepting ? (
+        <form
+          onSubmit={handleSubmit}
+          className="mt-5 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
+          aria-label={`Bid on ${invitation.projectTitle}`}
+        >
+          <div className="grid content-start gap-2">
+            <label
+              htmlFor={amountId}
+              className="text-sm font-semibold text-white/80"
+            >
+              Your price ($)
+            </label>
+            <input
+              id={amountId}
+              type="number"
+              inputMode="decimal"
+              min={1}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              aria-describedby={error ? errorId : undefined}
+              className={inputClassName}
+              autoFocus
+            />
+          </div>
+          <div className="grid content-start gap-2">
+            <label
+              htmlFor={messageId}
+              className="text-sm font-semibold text-white/80"
+            >
+              Message to {invitation.client.name}
+            </label>
+            <textarea
+              id={messageId}
+              rows={3}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              aria-describedby={error ? errorId : undefined}
+              className={`${inputClassName} resize-none`}
+            />
+            <p className="text-xs text-white/45">
+              Your scope, timeline and anything the client should know.
+            </p>
+          </div>
+          {error ? (
+            <p
+              id={errorId}
+              className="text-sm text-red-300 sm:col-span-2"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            <button
+              type="submit"
+              disabled={isBusy}
+              className={primaryButtonClassName}
+            >
+              {isBusy ? "Submitting..." : "Submit bid"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelAccept}
+              disabled={isBusy}
+              className={secondaryButtonClassName}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : error ? (
+        <p className="mt-3 text-sm text-red-300" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
+  const isAccepted = bid.status === "accepted";
+  const projectPath = `/dashboard/engineer/projects/${bid.projectId}`;
+
+  return (
+    <li className="grid grid-cols-2 items-center gap-3 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:gap-6">
+      <div className="col-span-2 min-w-0 lg:col-span-5">
+        {isAccepted ? (
+          <Link
+            to={projectPath}
+            className="rounded font-heading text-xl font-bold text-white transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+          >
+            {bid.projectTitle}
+          </Link>
+        ) : (
+          <p
+            className={`font-heading text-xl font-bold ${
+              bid.status === "declined" ? "text-white/55" : "text-white"
+            }`}
+          >
+            {bid.projectTitle}
+          </p>
+        )}
+        <p className="mt-1 text-sm text-white/50">
+          For{" "}
+          <Link to={`/users/${bid.clientUserId}`} className={inlineLinkClassName}>
+            {bid.clientName}
+          </Link>
+          , project {formatProjectStatus(bid.projectStatus)}
+        </p>
+      </div>
+
+      <p
+        className={`font-heading text-xl font-bold tabular-nums lg:col-span-2 ${
+          bid.status === "declined" ? "text-white/45" : "text-white"
+        }`}
+      >
+        {formatCurrency(bid.amount)}
+      </p>
+
+      <p className="text-right text-sm text-white/55 lg:col-span-2 lg:text-left">
+        {formatDate(bid.submittedDate)}
+      </p>
+
+      <div className="col-span-2 flex flex-wrap items-center gap-3 lg:col-span-3 lg:justify-end">
+        <span
+          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[bid.status]}`}
+        >
+          {statusLabels[bid.status]}
+        </span>
+        {isAccepted ? (
+          <Link
+            to={projectPath}
+            className="rounded-full text-sm font-semibold text-primary transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+          >
+            Open project
+          </Link>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
 export function EngineerBidsPage(): ReactElement {
-  const navigate = useNavigate();
   const [bids, setBids] = useState<EngineerBid[]>([]);
   const [invitations, setInvitations] = useState<BidInvitation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [retryKey, setRetryKey] = useState<number>(0);
+  const [filter, setFilter] = useState<BidFilter>("all");
   const [activeInvitationId, setActiveInvitationId] = useState<string | null>(
     null,
   );
-  const [inviteDecisionError, setInviteDecisionError] = useState<string>("");
   const [acceptingInvitationId, setAcceptingInvitationId] = useState<
     string | null
   >(null);
-  const [acceptAmount, setAcceptAmount] = useState<string>("");
-  const [acceptMessage, setAcceptMessage] = useState<string>("");
+  // Errors are pinned to the invitation they came from, so the message shows
+  // up on the row the engineer was working on instead of below the whole list.
+  const [invitationError, setInvitationError] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     const loadBids = async (): Promise<void> => {
@@ -159,7 +457,7 @@ export function EngineerBidsPage(): ReactElement {
 
   const declineInvitation = async (invitationId: string): Promise<void> => {
     setActiveInvitationId(invitationId);
-    setInviteDecisionError("");
+    setInvitationError(null);
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/bid-invitations/${invitationId}/decline`,
@@ -170,32 +468,46 @@ export function EngineerBidsPage(): ReactElement {
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setInviteDecisionError(getErrorMessage(body));
+        setInvitationError({
+          id: invitationId,
+          message: getErrorMessage(body),
+        });
         return;
       }
       setRetryKey((current) => current + 1);
     } catch {
-      setInviteDecisionError(
-        "Unable to connect to CivilHub. Please try again.",
-      );
+      setInvitationError({
+        id: invitationId,
+        message: "Unable to connect to CivilHub. Please try again.",
+      });
     } finally {
       setActiveInvitationId(null);
     }
   };
 
-  const acceptInvitation = async (invitationId: string): Promise<void> => {
-    const amountValue = Number(acceptAmount);
-    if (
-      !Number.isFinite(amountValue) ||
-      amountValue <= 0 ||
-      !acceptMessage.trim()
-    ) {
-      setInviteDecisionError("A valid amount and message are required.");
+  const acceptInvitation = async (
+    invitationId: string,
+    amount: string,
+    message: string,
+  ): Promise<void> => {
+    const amountValue = Number(amount);
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setInvitationError({
+        id: invitationId,
+        message: "Enter a price greater than zero.",
+      });
+      return;
+    }
+    if (!message.trim()) {
+      setInvitationError({
+        id: invitationId,
+        message: "Add a short message for the client.",
+      });
       return;
     }
 
     setActiveInvitationId(invitationId);
-    setInviteDecisionError("");
+    setInvitationError(null);
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/bid-invitations/${invitationId}/accept`,
@@ -205,274 +517,157 @@ export function EngineerBidsPage(): ReactElement {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: amountValue,
-            message: acceptMessage.trim(),
+            message: message.trim(),
           }),
         },
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        setInviteDecisionError(getErrorMessage(body));
+        setInvitationError({
+          id: invitationId,
+          message: getErrorMessage(body),
+        });
         return;
       }
       setAcceptingInvitationId(null);
-      setAcceptAmount("");
-      setAcceptMessage("");
       setRetryKey((current) => current + 1);
     } catch {
-      setInviteDecisionError(
-        "Unable to connect to CivilHub. Please try again.",
-      );
+      setInvitationError({
+        id: invitationId,
+        message: "Unable to connect to CivilHub. Please try again.",
+      });
     } finally {
       setActiveInvitationId(null);
     }
   };
 
+  const countFor = (key: BidFilter): number =>
+    key === "all"
+      ? bids.length
+      : bids.filter((bid) => bid.status === key).length;
+  const filteredBids =
+    filter === "all" ? bids : bids.filter((bid) => bid.status === filter);
+
   return (
-    <div className="space-y-10">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Your proposals
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          My Bids
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          Track every proposal and see where each opportunity stands.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="My bids"
+        summary={
+          isLoading
+            ? "Every proposal you've sent, and where each one stands."
+            : getSummary(bids, invitations)
+        }
+        action={
+          <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+            <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
+            Find projects
+          </Link>
+        }
+      />
 
       {isLoading ? (
-        <section className="space-y-4" aria-label="Loading bids">
-          {["one", "two", "three"].map((key) => (
-            <div
-              key={key}
-              className="animate-pulse rounded-2xl border border-white/10 bg-surface p-6"
-            >
-              <div className="h-6 w-1/3 rounded bg-white/10" />
-              <div className="mt-4 h-4 w-1/4 rounded bg-white/10" />
-              <div className="mt-6 h-4 w-1/2 rounded bg-white/10" />
-            </div>
-          ))}
-        </section>
+        <BidListSkeleton />
       ) : error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel
+          message={error}
+          onRetry={() => setRetryKey((key) => key + 1)}
+        />
       ) : bids.length === 0 && invitations.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/15 bg-surface/50 p-12 text-center">
-          <h2 className="font-heading text-3xl font-bold text-white">
-            You have no bids or invitations yet
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/55">
-            Explore open projects and send your first proposal to a client.
-          </p>
-          <Link
-            to="/dashboard/engineer/marketplace"
-            className="mt-6 inline-block rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-glow"
-          >
-            Browse marketplace
-          </Link>
-        </section>
+        <EmptyPanel
+          title="No bids or invitations yet"
+          body="Open briefs are listed in the marketplace. Send a bid on one and you can track it here."
+        />
       ) : (
-        <section
-          className="space-y-4"
-          aria-label="Engineer bids and invitations"
-        >
+        <>
           {invitations.length > 0 ? (
-            <article className="rounded-2xl border border-white/10 bg-surface p-6">
-              <h2 className="font-heading text-2xl font-bold text-white">
-                Pending Invitations
-              </h2>
-              <p className="mt-2 text-sm text-white/60">
-                Accept with your own price and terms to create a normal bid.
-              </p>
-
-              <div className="mt-4 space-y-3">
-                {invitations.map((invitation) => (
-                  <div
-                    key={invitation.id}
-                    className="rounded-xl border border-white/10 bg-void/50 p-4"
-                  >
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                      <div>
-                        <h3 className="text-sm font-semibold text-white">
-                          {invitation.projectTitle}
-                        </h3>
-                        <p className="mt-1 text-xs text-white/50">
-                          Client: {invitation.client.name}
-                        </p>
-                        <p className="mt-1 text-xs text-white/40">
-                          Invited {formatDate(invitation.createdAt)}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/users/${invitation.client.id}`}
-                        className="text-xs font-semibold text-primary hover:text-glow"
-                      >
-                        View client
-                      </Link>
-                    </div>
-
-                    {acceptingInvitationId === invitation.id ? (
-                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <input
-                            type="number"
-                            min={1}
-                            value={acceptAmount}
-                            onChange={(event) =>
-                              setAcceptAmount(event.target.value)
-                            }
-                            placeholder="Your bid amount"
-                            className="form-input"
-                          />
-                          <input
-                            value={acceptMessage}
-                            onChange={(event) =>
-                              setAcceptMessage(event.target.value)
-                            }
-                            placeholder="Short proposal message"
-                            className="form-input"
-                          />
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void acceptInvitation(invitation.id)}
-                            disabled={activeInvitationId === invitation.id}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
-                          >
-                            {activeInvitationId === invitation.id
-                              ? "Submitting..."
-                              : "Accept and submit bid"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAcceptingInvitationId(null);
-                              setAcceptAmount("");
-                              setAcceptMessage("");
-                            }}
-                            className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:border-white/40 hover:text-white"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAcceptingInvitationId(invitation.id);
-                            setInviteDecisionError("");
-                          }}
-                          className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow"
-                        >
-                          Accept invitation
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void declineInvitation(invitation.id)}
-                          disabled={activeInvitationId === invitation.id}
-                          className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:border-red-300 hover:text-red-200 disabled:opacity-60"
-                        >
-                          {activeInvitationId === invitation.id
-                            ? "Updating..."
-                            : "Decline"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {inviteDecisionError ? (
-                <p className="mt-4 text-xs text-red-300" role="alert">
-                  {inviteDecisionError}
+            <section
+              className={panelClassName}
+              aria-labelledby="invitations-heading"
+            >
+              <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+                <h2
+                  id="invitations-heading"
+                  className="font-heading text-2xl font-bold text-white"
+                >
+                  Invitations
+                </h2>
+                <p className="mt-1 text-sm text-white/50">
+                  Clients asked you to bid. Accepting sends a bid with your own
+                  price and message.
                 </p>
-              ) : null}
-            </article>
+              </div>
+              <ul className="divide-y divide-white/10 border-t border-white/10">
+                {invitations.map((invitation) => (
+                  <InvitationRow
+                    key={invitation.id}
+                    invitation={invitation}
+                    isAccepting={acceptingInvitationId === invitation.id}
+                    isBusy={activeInvitationId === invitation.id}
+                    error={
+                      invitationError?.id === invitation.id
+                        ? invitationError.message
+                        : ""
+                    }
+                    onStartAccept={() => {
+                      setAcceptingInvitationId(invitation.id);
+                      setInvitationError(null);
+                    }}
+                    onCancelAccept={() => {
+                      setAcceptingInvitationId(null);
+                      setInvitationError(null);
+                    }}
+                    onAccept={(amount, message) =>
+                      void acceptInvitation(invitation.id, amount, message)
+                    }
+                    onDecline={() => void declineInvitation(invitation.id)}
+                  />
+                ))}
+              </ul>
+            </section>
           ) : null}
 
-          {bids.map((bid) => {
-            const isAccepted = bid.status === "accepted";
-            return (
-              <button
-                key={bid.id}
-                type="button"
-                disabled={!isAccepted}
-                onClick={() =>
-                  navigate(`/dashboard/engineer/projects/${bid.projectId}`)
-                }
-                className={`w-full rounded-2xl border bg-surface p-6 text-left transition-all ${isAccepted ? "cursor-pointer border-emerald-400/20 hover:-translate-y-0.5 hover:border-emerald-400/50" : "cursor-default border-white/10"}`}
+          {bids.length > 0 ? (
+            <section className={panelClassName} aria-labelledby="bids-heading">
+              <div className="flex flex-col gap-4 px-5 pb-4 pt-5 sm:px-6 sm:pt-6 lg:flex-row lg:items-center lg:justify-between">
+                <h2
+                  id="bids-heading"
+                  className="font-heading text-2xl font-bold text-white"
+                >
+                  Bids
+                </h2>
+                <FilterTabs
+                  options={filterTabs.map((tab) => ({
+                    ...tab,
+                    count: countFor(tab.key),
+                  }))}
+                  value={filter}
+                  onChange={setFilter}
+                  label="Filter bids by status"
+                />
+              </div>
+              <div
+                className="hidden border-t border-white/10 px-6 py-2.5 text-xs font-semibold text-white/40 lg:grid lg:grid-cols-12 lg:gap-6"
+                aria-hidden="true"
               >
-                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                  <div>
-                    <h2 className="font-heading text-2xl font-bold text-white">
-                      {bid.projectTitle}
-                    </h2>
-                    <p className="mt-2 text-sm font-semibold text-white/60">
-                      Client: {bid.clientName}
-                    </p>
-                    <Link
-                      to={`/users/${bid.clientUserId}`}
-                      className="mt-2 inline-flex text-xs font-semibold text-primary hover:text-glow"
-                    >
-                      View profile
-                    </Link>
-                  </div>
-                  <span
-                    className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusStyles[bid.status]}`}
-                  >
-                    {statusLabels[bid.status]}
-                  </span>
-                </div>
-                <div className="mt-6 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                      Your bid
-                    </p>
-                    <p className="mt-2 font-heading text-2xl font-bold text-primary">
-                      {formatAmount(bid.amount)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                      Submitted
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-white/80">
-                      {formatDate(bid.submittedDate)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                      Project status
-                    </p>
-                    <p className="mt-2 text-sm font-semibold capitalize text-white/80">
-                      {bid.projectStatus.replaceAll("_", " ")}
-                    </p>
-                  </div>
-                </div>
-                {isAccepted ? (
-                  <p className="mt-5 text-xs font-semibold text-emerald-300">
-                    Open project progress -&gt;
-                  </p>
-                ) : null}
-              </button>
-            );
-          })}
-        </section>
+                <span className="col-span-5">Project</span>
+                <span className="col-span-2">Your bid</span>
+                <span className="col-span-2">Submitted</span>
+                <span className="col-span-3 text-right">Status</span>
+              </div>
+              {filteredBids.length > 0 ? (
+                <ul className="divide-y divide-white/10 border-t border-white/10">
+                  {filteredBids.map((bid) => (
+                    <BidRow key={bid.id} bid={bid} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="border-t border-white/10 px-5 py-8 text-sm text-white/50 sm:px-6">
+                  {emptyFilterMessages[filter]}
+                </p>
+              )}
+            </section>
+          ) : null}
+        </>
       )}
     </div>
   );

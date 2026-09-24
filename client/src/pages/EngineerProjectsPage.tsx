@@ -1,38 +1,28 @@
+import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { type ReactElement, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-
-export interface ProjectProgress {
-  id: string;
-  projectName: string;
-  clientName: string;
-  currentPhaseName: string;
-  progressPercentage: number;
-  nextMilestone: string;
-  nextMilestoneDueDate: string;
-}
+import { Link } from "react-router-dom";
+import {
+  panelClassName,
+  primaryButtonClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { ProgressBar } from "../components/dashboard/ui/ProgressBar";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import { countOf } from "../lib/format";
+import {
+  dueToneClassName,
+  getDueLabel,
+  hasMilestonePlan,
+  isProjectProgress,
+  type ProjectProgress,
+} from "../lib/projectProgress";
 
 interface ErrorResponse {
   message?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-
-const isProjectProgress = (value: unknown): value is ProjectProgress => {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const project = value as Record<string, unknown>;
-  return (
-    typeof project.id === "string" &&
-    typeof project.projectName === "string" &&
-    typeof project.clientName === "string" &&
-    typeof project.currentPhaseName === "string" &&
-    typeof project.progressPercentage === "number" &&
-    typeof project.nextMilestone === "string" &&
-    typeof project.nextMilestoneDueDate === "string"
-  );
-};
+const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
@@ -45,20 +35,154 @@ const getErrorMessage = (value: unknown): string => {
   return "Unable to load your projects.";
 };
 
-const ProjectSkeleton = (): ReactElement => (
-  <div
-    className="animate-pulse rounded-2xl border border-white/10 bg-surface p-6"
-    aria-label="Loading project"
-  >
-    <div className="h-3 w-1/3 rounded bg-white/10" />
-    <div className="mt-4 h-7 w-2/3 rounded bg-white/10" />
-    <div className="mt-8 h-2 rounded-full bg-white/10" />
-    <div className="mt-8 h-12 rounded bg-white/10" />
-  </div>
-);
+// Overdue and due-this-week milestones are the ones an engineer has to act on,
+// so they are pulled out above everything else.
+const needsAttention = (project: ProjectProgress): boolean => {
+  const tone = getDueLabel(project)?.tone;
+  return tone === "late" || tone === "soon";
+};
+
+const getSummary = (projects: ProjectProgress[]): string => {
+  if (projects.length === 0) return "No projects are assigned to you yet.";
+
+  const overdue = projects.filter(
+    (project) => getDueLabel(project)?.tone === "late",
+  ).length;
+  const awaitingPlan = projects.filter(
+    (project) => !hasMilestonePlan(project),
+  ).length;
+
+  const sentences = [
+    `${countOf(projects.length, "project", "projects")} in delivery.`,
+  ];
+  if (overdue > 0) {
+    sentences.push(
+      `${countOf(overdue, "milestone is", "milestones are")} overdue.`,
+    );
+  }
+  if (awaitingPlan > 0) {
+    sentences.push(
+      `${countOf(awaitingPlan, "project is", "projects are")} waiting on a milestone plan.`,
+    );
+  }
+  return sentences.join(" ");
+};
+
+function ProjectRow({ project }: { project: ProjectProgress }): ReactElement {
+  const due = getDueLabel(project);
+
+  return (
+    <li>
+      <Link
+        to={`/dashboard/engineer/projects/${project.id}`}
+        className="grid gap-4 px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+      >
+        <div className="min-w-0 lg:col-span-5">
+          <p className="truncate font-heading text-xl font-bold text-white">
+            {project.projectName}
+          </p>
+          <p className="mt-1 truncate text-sm text-white/50">
+            {project.currentPhaseName} for {project.clientName}
+          </p>
+        </div>
+
+        <div className="lg:col-span-3">
+          <ProgressBar
+            value={project.progressPercentage}
+            label={`${project.projectName} progress`}
+          />
+        </div>
+
+        <div className="min-w-0 lg:col-span-4 lg:text-right">
+          {hasMilestonePlan(project) ? (
+            <>
+              <p className="truncate text-sm text-white/85">
+                {project.nextMilestone}
+              </p>
+              {due ? (
+                <p
+                  className={`mt-1 text-sm font-semibold ${dueToneClassName[due.tone]}`}
+                  title={due.fullDate}
+                >
+                  {due.text}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-sm text-white/50">
+              No milestone plan approved yet
+            </p>
+          )}
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+interface ProjectGroupProps {
+  title: string;
+  projects: ProjectProgress[];
+}
+
+function ProjectGroup({ title, projects }: ProjectGroupProps): ReactElement {
+  const headingId = `project-group-${title.toLowerCase().replace(/\s+/g, "-")}`;
+
+  return (
+    <section className={panelClassName} aria-labelledby={headingId}>
+      <div className="flex items-baseline justify-between gap-4 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+        <h2 id={headingId} className="font-heading text-2xl font-bold text-white">
+          {title}
+        </h2>
+        <span className="text-sm text-white/45">
+          {countOf(projects.length, "project", "projects")}
+        </span>
+      </div>
+      <div
+        className="hidden border-t border-white/10 px-6 py-2.5 text-xs font-semibold text-white/40 lg:grid lg:grid-cols-12 lg:gap-6"
+        aria-hidden="true"
+      >
+        <span className="col-span-5">Project</span>
+        <span className="col-span-3">Progress</span>
+        <span className="col-span-4 text-right">Next milestone</span>
+      </div>
+      <ul className="divide-y divide-white/10 border-t border-white/10">
+        {projects.map((project) => (
+          <ProjectRow key={project.id} project={project} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ProjectListSkeleton(): ReactElement {
+  return (
+    <section className={panelClassName} aria-label="Loading projects">
+      <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+        <div className="h-7 w-40 animate-pulse rounded bg-white/10" />
+      </div>
+      <ul className="divide-y divide-white/10 border-t border-white/10">
+        {[1, 2, 3].map((item) => (
+          <li
+            key={item}
+            className="grid animate-pulse gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+          >
+            <div className="lg:col-span-5">
+              <div className="h-5 w-2/3 rounded bg-white/10" />
+              <div className="mt-2 h-3.5 w-1/2 rounded bg-white/10" />
+            </div>
+            <div className="h-1.5 rounded-full bg-white/10 lg:col-span-3" />
+            <div className="lg:col-span-4">
+              <div className="h-3.5 w-3/4 rounded bg-white/10 lg:ml-auto" />
+              <div className="mt-2 h-3.5 w-1/3 rounded bg-white/10 lg:ml-auto" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function EngineerProjectsPage(): ReactElement {
-  const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectProgress[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
@@ -99,121 +223,46 @@ export function EngineerProjectsPage(): ReactElement {
     void loadProjects();
   }, [retryKey]);
 
+  const urgentProjects = projects.filter(needsAttention);
+  const laterProjects = projects.filter((project) => !needsAttention(project));
+  const isSplit = urgentProjects.length > 0 && laterProjects.length > 0;
+
   return (
-    <div className="space-y-10">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-            Delivery pipeline
-          </p>
-          <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            My Projects
-          </h1>
-          <p className="mt-3 max-w-2xl text-white/60">
-            A live-looking view of your current commitments, milestones, and
-            delivery health.
-          </p>
-        </div>
-        <span className="w-fit rounded-full border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-          {isLoading ? "..." : projects.length} active projects
-        </span>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="My projects"
+        summary={
+          isLoading
+            ? "Your active projects, ordered by their next milestone."
+            : getSummary(projects)
+        }
+      />
 
       {isLoading ? (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Loading projects"
-        >
-          <ProjectSkeleton />
-          <ProjectSkeleton />
-        </section>
+        <ProjectListSkeleton />
       ) : error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel
+          message={error}
+          onRetry={() => setRetryKey((key) => key + 1)}
+        />
       ) : projects.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/15 bg-surface/50 p-12 text-center">
-          <h2 className="font-heading text-3xl font-bold text-white">
-            No active projects yet
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/55">
-            Once a client assigns a project to you, its progress and upcoming
-            milestones will appear here.
-          </p>
-        </section>
+        <EmptyPanel
+          title="No active projects yet"
+          body="When a client accepts one of your bids, the project shows up here with its progress and next milestone."
+          action={
+            <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+              <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
+              Find projects
+            </Link>
+          }
+        />
+      ) : isSplit ? (
+        <>
+          <ProjectGroup title="Needs attention" projects={urgentProjects} />
+          <ProjectGroup title="Later" projects={laterProjects} />
+        </>
       ) : (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Active projects"
-        >
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() =>
-                navigate(`/dashboard/engineer/projects/${project.id}`)
-              }
-              className="group rounded-2xl border border-white/10 bg-surface p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-[0_16px_40px_rgba(0,0,0,0.25)]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                    {project.clientName}
-                  </p>
-                  <h2 className="mt-2 font-heading text-2xl font-bold text-white">
-                    {project.projectName}
-                  </h2>
-                </div>
-                <span className="text-sm font-semibold text-white/60">
-                  {project.progressPercentage}%
-                </span>
-              </div>
-              <div className="mt-6">
-                <div className="mb-2 flex items-center justify-between text-xs text-white/45">
-                  <span>Overall progress</span>
-                  <span>{project.currentPhaseName}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-500"
-                    style={{ width: `${project.progressPercentage}%` }}
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex items-end justify-between gap-4 border-t border-white/10 pt-5">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Next milestone
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/85">
-                    {project.nextMilestone}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Due
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/85">
-                    {project.nextMilestoneDueDate}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-5 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                Open project progress <span aria-hidden="true">-&gt;</span>
-              </p>
-            </button>
-          ))}
-        </section>
+        <ProjectGroup title="Active projects" projects={projects} />
       )}
     </div>
   );

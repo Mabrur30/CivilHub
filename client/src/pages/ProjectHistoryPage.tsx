@@ -1,6 +1,15 @@
+import { StarIcon } from "@phosphor-icons/react";
 import { type ReactElement, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { StatBand, type BandStat } from "../components/dashboard/overview/StatBand";
+import {
+  inlineLinkClassName,
+  panelClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
+import { countOf, formatCurrency, formatDate } from "../lib/format";
 
 interface HistoryItem {
   id: string;
@@ -33,13 +42,6 @@ const isHistoryItem = (value: unknown): value is HistoryItem => {
   );
 };
 
-const formatDate = (value: string): string => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
-};
-
-const formatCurrency = (value: number): string => `$${value.toFixed(2)}`;
-
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
     const error = value as ErrorResponse;
@@ -48,9 +50,100 @@ const getErrorMessage = (value: unknown): string => {
   return "Unable to load project history.";
 };
 
+const getTime = (value: string): number => {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+function HistoryRow({
+  project,
+  projectPath,
+  partyLabel,
+}: {
+  project: HistoryItem;
+  projectPath: string;
+  partyLabel: string;
+}): ReactElement {
+  return (
+    <li className="grid gap-3 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6">
+      <div className="min-w-0 lg:col-span-5">
+        <Link
+          to={projectPath}
+          className="rounded font-heading text-xl font-bold text-white transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+        >
+          {project.title}
+        </Link>
+        <p className="mt-1 text-sm text-white/50">
+          {project.otherParty ? (
+            <>
+              {partyLabel}{" "}
+              <Link
+                to={`/users/${project.otherParty.id}`}
+                className={inlineLinkClassName}
+              >
+                {project.otherParty.name}
+              </Link>
+            </>
+          ) : (
+            `${partyLabel} not recorded`
+          )}
+        </p>
+      </div>
+
+      <p className="text-sm text-white/55 lg:col-span-2">
+        {formatDate(project.completedAt)}
+      </p>
+
+      <p className="font-heading text-xl font-bold tabular-nums text-white lg:col-span-2">
+        {formatCurrency(project.totalValuePaid)}
+      </p>
+
+      <div className="lg:col-span-3 lg:text-right">
+        {project.rating !== null ? (
+          <span
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-white"
+            aria-label={`Rated ${project.rating.toFixed(1)} out of 5`}
+          >
+            <StarIcon
+              weight="fill"
+              className="h-4 w-4 text-amber-300"
+              aria-hidden="true"
+            />
+            {project.rating.toFixed(1)}
+          </span>
+        ) : (
+          <span className="text-sm text-white/40">Not reviewed</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function HistoryListSkeleton(): ReactElement {
+  return (
+    <section className={panelClassName} aria-label="Loading project history">
+      <ul className="divide-y divide-white/10">
+        {[1, 2, 3].map((item) => (
+          <li
+            key={item}
+            className="grid animate-pulse gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+          >
+            <div className="lg:col-span-5">
+              <div className="h-5 w-2/3 rounded bg-white/10" />
+              <div className="mt-2 h-3.5 w-1/3 rounded bg-white/10" />
+            </div>
+            <div className="h-3.5 w-20 rounded bg-white/10 lg:col-span-2" />
+            <div className="h-6 w-24 rounded bg-white/10 lg:col-span-2" />
+            <div className="h-4 w-12 rounded bg-white/10 lg:col-span-3 lg:ml-auto" />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ProjectHistoryPage(): ReactElement {
   const { currentUser } = useAuth();
-  const navigate = useNavigate();
   const [projects, setProjects] = useState<HistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
@@ -73,7 +166,12 @@ export function ProjectHistoryPage(): ReactElement {
           setError("The project history returned by CivilHub is invalid.");
           return;
         }
-        setProjects(body);
+        setProjects(
+          [...body].sort(
+            (first, second) =>
+              getTime(second.completedAt) - getTime(first.completedAt),
+          ),
+        );
       } catch {
         setError("Unable to connect to CivilHub. Please try again.");
       } finally {
@@ -84,135 +182,127 @@ export function ProjectHistoryPage(): ReactElement {
     void loadHistory();
   }, [retryKey]);
 
-  const roleLabel = currentUser?.role === "client" ? "engineers" : "clients";
+  // This page serves both dashboards, so every label that names the other
+  // side of the project follows the viewer's role.
+  const isClient = currentUser?.role === "client";
+  const dashboardBase = isClient ? "/dashboard/client" : "/dashboard/engineer";
+  const partyLabel = isClient ? "Engineer:" : "Client:";
+  const otherSide = isClient ? "engineers" : "clients";
+
+  const totalValue = projects.reduce(
+    (sum, project) => sum + project.totalValuePaid,
+    0,
+  );
+  const ratings = projects
+    .map((project) => project.rating)
+    .filter((rating): rating is number => rating !== null);
+  const averageRating = ratings.length
+    ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
+    : null;
+
+  const partnerCount = new Set(
+    projects.flatMap((project) =>
+      project.otherParty ? [project.otherParty.id] : [],
+    ),
+  ).size;
+
+  const stats: BandStat[] = [
+    {
+      label: "Completed projects",
+      value: projects.length,
+      detail:
+        partnerCount > 0
+          ? `Delivered with ${countOf(partnerCount, isClient ? "engineer" : "client", otherSide)}`
+          : "Delivered on CivilHub",
+    },
+    {
+      label: isClient ? "Total paid" : "Total earned",
+      value: totalValue,
+      display: formatCurrency(Math.round(totalValue)),
+      detail: "Across all completed projects",
+    },
+  ];
+  if (averageRating !== null) {
+    stats.push({
+      label: "Average rating",
+      value: averageRating,
+      display: averageRating.toFixed(1),
+      detail: `From ${countOf(ratings.length, "review", "reviews")}`,
+    });
+  }
 
   return (
-    <div className="space-y-10">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Completed delivery
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          Project History
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          A record of finished work and the {roleLabel} who helped deliver it.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Project history"
+        summary={`Finished work and the ${otherSide} you delivered it with.`}
+      />
 
       {isLoading ? (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Loading project history"
-        >
-          {[1, 2].map((item) => (
-            <div
-              key={item}
-              className="animate-pulse rounded-2xl border border-white/10 bg-surface p-6"
-            >
-              <div className="h-3 w-1/3 rounded bg-white/10" />
-              <div className="mt-4 h-7 w-2/3 rounded bg-white/10" />
-              <div className="mt-8 h-12 rounded bg-white/10" />
-            </div>
-          ))}
-        </section>
+        <>
+          <StatBand
+            stats={[]}
+            isLoading
+            columnsClassName="grid-cols-1 sm:grid-cols-3"
+            skeletonCount={3}
+          />
+          <HistoryListSkeleton />
+        </>
       ) : error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel
+          message={error}
+          onRetry={() => setRetryKey((key) => key + 1)}
+        />
       ) : projects.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/15 bg-surface/50 p-12 text-center">
-          <h2 className="font-heading text-3xl font-bold text-white">
-            No completed projects yet
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/55">
-            Finished projects will be kept here for easy reference.
-          </p>
-        </section>
+        <EmptyPanel
+          title="No completed projects yet"
+          body="Finished projects move here with their final value and review."
+        />
       ) : (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Completed projects"
-        >
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() =>
-                navigate(
-                  `${currentUser?.role === "client" ? "/dashboard/client" : "/dashboard/engineer"}/projects/${project.id}`,
-                )
-              }
-              className="group rounded-2xl border border-white/10 bg-surface p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-emerald-300/35 hover:shadow-[0_16px_40px_rgba(0,0,0,0.25)]"
+        <>
+          <StatBand
+            stats={stats}
+            isLoading={false}
+            columnsClassName={
+              stats.length === 3
+                ? "grid-cols-1 sm:grid-cols-3"
+                : "grid-cols-1 sm:grid-cols-2"
+            }
+          />
+
+          <section
+            className={panelClassName}
+            aria-labelledby="completed-heading"
+          >
+            <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+              <h2
+                id="completed-heading"
+                className="font-heading text-2xl font-bold text-white"
+              >
+                Completed
+              </h2>
+            </div>
+            <div
+              className="hidden border-t border-white/10 px-6 py-2.5 text-xs font-semibold text-white/40 lg:grid lg:grid-cols-12 lg:gap-6"
+              aria-hidden="true"
             >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">
-                    Completed
-                  </p>
-                  <h2 className="mt-2 font-heading text-2xl font-bold text-white">
-                    {project.title}
-                  </h2>
-                </div>
-                {project.rating !== null && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-amber-300">
-                    <span>★</span>
-                    <span className="text-white">
-                      {project.rating.toFixed(1)}
-                    </span>
-                  </span>
-                )}
-              </div>
-              <div className="mt-6 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    {currentUser?.role === "client" ? "Engineer" : "Client"}
-                  </p>
-                  {project.otherParty ? (
-                    <Link
-                      to={`/users/${project.otherParty.id}`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="mt-2 inline-flex text-sm font-semibold text-primary hover:text-glow"
-                    >
-                      {project.otherParty.name}
-                    </Link>
-                  ) : (
-                    <p className="mt-2 text-sm text-white/55">Not assigned</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Completed
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/80">
-                    {formatDate(project.completedAt)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Value paid
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/80">
-                    {formatCurrency(project.totalValuePaid)}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-5 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                Open project history <span aria-hidden="true">-&gt;</span>
-              </p>
-            </button>
-          ))}
-        </section>
+              <span className="col-span-5">Project</span>
+              <span className="col-span-2">Completed</span>
+              <span className="col-span-2">Value</span>
+              <span className="col-span-3 text-right">Review</span>
+            </div>
+            <ul className="divide-y divide-white/10 border-t border-white/10">
+              {projects.map((project) => (
+                <HistoryRow
+                  key={project.id}
+                  project={project}
+                  projectPath={`${dashboardBase}/projects/${project.id}`}
+                  partyLabel={partyLabel}
+                />
+              ))}
+            </ul>
+          </section>
+        </>
       )}
     </div>
   );

@@ -1,8 +1,24 @@
 import { type ReactElement, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
+import {
+  bookingStatusClassName,
+  bookingStatusLabel,
+  getPaymentSummary,
+  needsPayment,
+} from "../components/dashboard/equipment/bookingStatus";
+import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
+import {
+  panelClassName,
+  primaryButtonClassName,
+  quietLinkClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { RatingBadge } from "../components/RatingBadge";
+import { countOf, formatCurrency, formatDateRange } from "../lib/format";
 import {
   fetchMyEquipmentBookings,
   payEquipmentBooking,
@@ -21,46 +37,185 @@ const bucketLabel: Record<EquipmentBookingBucket, string> = {
   pending: "Pending",
   upcoming: "Upcoming",
   active: "Active",
-  history: "History",
+  history: "Past",
 };
 
-const statusLabel: Record<EquipmentMyBooking["status"], string> = {
-  pending: "Pending approval",
-  approved: "Approved",
-  in_progress: "In progress",
-  completed: "Completed",
-  declined: "Declined",
-  cancelled: "Cancelled",
+const emptyBucketMessage: Record<EquipmentBookingBucket, string> = {
+  pending: "No requests are waiting on an owner.",
+  upcoming: "No approved bookings are coming up.",
+  active: "Nothing is out on rent to you right now.",
+  history: "Finished and cancelled bookings will be kept here.",
 };
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
+const getSummary = (items: EquipmentMyBooking[]): string => {
+  if (items.length === 0) {
+    return "Equipment you rent from other engineers, from request to return.";
+  }
 
-const formatDateRange = (startDate: string, endDate: string): string => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+  const awaiting = items.filter((item) => item.status === "pending").length;
+  const toPay = items.filter(needsPayment).length;
+  const inUse = items.filter((item) => item.status === "in_progress").length;
+  const sentences: string[] = [];
+  if (toPay > 0) {
+    sentences.push(
+      `${countOf(toPay, "approved booking needs", "approved bookings need")} payment.`,
+    );
+  }
+  if (awaiting > 0) {
+    sentences.push(
+      `${countOf(awaiting, "request is", "requests are")} waiting on the owner.`,
+    );
+  }
+  if (inUse > 0) {
+    sentences.push(`${countOf(inUse, "rental is", "rentals are")} in progress.`);
+  }
+  return sentences.length
+    ? sentences.join(" ")
+    : "Nothing needs your attention right now.";
 };
+
+interface BookingRowProps {
+  booking: EquipmentMyBooking;
+  isPaying: boolean;
+  payError: string;
+  onPay: () => void;
+}
+
+function BookingRow({
+  booking,
+  isPaying,
+  payError,
+  onPay,
+}: BookingRowProps): ReactElement {
+  const detailPath = `/dashboard/engineer/equipment/bookings/${booking.id}`;
+  const canPay = needsPayment(booking);
+
+  return (
+    <li className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6">
+      <Link
+        to={detailPath}
+        className="group flex min-w-0 gap-4 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow lg:col-span-6"
+      >
+        <EquipmentThumb
+          src={booking.equipment.photoUrl}
+          alt={booking.equipment.title}
+          className="h-16 w-24 shrink-0 rounded-xl"
+        />
+        <div className="min-w-0">
+          <p className="truncate font-heading text-lg font-bold text-white transition-colors group-hover:text-primary">
+            {booking.equipment.title}
+          </p>
+          <p className="mt-0.5 text-sm text-white/55">
+            {formatDateRange(booking.startDate, booking.endDate)}
+          </p>
+          <div className="mt-1.5 flex min-w-0 items-center gap-2 text-sm text-white/55">
+            <Avatar
+              name={booking.owner.name}
+              photoUrl={booking.owner.profilePhotoUrl}
+              size="2xs"
+            />
+            <span className="truncate">{booking.owner.name}</span>
+            <RatingBadge
+              rating={booking.owner.rating ?? null}
+              reviewCount={booking.owner.reviewCount ?? 0}
+              size="sm"
+            />
+          </div>
+        </div>
+      </Link>
+
+      <div className="lg:col-span-2">
+        <p className="font-heading text-xl font-bold tabular-nums text-white">
+          {formatCurrency(booking.totalRentalFee)}
+        </p>
+        <p
+          className={`text-xs ${canPay ? "font-semibold text-primary" : "text-white/45"}`}
+        >
+          {getPaymentSummary(booking)}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 lg:col-span-4 lg:justify-end">
+        <span
+          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${bookingStatusClassName[booking.status]}`}
+        >
+          {bookingStatusLabel[booking.status]}
+        </span>
+        {canPay ? (
+          <button
+            type="button"
+            onClick={onPay}
+            disabled={isPaying}
+            className={primaryButtonClassName}
+          >
+            {isPaying
+              ? "Paying..."
+              : `Pay ${formatCurrency(booking.totalRentalFee)}`}
+          </button>
+        ) : (
+          <Link to={detailPath} className={quietLinkClassName}>
+            Details
+          </Link>
+        )}
+      </div>
+
+      {payError ? (
+        <p className="text-sm text-red-300 lg:col-span-12" role="alert">
+          {payError}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+function BookingListSkeleton(): ReactElement {
+  return (
+    <section className={panelClassName} aria-label="Loading bookings">
+      <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+        <div className="h-8 w-72 animate-pulse rounded-full bg-white/10" />
+      </div>
+      <ul className="divide-y divide-white/10 border-t border-white/10">
+        {[1, 2, 3].map((item) => (
+          <li
+            key={item}
+            className="grid animate-pulse gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+          >
+            <div className="flex gap-4 lg:col-span-6">
+              <div className="h-16 w-24 shrink-0 rounded-xl bg-white/10" />
+              <div className="flex-1">
+                <div className="h-5 w-2/3 rounded bg-white/10" />
+                <div className="mt-2 h-3.5 w-1/3 rounded bg-white/10" />
+                <div className="mt-2 h-3.5 w-1/2 rounded bg-white/10" />
+              </div>
+            </div>
+            <div className="h-6 w-20 rounded bg-white/10 lg:col-span-2" />
+            <div className="h-6 w-28 rounded-full bg-white/10 lg:col-span-4 lg:ml-auto" />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function MyEquipmentBookingsPage(): ReactElement {
-  const navigate = useNavigate();
   const [items, setItems] = useState<EquipmentMyBooking[]>([]);
-  const [activeBucket, setActiveBucket] =
-    useState<EquipmentBookingBucket>("pending");
+  // null until the person picks a filter, so the page can open on the group
+  // that needs them: wherever a payment is due, else the first non-empty one.
+  const [chosenBucket, setChosenBucket] =
+    useState<EquipmentBookingBucket | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [payError, setPayError] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
 
   const loadBookings = async (): Promise<void> => {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetchMyEquipmentBookings();
-      setItems(response);
+      setItems(await fetchMyEquipmentBookings());
     } catch (loadError: unknown) {
       setError(
         loadError instanceof Error
@@ -91,183 +246,95 @@ export function MyEquipmentBookingsPage(): ReactElement {
     return mapping;
   }, [items]);
 
+  const activeBucket =
+    chosenBucket ??
+    items.find(needsPayment)?.bucket ??
+    BUCKETS.find((bucket) => grouped[bucket].length > 0) ??
+    "pending";
   const visibleItems = grouped[activeBucket];
 
-  const goToDetail = (bookingId: string): void => {
-    navigate(`/dashboard/engineer/equipment/bookings/${bookingId}`);
-  };
-
-  const handlePayShortcut = async (bookingId: string): Promise<void> => {
+  const handlePay = async (bookingId: string): Promise<void> => {
     setPayingId(bookingId);
+    setPayError(null);
     try {
       await payEquipmentBooking(bookingId);
       await loadBookings();
-    } catch (payError: unknown) {
-      setError(
-        payError instanceof Error
-          ? payError.message
-          : "Unable to process booking payment.",
-      );
+    } catch (payFailure: unknown) {
+      setPayError({
+        id: bookingId,
+        message:
+          payFailure instanceof Error
+            ? payFailure.message
+            : "Unable to process booking payment.",
+      });
     } finally {
       setPayingId(null);
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Renter workspace
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          My Equipment Bookings
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          Open a booking to view its full timeline and next step.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="My bookings"
+        summary={
+          isLoading
+            ? "Equipment you rent from other engineers, from request to return."
+            : getSummary(items)
+        }
+      />
 
       <EquipmentSectionTabs />
 
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-surface/70 p-1">
-        <div className="flex min-w-max gap-1">
-          {BUCKETS.map((bucket) => (
-            <button
-              key={bucket}
-              type="button"
-              onClick={() => setActiveBucket(bucket)}
-              className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors ${
-                activeBucket === bucket
-                  ? "bg-primary text-white"
-                  : "text-white/65 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              {bucketLabel[bucket]}
-              <span className="ml-2 text-xs text-white/70">
-                ({grouped[bucket].length})
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-        </section>
-      ) : null}
-
       {isLoading ? (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <article
-              key={`booking-skeleton-${index}`}
-              className="animate-pulse rounded-2xl border border-white/10 bg-surface p-4"
+        <BookingListSkeleton />
+      ) : error ? (
+        <ErrorPanel message={error} onRetry={() => void loadBookings()} />
+      ) : items.length === 0 ? (
+        <EmptyPanel
+          title="No bookings yet"
+          body="Find a machine or tool, pick your dates and send a request. It shows up here while the owner decides."
+          action={
+            <Link
+              to="/dashboard/engineer/equipment/browse"
+              className={primaryButtonClassName}
             >
-              <div className="h-28 rounded-xl bg-white/10" />
-              <div className="mt-3 h-4 w-2/3 rounded bg-white/10" />
-              <div className="mt-2 h-3 w-1/2 rounded bg-white/10" />
-            </article>
-          ))}
-        </section>
-      ) : visibleItems.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/20 bg-surface/50 p-10 text-center">
-          <p className="text-3xl">📅</p>
-          <p className="mt-3 text-sm text-white/60">
-            No {bucketLabel[activeBucket].toLowerCase()} bookings yet.
-          </p>
-        </section>
+              Browse equipment
+            </Link>
+          }
+        />
       ) : (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {visibleItems.map((booking) => {
-            const canPay =
-              booking.status === "approved" &&
-              booking.paymentStatus === "unpaid";
-
-            return (
-              <article
-                key={booking.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => goToDetail(booking.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    goToDetail(booking.id);
+        <section className={panelClassName} aria-label="Your bookings">
+          <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+            <FilterTabs
+              options={BUCKETS.map((bucket) => ({
+                key: bucket,
+                label: bucketLabel[bucket],
+                count: grouped[bucket].length,
+              }))}
+              value={activeBucket}
+              onChange={setChosenBucket}
+              label="Filter bookings"
+            />
+          </div>
+          {visibleItems.length > 0 ? (
+            <ul className="divide-y divide-white/10 border-t border-white/10">
+              {visibleItems.map((booking) => (
+                <BookingRow
+                  key={booking.id}
+                  booking={booking}
+                  isPaying={payingId === booking.id}
+                  payError={
+                    payError?.id === booking.id ? payError.message : ""
                   }
-                }}
-                className="cursor-pointer rounded-2xl border border-white/10 bg-surface p-4 transition-colors hover:border-primary/40"
-              >
-                <div className="flex gap-4">
-                  <img
-                    src={booking.equipment.photoUrl ?? ""}
-                    alt={booking.equipment.title}
-                    className="h-24 w-32 rounded-xl object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h2 className="line-clamp-1 text-lg font-bold text-white">
-                      {booking.equipment.title}
-                    </h2>
-                    <p className="mt-1 text-xs text-white/55">
-                      {formatDateRange(booking.startDate, booking.endDate)}
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-white">
-                      {formatCurrency(booking.totalRentalFee)}
-                      <span className="ml-1 text-xs font-normal text-white/55">
-                        rental fee
-                      </span>
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar
-                      name={booking.owner.name}
-                      photoUrl={booking.owner.profilePhotoUrl}
-                      size="sm"
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-white">
-                        {booking.owner.name}
-                      </p>
-                      <RatingBadge
-                        rating={booking.owner.rating ?? null}
-                        reviewCount={booking.owner.reviewCount ?? 0}
-                        size="sm"
-                      />
-                    </div>
-                  </div>
-
-                  <span className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/75">
-                    {statusLabel[booking.status]}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold text-primary">
-                    View Details
-                  </p>
-                  {canPay ? (
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handlePayShortcut(booking.id);
-                      }}
-                      disabled={payingId === booking.id}
-                      className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
-                    >
-                      {payingId === booking.id ? "Processing..." : "Pay Now"}
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
+                  onPay={() => void handlePay(booking.id)}
+                />
+              ))}
+            </ul>
+          ) : (
+            <p className="border-t border-white/10 px-5 py-8 text-sm text-white/50 sm:px-6">
+              {emptyBucketMessage[activeBucket]}
+            </p>
+          )}
         </section>
       )}
     </div>

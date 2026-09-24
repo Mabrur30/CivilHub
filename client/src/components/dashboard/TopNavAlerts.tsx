@@ -1,4 +1,5 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
+import { BellIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -47,37 +48,6 @@ const getErrorMessage = (value: unknown): string => {
 
   return "Unable to load notifications.";
 };
-
-const MessageIcon = (): ReactElement => (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    className="h-5 w-5"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-4 4V6z" />
-  </svg>
-);
-
-const BellIcon = (): ReactElement => (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    className="h-5 w-5"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M15 17h5l-1.4-1.4a2 2 0 0 1-.6-1.4V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5" />
-    <path d="M10 17a2 2 0 0 0 4 0" />
-  </svg>
-);
 
 const renderIconBadge = (count: number): ReactElement | null => {
   if (count <= 0) {
@@ -300,7 +270,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
         aria-label="Messages"
         className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/70 transition-colors hover:border-primary hover:text-white"
       >
-        <MessageIcon />
+        <ChatCircleIcon className="h-5 w-5" aria-hidden="true" />
         {renderIconBadge(messageUnreadCount)}
       </Link>
 
@@ -313,7 +283,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
           onClick={handleToggleNotifications}
           className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/70 transition-colors hover:border-primary hover:text-white"
         >
-          <BellIcon />
+          <BellIcon className="h-5 w-5" aria-hidden="true" />
           {renderIconBadge(notificationUnreadCount)}
         </button>
 

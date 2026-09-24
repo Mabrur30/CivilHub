@@ -1,111 +1,114 @@
+import { ImageIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import {
   type ChangeEvent,
   type FormEvent,
   type ReactElement,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
-import { RatingBadge } from "../components/RatingBadge";
 import {
-  fetchOwnerEquipmentBookings,
-  fetchIncomingEquipmentBookings,
+  bookingStatusClassName,
+  bookingStatusLabel,
+  getPaymentSummary,
+} from "../components/dashboard/equipment/bookingStatus";
+import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
+import { ListingFields } from "../components/dashboard/equipment/ListingFields";
+import {
+  validateListingDetails,
+  type ListingDetails,
+} from "../components/dashboard/equipment/listingDetails";
+import {
+  panelClassName,
+  primaryButtonClassName,
+  rowButtonClassName,
+  rowDangerButtonClassName,
+  secondaryButtonClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { Dialog } from "../components/dashboard/ui/Dialog";
+import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import { RatingBadge } from "../components/RatingBadge";
+import { countOf, formatCurrency, formatDateRange } from "../lib/format";
+import {
   createEquipmentListing,
   deleteEquipmentListing,
-  EQUIPMENT_CATEGORIES,
+  fetchIncomingEquipmentBookings,
   fetchMyEquipmentListings,
+  fetchOwnerEquipmentBookings,
   respondToEquipmentBooking,
+  updateEquipmentListing,
+  type EquipmentBookingBucket,
+  type EquipmentBookingParty,
   type EquipmentIncomingBooking,
-  type EquipmentCategory,
   type EquipmentListing,
   type EquipmentOwnerBooking,
   type EquipmentStatus,
-  updateEquipmentListing,
 } from "./equipment.api";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_LIMIT = 5 * 1024 * 1024;
+const PHOTO_LIMIT = 6;
+const BOOKING_DETAIL_BASE = "/dashboard/engineer/equipment/bookings";
 
-interface EquipmentFormState {
-  title: string;
-  description: string;
-  category: EquipmentCategory;
-  dailyRate: string;
-  securityDeposit: string;
-  location: string;
-  photos: File[];
-}
+const RENTAL_BUCKETS: EquipmentBookingBucket[] = [
+  "pending",
+  "upcoming",
+  "active",
+  "history",
+];
 
-interface EditDraftState {
-  title: string;
-  description: string;
-  category: EquipmentCategory;
-  dailyRate: string;
-  securityDeposit: string;
-  location: string;
-}
+const rentalBucketLabel: Record<EquipmentBookingBucket, string> = {
+  pending: "Pending",
+  upcoming: "Upcoming",
+  active: "Out on rent",
+  history: "Past",
+};
 
-const defaultForm: EquipmentFormState = {
+const defaultDetails: ListingDetails = {
   title: "",
   description: "",
   category: "Excavator",
   dailyRate: "",
   securityDeposit: "",
   location: "",
-  photos: [],
 };
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
+interface RowError {
+  id: string;
+  message: string;
+}
+
+const listingStatusClassName: Record<EquipmentStatus, string> = {
+  active: "bg-emerald-400/10 text-emerald-300",
+  paused: "bg-white/5 text-white/50",
+};
+
+const listingStatusLabel: Record<EquipmentStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+};
+
+const getMessage = (value: unknown, fallback: string): string =>
+  value instanceof Error ? value.message : fallback;
 
 const validateImageFile = (file: File): string => {
   if (!IMAGE_TYPES.includes(file.type)) {
-    return "Only JPG, PNG, and WEBP images are supported.";
+    return "Only JPG, PNG and WEBP images are supported.";
   }
   if (file.size > IMAGE_LIMIT) {
-    return "Each image must be 5MB or smaller.";
+    return "Each image must be 5 MB or smaller.";
   }
   return "";
 };
 
-const validateForm = (form: EquipmentFormState): string => {
-  if (!form.title.trim()) return "Title is required.";
-  if (!form.description.trim()) return "Description is required.";
-  if (form.description.trim().length > 1000) {
-    return "Description must be 1000 characters or fewer.";
-  }
-  if (!form.location.trim()) return "Location is required.";
-
-  const dailyRate = Number.parseFloat(form.dailyRate);
-  if (!Number.isFinite(dailyRate) || dailyRate <= 0) {
-    return "Daily rate must be a positive number.";
-  }
-
-  const securityDeposit = Number.parseFloat(form.securityDeposit);
-  if (!Number.isFinite(securityDeposit) || securityDeposit <= 0) {
-    return "Security deposit must be a positive number.";
-  }
-
-  if (form.photos.length === 0) {
-    return "At least one photo is required.";
-  }
-
-  if (form.photos.length > 6) {
-    return "You can upload up to 6 photos per listing.";
-  }
-
-  return "";
-};
-
-const toEditDraft = (item: EquipmentListing): EditDraftState => ({
+const toDetails = (item: EquipmentListing): ListingDetails => ({
   title: item.title,
   description: item.description,
   category: item.category,
@@ -114,83 +117,150 @@ const toEditDraft = (item: EquipmentListing): EditDraftState => ({
   location: item.location,
 });
 
-const StatusChip = ({ status }: { status: EquipmentStatus }): ReactElement => (
-  <span
-    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-      status === "active"
-        ? "border border-emerald-300/35 bg-emerald-300/15 text-emerald-200"
-        : "border border-amber-300/35 bg-amber-300/15 text-amber-100"
-    }`}
-  >
-    {status === "active" ? "Active" : "Paused"}
-  </span>
-);
+function PartyLine({ party }: { party: EquipmentBookingParty }): ReactElement {
+  return (
+    <div className="mt-1.5 flex min-w-0 items-center gap-2 text-sm text-white/55">
+      <Avatar name={party.name} photoUrl={party.profilePhotoUrl} size="2xs" />
+      <span className="truncate">{party.name}</span>
+      <RatingBadge
+        rating={party.rating ?? null}
+        reviewCount={party.reviewCount ?? 0}
+        size="sm"
+      />
+    </div>
+  );
+}
+
+function RowSkeletons({ count = 2 }: { count?: number }): ReactElement {
+  return (
+    <ul className="divide-y divide-white/10 border-t border-white/10">
+      {Array.from({ length: count }).map((_, index) => (
+        <li
+          key={`row-skeleton-${index}`}
+          className="flex animate-pulse gap-4 px-5 py-5 sm:px-6"
+        >
+          <div className="h-16 w-24 shrink-0 rounded-xl bg-white/10" />
+          <div className="flex-1">
+            <div className="h-5 w-1/2 rounded bg-white/10" />
+            <div className="mt-2 h-3.5 w-1/3 rounded bg-white/10" />
+            <div className="mt-2 h-3.5 w-1/4 rounded bg-white/10" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function InlineError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}): ReactElement {
+  return (
+    <div
+      className="flex flex-col gap-3 border-t border-white/10 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+      role="alert"
+    >
+      <p className="text-sm text-red-200">{message}</p>
+      <button type="button" onClick={onRetry} className={rowButtonClassName}>
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function PanelHeading({
+  id,
+  title,
+  body,
+  aside,
+}: {
+  id: string;
+  title: string;
+  body?: string;
+  aside?: ReactElement | null;
+}): ReactElement {
+  return (
+    <div className="flex flex-col gap-3 px-5 pb-4 pt-5 sm:px-6 sm:pt-6 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <h2 id={id} className="font-heading text-2xl font-bold text-white">
+          {title}
+        </h2>
+        {body ? <p className="mt-1 text-sm text-white/50">{body}</p> : null}
+      </div>
+      {aside ?? null}
+    </div>
+  );
+}
 
 export function MyEquipmentPage(): ReactElement {
-  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [items, setItems] = useState<EquipmentListing[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>("");
+  const [listingsError, setListingsError] = useState<string>("");
 
-  const [isAddOpen, setIsAddOpen] = useState<boolean>(false);
-  const [form, setForm] = useState<EquipmentFormState>(defaultForm);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
-  const [formError, setFormError] = useState<string>("");
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<EditDraftState | null>(null);
-  const [editError, setEditError] = useState<string>("");
-  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   const [incomingBookings, setIncomingBookings] = useState<
     EquipmentIncomingBooking[]
   >([]);
+  const [isLoadingIncoming, setIsLoadingIncoming] = useState<boolean>(true);
+  const [incomingError, setIncomingError] = useState<string>("");
+
   const [ownerBookings, setOwnerBookings] = useState<EquipmentOwnerBooking[]>(
     [],
   );
-  const [isLoadingIncoming, setIsLoadingIncoming] = useState<boolean>(true);
   const [isLoadingOwnerBookings, setIsLoadingOwnerBookings] =
     useState<boolean>(true);
+  const [ownerBookingsError, setOwnerBookingsError] = useState<string>("");
+  const [rentalBucket, setRentalBucket] =
+    useState<EquipmentBookingBucket | null>(null);
+
+  // One slot for the latest failed row action, shown on the row it came from.
+  const [rowError, setRowError] = useState<RowError | null>(null);
   const [respondingBookingId, setRespondingBookingId] = useState<string | null>(
     null,
   );
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const [isAddOpen, setIsAddOpen] = useState<boolean>(false);
+  const [addDetails, setAddDetails] = useState<ListingDetails>(defaultDetails);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [addError, setAddError] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const [editingItem, setEditingItem] = useState<EquipmentListing | null>(null);
+  const [editDetails, setEditDetails] =
+    useState<ListingDetails>(defaultDetails);
+  const [editError, setEditError] = useState<string>("");
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
   const loadMine = async (): Promise<void> => {
     setIsLoading(true);
-    setError("");
+    setListingsError("");
     try {
-      const response = await fetchMyEquipmentListings();
-      setItems(response);
+      setItems(await fetchMyEquipmentListings());
     } catch (loadError: unknown) {
-      const message =
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load your equipment listings.";
-      setError(message);
+      setListingsError(
+        getMessage(loadError, "Unable to load your equipment listings."),
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    void loadMine();
-  }, []);
-
   const loadIncomingBookings = async (): Promise<void> => {
     setIsLoadingIncoming(true);
+    setIncomingError("");
     try {
-      const response = await fetchIncomingEquipmentBookings();
-      setIncomingBookings(response);
+      setIncomingBookings(await fetchIncomingEquipmentBookings());
     } catch (loadError: unknown) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load incoming booking requests.",
+      setIncomingError(
+        getMessage(loadError, "Unable to load booking requests."),
       );
     } finally {
       setIsLoadingIncoming(false);
@@ -199,14 +269,12 @@ export function MyEquipmentPage(): ReactElement {
 
   const loadOwnerBookings = async (): Promise<void> => {
     setIsLoadingOwnerBookings(true);
+    setOwnerBookingsError("");
     try {
-      const response = await fetchOwnerEquipmentBookings();
-      setOwnerBookings(response);
+      setOwnerBookings(await fetchOwnerEquipmentBookings());
     } catch (loadError: unknown) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load owner booking lifecycle.",
+      setOwnerBookingsError(
+        getMessage(loadError, "Unable to load rentals of your equipment."),
       );
     } finally {
       setIsLoadingOwnerBookings(false);
@@ -214,10 +282,8 @@ export function MyEquipmentPage(): ReactElement {
   };
 
   useEffect(() => {
+    void loadMine();
     void loadIncomingBookings();
-  }, []);
-
-  useEffect(() => {
     void loadOwnerBookings();
   }, []);
 
@@ -227,116 +293,133 @@ export function MyEquipmentPage(): ReactElement {
     };
   }, [previewUrls]);
 
-  const hasListings = items.length > 0;
+  const rentalsByBucket = useMemo(() => {
+    const mapping: Record<EquipmentBookingBucket, EquipmentOwnerBooking[]> = {
+      pending: [],
+      upcoming: [],
+      active: [],
+      history: [],
+    };
+    ownerBookings.forEach((booking) => mapping[booking.bucket].push(booking));
+    return mapping;
+  }, [ownerBookings]);
 
-  const canSubmit = useMemo(() => !isSubmitting, [isSubmitting]);
+  const activeRentalBucket =
+    rentalBucket ??
+    RENTAL_BUCKETS.find((bucket) => rentalsByBucket[bucket].length > 0) ??
+    "pending";
 
-  const handlePhotoSelection = (files: FileList | null): void => {
-    if (!files) return;
-
-    const nextFiles = Array.from(files);
-    const nextErrors = nextFiles
-      .map(validateImageFile)
-      .filter((message) => message.length > 0);
-
-    if (nextErrors.length > 0) {
-      setFormError(nextErrors[0]);
-      return;
-    }
-
-    const merged = [...form.photos, ...nextFiles].slice(0, 6);
-
+  const setPhotoSelection = (nextPhotos: File[]): void => {
     previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    const nextPreviews = merged.map((file) => URL.createObjectURL(file));
-
-    setForm((current) => ({ ...current, photos: merged }));
-    setPreviewUrls(nextPreviews);
-    setFormError("");
+    setPhotos(nextPhotos);
+    setPreviewUrls(nextPhotos.map((file) => URL.createObjectURL(file)));
   };
 
   const onFilesChanged = (event: ChangeEvent<HTMLInputElement>): void => {
-    handlePhotoSelection(event.target.files);
-    if (event.target) {
-      event.target.value = "";
+    const files = event.target.files;
+    if (files) {
+      const nextFiles = Array.from(files);
+      const firstProblem = nextFiles
+        .map(validateImageFile)
+        .find((message) => message.length > 0);
+      if (firstProblem) {
+        setAddError(firstProblem);
+      } else {
+        setPhotoSelection([...photos, ...nextFiles].slice(0, PHOTO_LIMIT));
+        setAddError("");
+      }
     }
+    event.target.value = "";
   };
 
-  const removeSelectedPhoto = (index: number): void => {
-    const nextPhotos = form.photos.filter(
-      (_, itemIndex) => itemIndex !== index,
-    );
-    previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    const nextPreviews = nextPhotos.map((file) => URL.createObjectURL(file));
-    setForm((current) => ({ ...current, photos: nextPhotos }));
-    setPreviewUrls(nextPreviews);
-  };
+  const closeAdd = useCallback((): void => {
+    setIsAddOpen(false);
+    setAddDetails(defaultDetails);
+    setPhotos([]);
+    setPreviewUrls((current) => {
+      current.forEach((url) => URL.revokeObjectURL(url));
+      return [];
+    });
+    setAddError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
 
-  const resetForm = (): void => {
-    previewUrls.forEach((url) => URL.revokeObjectURL(url));
-    setPreviewUrls([]);
-    setForm(defaultForm);
-    setFormError("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+  const closeEdit = useCallback((): void => {
+    setEditingItem(null);
+    setEditError("");
+  }, []);
 
   const submitCreate = async (
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
 
-    const validationError = validateForm(form);
+    const validationError =
+      validateListingDetails(addDetails) ||
+      (photos.length === 0 ? "Add at least one photo." : "");
     if (validationError) {
-      setFormError(validationError);
+      setAddError(validationError);
       return;
     }
 
     setIsSubmitting(true);
-    setFormError("");
-
+    setAddError("");
     try {
-      const created = await createEquipmentListing({
-        title: form.title,
-        description: form.description,
-        category: form.category,
-        dailyRate: form.dailyRate,
-        securityDeposit: form.securityDeposit,
-        location: form.location,
-        photos: form.photos,
-      });
-
+      const created = await createEquipmentListing({ ...addDetails, photos });
       setItems((current) => [created, ...current]);
-      resetForm();
-      setIsAddOpen(false);
+      closeAdd();
     } catch (submitError: unknown) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to create equipment listing.";
-      setFormError(message);
+      setAddError(getMessage(submitError, "Unable to create this listing."));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const saveEdit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (!editingItem) return;
+
+    const validationError = validateListingDetails(editDetails);
+    if (validationError) {
+      setEditError(validationError);
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError("");
+    try {
+      const updated = await updateEquipmentListing(editingItem.id, {
+        ...editDetails,
+        title: editDetails.title.trim(),
+        description: editDetails.description.trim(),
+        location: editDetails.location.trim(),
+      });
+      setItems((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry)),
+      );
+      closeEdit();
+    } catch (saveError: unknown) {
+      setEditError(getMessage(saveError, "Unable to update this listing."));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   const toggleStatus = async (item: EquipmentListing): Promise<void> => {
     setUpdatingStatusId(item.id);
+    setRowError(null);
     try {
-      const nextStatus: EquipmentStatus =
-        item.status === "active" ? "paused" : "active";
       const updated = await updateEquipmentListing(item.id, {
-        status: nextStatus,
+        status: item.status === "active" ? "paused" : "active",
       });
       setItems((current) =>
         current.map((entry) => (entry.id === updated.id ? updated : entry)),
       );
     } catch (toggleError: unknown) {
-      setError(
-        toggleError instanceof Error
-          ? toggleError.message
-          : "Unable to update listing status.",
-      );
+      setRowError({
+        id: item.id,
+        message: getMessage(toggleError, "Unable to update this listing."),
+      });
     } finally {
       setUpdatingStatusId(null);
     }
@@ -344,78 +427,19 @@ export function MyEquipmentPage(): ReactElement {
 
   const removeListing = async (id: string): Promise<void> => {
     setDeletingId(id);
+    setRowError(null);
     try {
       await deleteEquipmentListing(id);
       setItems((current) => current.filter((item) => item.id !== id));
-      setActiveMenuId(null);
+      setConfirmDeleteId(null);
     } catch (deleteError: unknown) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Unable to delete this listing.",
-      );
+      setRowError({
+        id,
+        message: getMessage(deleteError, "Unable to delete this listing."),
+      });
     } finally {
       setDeletingId(null);
     }
-  };
-
-  const startEdit = (item: EquipmentListing): void => {
-    setEditingItemId(item.id);
-    setEditDraft(toEditDraft(item));
-    setEditError("");
-    setActiveMenuId(null);
-  };
-
-  const saveEdit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    if (!editingItemId || !editDraft) return;
-
-    if (!editDraft.title.trim()) {
-      setEditError("Title is required.");
-      return;
-    }
-    if (!editDraft.description.trim()) {
-      setEditError("Description is required.");
-      return;
-    }
-    if (!editDraft.location.trim()) {
-      setEditError("Location is required.");
-      return;
-    }
-
-    setIsSavingEdit(true);
-    setEditError("");
-
-    try {
-      const updated = await updateEquipmentListing(editingItemId, {
-        title: editDraft.title.trim(),
-        description: editDraft.description.trim(),
-        category: editDraft.category,
-        dailyRate: editDraft.dailyRate,
-        securityDeposit: editDraft.securityDeposit,
-        location: editDraft.location.trim(),
-      });
-
-      setItems((current) =>
-        current.map((entry) => (entry.id === updated.id ? updated : entry)),
-      );
-      setEditingItemId(null);
-      setEditDraft(null);
-    } catch (saveError: unknown) {
-      setEditError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Unable to update this listing.",
-      );
-    } finally {
-      setIsSavingEdit(false);
-    }
-  };
-
-  const formatDateRange = (startDate: string, endDate: string): string => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
   };
 
   const respondToIncomingBooking = async (
@@ -423,727 +447,541 @@ export function MyEquipmentPage(): ReactElement {
     action: "approve" | "decline",
   ): Promise<void> => {
     setRespondingBookingId(bookingId);
+    setRowError(null);
     try {
       await respondToEquipmentBooking(bookingId, action);
-      await loadIncomingBookings();
+      // An answered request leaves this list and changes state in Rentals.
+      await Promise.all([loadIncomingBookings(), loadOwnerBookings()]);
     } catch (respondError: unknown) {
-      setError(
-        respondError instanceof Error
-          ? respondError.message
-          : "Unable to update booking request.",
-      );
+      setRowError({
+        id: bookingId,
+        message: getMessage(respondError, "Unable to update this request."),
+      });
     } finally {
       setRespondingBookingId(null);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-            Owner workspace
-          </p>
-          <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            My Equipment Listings
-          </h1>
-          <p className="mt-3 max-w-2xl text-white/60">
-            Publish, pause, and manage the gear you want to rent out.
-          </p>
-        </div>
+  const errorFor = (id: string): string =>
+    rowError?.id === id ? rowError.message : "";
 
-        <button
-          type="button"
-          onClick={() => setIsAddOpen(true)}
-          className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-glow"
-        >
-          Add Equipment
-        </button>
-      </div>
+  const activeCount = items.filter((item) => item.status === "active").length;
+  const hasListings = items.length > 0;
+  const showRequests =
+    isLoadingIncoming || Boolean(incomingError) || incomingBookings.length > 0;
+  const showRentals =
+    isLoadingOwnerBookings ||
+    Boolean(ownerBookingsError) ||
+    ownerBookings.length > 0;
+
+  const summary = (() => {
+    if (isLoading) return "Equipment you rent out to other engineers.";
+    if (!hasListings) {
+      return "List a machine or tool and other engineers can request it by the day.";
+    }
+    const sentences = [
+      `${countOf(items.length, "listing", "listings")}, ${activeCount} active.`,
+    ];
+    if (!isLoadingIncoming && incomingBookings.length > 0) {
+      sentences.push(
+        `${countOf(incomingBookings.length, "booking request needs", "booking requests need")} a reply.`,
+      );
+    }
+    return sentences.join(" ");
+  })();
+
+  const addButton = (
+    <button
+      type="button"
+      onClick={() => setIsAddOpen(true)}
+      className={primaryButtonClassName}
+    >
+      <PlusIcon className="h-4 w-4" aria-hidden="true" />
+      Add equipment
+    </button>
+  );
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="My listings"
+        summary={summary}
+        // With no listings the empty state carries this action instead, so
+        // the page never shows the same button twice.
+        action={!isLoading && !hasListings && !listingsError ? null : addButton}
+      />
 
       <EquipmentSectionTabs />
 
-      <section className="rounded-2xl border border-white/10 bg-surface p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-heading text-2xl font-bold text-white">
-            Incoming Requests
-          </h2>
-          <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70">
-            {incomingBookings.length}
-          </span>
-        </div>
-
-        {isLoadingIncoming ? (
-          <div className="mt-4 space-y-3">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <div
-                key={`incoming-skeleton-${index}`}
-                className="animate-pulse rounded-xl border border-white/10 bg-void/45 p-4"
-              >
-                <div className="h-16 rounded bg-white/10" />
-              </div>
-            ))}
-          </div>
-        ) : incomingBookings.length === 0 ? (
-          <p className="mt-3 text-sm text-white/50">
-            No pending booking requests right now.
-          </p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {incomingBookings.map((booking) => (
-              <article
-                key={booking.id}
-                className="rounded-xl border border-white/10 bg-void/45 p-4"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <img
-                      src={booking.equipment.photoUrl ?? ""}
-                      alt={booking.equipment.title}
-                      className="h-16 w-24 rounded-lg object-cover"
-                    />
-                    <div className="min-w-0">
-                      <p className="line-clamp-1 text-sm font-semibold text-white">
-                        {booking.equipment.title}
-                      </p>
-                      <p className="mt-1 text-xs text-white/55">
-                        {formatDateRange(booking.startDate, booking.endDate)}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-white/75">
-                        Total: {formatCurrency(booking.totalRentalFee)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <Avatar
-                        name={booking.renter.name}
-                        photoUrl={booking.renter.profilePhotoUrl}
-                        size="sm"
-                      />
-                      <div className="min-w-0 text-right">
-                        <p className="truncate text-xs font-semibold text-white">
-                          {booking.renter.name}
-                        </p>
-                        <div className="mt-1 flex justify-end">
-                          <RatingBadge
-                            rating={booking.renter.rating ?? null}
-                            reviewCount={booking.renter.reviewCount ?? 0}
-                            size="sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
+      {showRequests ? (
+        <section
+          className={panelClassName}
+          aria-labelledby="requests-heading"
+        >
+          <PanelHeading
+            id="requests-heading"
+            title="Booking requests"
+            body="Approve to confirm the dates. The renter pays after you approve."
+          />
+          {isLoadingIncoming ? (
+            <RowSkeletons count={1} />
+          ) : incomingError ? (
+            <InlineError
+              message={incomingError}
+              onRetry={() => void loadIncomingBookings()}
+            />
+          ) : (
+            <ul className="divide-y divide-white/10 border-t border-white/10">
+              {incomingBookings.map((booking) => {
+                const isResponding = respondingBookingId === booking.id;
+                return (
+                  <li
+                    key={booking.id}
+                    className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+                  >
                     <Link
-                      to={`/dashboard/engineer/equipment/bookings/${booking.id}`}
-                      className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/75 transition-colors hover:border-primary hover:text-primary"
+                      to={`${BOOKING_DETAIL_BASE}/${booking.id}`}
+                      className="group flex min-w-0 gap-4 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow lg:col-span-6"
                     >
-                      View Details
-                    </Link>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void respondToIncomingBooking(booking.id, "approve")
-                      }
-                      disabled={respondingBookingId === booking.id}
-                      className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-glow disabled:opacity-60"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void respondToIncomingBooking(booking.id, "decline")
-                      }
-                      disabled={respondingBookingId === booking.id}
-                      className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/70 hover:border-red-300 hover:text-red-200 disabled:opacity-60"
-                    >
-                      Decline
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-2xl border border-white/10 bg-surface p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-heading text-2xl font-bold text-white">
-            Booking Lifecycle
-          </h2>
-          <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70">
-            {ownerBookings.length}
-          </span>
-        </div>
-
-        {isLoadingOwnerBookings ? (
-          <div className="mt-4 space-y-3">
-            {Array.from({ length: 2 }).map((_, index) => (
-              <div
-                key={`owner-bookings-skeleton-${index}`}
-                className="animate-pulse rounded-xl border border-white/10 bg-void/45 p-4"
-              >
-                <div className="h-16 rounded bg-white/10" />
-              </div>
-            ))}
-          </div>
-        ) : ownerBookings.length === 0 ? (
-          <p className="mt-3 text-sm text-white/50">
-            No lifecycle bookings yet.
-          </p>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {ownerBookings.map((booking) => {
-              return (
-                <article
-                  key={booking.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
-                    navigate(
-                      `/dashboard/engineer/equipment/bookings/${booking.id}`,
-                    )
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      navigate(
-                        `/dashboard/engineer/equipment/bookings/${booking.id}`,
-                      );
-                    }
-                  }}
-                  className="cursor-pointer rounded-xl border border-white/10 bg-void/45 p-4 transition-colors hover:border-primary/35"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <img
-                        src={booking.equipment.photoUrl ?? ""}
+                      <EquipmentThumb
+                        src={booking.equipment.photoUrl}
                         alt={booking.equipment.title}
-                        className="h-16 w-24 rounded-lg object-cover"
+                        className="h-16 w-24 shrink-0 rounded-xl"
                       />
                       <div className="min-w-0">
-                        <p className="line-clamp-1 text-sm font-semibold text-white">
+                        <p className="truncate font-heading text-lg font-bold text-white transition-colors group-hover:text-primary">
                           {booking.equipment.title}
                         </p>
-                        <p className="mt-1 text-xs text-white/55">
+                        <p className="mt-0.5 text-sm text-white/55">
                           {formatDateRange(booking.startDate, booking.endDate)}
                         </p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <Avatar
-                            name={booking.renter.name}
-                            photoUrl={booking.renter.profilePhotoUrl}
-                            size="sm"
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-white/80">
-                              {booking.renter.name}
-                            </p>
-                            <RatingBadge
-                              rating={booking.renter.rating ?? null}
-                              reviewCount={booking.renter.reviewCount ?? 0}
-                              size="sm"
-                            />
-                          </div>
-                        </div>
+                        <PartyLine party={booking.renter} />
                       </div>
+                    </Link>
+                    <p className="font-heading text-xl font-bold tabular-nums text-white lg:col-span-2">
+                      {formatCurrency(booking.totalRentalFee)}
+                    </p>
+                    <div className="flex flex-wrap gap-2 lg:col-span-4 lg:justify-end">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void respondToIncomingBooking(booking.id, "decline")
+                        }
+                        disabled={isResponding}
+                        className={secondaryButtonClassName}
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void respondToIncomingBooking(booking.id, "approve")
+                        }
+                        disabled={isResponding}
+                        className={primaryButtonClassName}
+                      >
+                        {isResponding ? "Saving..." : "Approve"}
+                      </button>
                     </div>
-
-                    <span className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold capitalize text-white/75">
-                      {booking.status}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
-                    <p className="text-xs text-white/65">
-                      Payment {booking.paymentStatus} • Deposit{" "}
-                      {booking.depositResolution}
-                    </p>
-                    <p className="text-xs font-semibold text-primary">
-                      View Details
-                    </p>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
+                    {errorFor(booking.id) ? (
+                      <p
+                        className="text-sm text-red-300 lg:col-span-12"
+                        role="alert"
+                      >
+                        {errorFor(booking.id)}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       ) : null}
 
       {isLoading ? (
-        <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <article
-              key={`mine-skeleton-${index}`}
-              className="animate-pulse rounded-3xl border border-white/10 bg-surface/80 p-3"
-            >
-              <div className="aspect-4/3 rounded-2xl bg-white/10" />
-              <div className="space-y-3 p-3">
-                <div className="h-4 w-1/2 rounded bg-white/10" />
-                <div className="h-3 w-2/3 rounded bg-white/10" />
-                <div className="h-6 w-1/3 rounded bg-white/10" />
-              </div>
-            </article>
-          ))}
+        <section className={panelClassName} aria-label="Loading listings">
+          <div className="px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+            <div className="h-7 w-40 animate-pulse rounded bg-white/10" />
+          </div>
+          <RowSkeletons count={3} />
         </section>
+      ) : listingsError ? (
+        <ErrorPanel message={listingsError} onRetry={() => void loadMine()} />
       ) : !hasListings ? (
-        <section className="rounded-2xl border border-dashed border-white/20 bg-surface/50 p-12 text-center">
-          <p className="text-4xl">🚜</p>
-          <h2 className="mt-3 font-heading text-3xl font-bold text-white">
-            You haven't listed any equipment yet
-          </h2>
-          <p className="mt-2 text-sm text-white/55">
-            Add your first listing to start receiving rental interest.
-          </p>
-          <button
-            type="button"
-            onClick={() => setIsAddOpen(true)}
-            className="mt-5 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-glow"
-          >
-            Add Equipment
-          </button>
-        </section>
+        <EmptyPanel
+          title="No listings yet"
+          body="Add a machine or tool with photos, a daily rate and a deposit. Other engineers can then request it for the dates they need."
+          action={addButton}
+        />
       ) : (
-        <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
-            <article
-              key={item.id}
-              className="group rounded-3xl border border-white/10 bg-surface/85 p-3 shadow-[0_10px_40px_rgba(0,0,0,0.24)] transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_18px_56px_rgba(0,0,0,0.35)]"
-            >
-              <div className="relative overflow-hidden rounded-2xl">
-                <img
-                  src={item.photos[0]?.url}
-                  alt={item.title}
-                  className="aspect-4/3 w-full object-cover"
-                />
-                <div className="absolute left-3 top-3 flex items-center gap-2">
-                  <StatusChip status={item.status} />
-                  <span className="rounded-full border border-amber-300/40 bg-amber-300/20 px-2.5 py-1 text-[11px] font-semibold text-amber-100">
-                    {item.category}
-                  </span>
-                </div>
-
-                <div className="absolute right-3 top-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveMenuId((current) =>
-                        current === item.id ? null : item.id,
-                      )
-                    }
-                    className="rounded-full border border-white/20 bg-black/35 px-2.5 py-1 text-sm font-semibold text-white"
-                    aria-label="Listing actions"
-                  >
-                    ...
-                  </button>
-                  {activeMenuId === item.id ? (
-                    <div className="absolute right-0 mt-2 w-32 rounded-xl border border-white/15 bg-void/95 p-1.5">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(item)}
-                        className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-white/80 hover:bg-white/10"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void removeListing(item.id)}
-                        disabled={deletingId === item.id}
-                        className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-200 hover:bg-red-300/10 disabled:opacity-60"
-                      >
-                        {deletingId === item.id ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-3 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="line-clamp-1 text-base font-bold text-white">
-                    {item.title}
-                  </h2>
-                  <p className="text-sm font-extrabold text-white">
-                    {formatCurrency(item.dailyRate)}
-                    <span className="ml-1 text-xs font-normal text-white/55">
-                      /day
-                    </span>
-                  </p>
-                </div>
-
-                <p className="line-clamp-2 text-sm text-white/60">
-                  {item.description}
-                </p>
-                <p className="text-xs text-white/55">{item.location}</p>
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => void toggleStatus(item)}
-                    disabled={updatingStatusId === item.id}
-                    className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80 transition-colors hover:border-primary hover:text-white disabled:opacity-60"
-                  >
-                    {updatingStatusId === item.id
-                      ? "Saving..."
-                      : item.status === "active"
-                        ? "Pause listing"
-                        : "Activate listing"}
-                  </button>
-
+        <section className={panelClassName} aria-labelledby="listings-heading">
+          <PanelHeading id="listings-heading" title="Your listings" />
+          <ul className="divide-y divide-white/10 border-t border-white/10">
+            {items.map((item) => {
+              const isConfirmingDelete = confirmDeleteId === item.id;
+              return (
+                <li
+                  key={item.id}
+                  className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+                >
                   <Link
                     to={`/dashboard/engineer/equipment/${item.id}`}
-                    className="text-xs font-semibold text-primary hover:text-glow"
+                    className="group flex min-w-0 gap-4 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow lg:col-span-5"
                   >
-                    Open details
+                    <EquipmentThumb
+                      src={item.photos[0]?.url}
+                      alt={item.title}
+                      className="h-16 w-24 shrink-0 rounded-xl"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate font-heading text-lg font-bold text-white transition-colors group-hover:text-primary">
+                        {item.title}
+                      </p>
+                      <p className="mt-0.5 truncate text-sm text-white/55">
+                        {item.category}, {item.location}
+                      </p>
+                      <span
+                        className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${listingStatusClassName[item.status]}`}
+                      >
+                        {listingStatusLabel[item.status]}
+                      </span>
+                    </div>
                   </Link>
-                </div>
-              </div>
-            </article>
-          ))}
+
+                  <div className="lg:col-span-3">
+                    <p>
+                      <span className="font-heading text-xl font-bold tabular-nums text-white">
+                        {formatCurrency(item.dailyRate)}
+                      </span>
+                      <span className="ml-1 text-xs text-white/50">/day</span>
+                    </p>
+                    <p className="text-xs text-white/45">
+                      {formatCurrency(item.securityDeposit)} deposit
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 lg:col-span-4 lg:justify-end">
+                    {isConfirmingDelete ? (
+                      <>
+                        <span className="text-sm text-white/70">
+                          Delete this listing?
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          disabled={deletingId === item.id}
+                          className={rowButtonClassName}
+                        >
+                          Keep
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeListing(item.id)}
+                          disabled={deletingId === item.id}
+                          className={rowDangerButtonClassName}
+                        >
+                          {deletingId === item.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingItem(item);
+                            setEditDetails(toDetails(item));
+                            setEditError("");
+                          }}
+                          className={rowButtonClassName}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void toggleStatus(item)}
+                          disabled={updatingStatusId === item.id}
+                          className={rowButtonClassName}
+                        >
+                          {updatingStatusId === item.id
+                            ? "Saving..."
+                            : item.status === "active"
+                              ? "Pause"
+                              : "Activate"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmDeleteId(item.id);
+                            setRowError(null);
+                          }}
+                          className={rowDangerButtonClassName}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {errorFor(item.id) ? (
+                    <p
+                      className="text-sm text-red-300 lg:col-span-12"
+                      role="alert"
+                    >
+                      {errorFor(item.id)}
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
-      {isAddOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isSubmitting) {
-              setIsAddOpen(false);
-              resetForm();
-            }
-          }}
-        >
-          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                  Add equipment
-                </p>
-                <h2 className="mt-2 font-heading text-3xl font-bold text-white">
-                  New Listing
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddOpen(false);
-                  resetForm();
-                }}
-                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/70 hover:border-primary hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <form
-              onSubmit={(event) => void submitCreate(event)}
-              className="mt-6 space-y-4"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-1.5 text-sm text-white/70">
-                  Title
-                  <input
-                    value={form.title}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        title: event.target.value,
-                      }))
-                    }
-                    className="form-input"
-                    placeholder="CAT 320 Excavator"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm text-white/70">
-                  Category
-                  <select
-                    value={form.category}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        category: event.target.value as EquipmentCategory,
-                      }))
-                    }
-                    className="form-input"
-                  >
-                    {EQUIPMENT_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <label className="block space-y-1.5 text-sm text-white/70">
-                Description
-                <textarea
-                  value={form.description}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                  rows={4}
-                  className="form-input resize-none"
-                  placeholder="Condition, specs, delivery notes, and operator availability"
+      {showRentals ? (
+        <section className={panelClassName} aria-labelledby="rentals-heading">
+          <PanelHeading
+            id="rentals-heading"
+            title="Rentals"
+            body="Every booking of your equipment, from approval to deposit."
+            aside={
+              ownerBookings.length > 0 ? (
+                <FilterTabs
+                  options={RENTAL_BUCKETS.map((bucket) => ({
+                    key: bucket,
+                    label: rentalBucketLabel[bucket],
+                    count: rentalsByBucket[bucket].length,
+                  }))}
+                  value={activeRentalBucket}
+                  onChange={setRentalBucket}
+                  label="Filter rentals"
                 />
-              </label>
+              ) : null
+            }
+          />
+          {isLoadingOwnerBookings ? (
+            <RowSkeletons count={2} />
+          ) : ownerBookingsError ? (
+            <InlineError
+              message={ownerBookingsError}
+              onRetry={() => void loadOwnerBookings()}
+            />
+          ) : rentalsByBucket[activeRentalBucket].length === 0 ? (
+            <p className="border-t border-white/10 px-5 py-8 text-sm text-white/50 sm:px-6">
+              No rentals in this group.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/10 border-t border-white/10">
+              {rentalsByBucket[activeRentalBucket].map((booking) => (
+                <li key={booking.id}>
+                  <Link
+                    to={`${BOOKING_DETAIL_BASE}/${booking.id}`}
+                    className="group grid gap-4 px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
+                  >
+                    <div className="flex min-w-0 gap-4 lg:col-span-6">
+                      <EquipmentThumb
+                        src={booking.equipment.photoUrl}
+                        alt={booking.equipment.title}
+                        className="h-16 w-24 shrink-0 rounded-xl"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-heading text-lg font-bold text-white">
+                          {booking.equipment.title}
+                        </p>
+                        <p className="mt-0.5 text-sm text-white/55">
+                          {formatDateRange(booking.startDate, booking.endDate)}
+                        </p>
+                        <PartyLine party={booking.renter} />
+                      </div>
+                    </div>
+                    <div className="lg:col-span-3">
+                      <p className="font-heading text-xl font-bold tabular-nums text-white">
+                        {formatCurrency(booking.totalRentalFee)}
+                      </p>
+                      <p className="text-xs text-white/45">
+                        {getPaymentSummary(booking)}
+                      </p>
+                    </div>
+                    <div className="lg:col-span-3 lg:text-right">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${bookingStatusClassName[booking.status]}`}
+                      >
+                        {bookingStatusLabel[booking.status]}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="space-y-1.5 text-sm text-white/70">
-                  Daily Rate
-                  <input
-                    value={form.dailyRate}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        dailyRate: event.target.value,
-                      }))
-                    }
-                    className="form-input"
-                    placeholder="250"
-                  />
+      {isAddOpen ? (
+        <Dialog
+          title="Add equipment"
+          description="Renters see the photos, daily rate and deposit before they request dates."
+          onClose={closeAdd}
+          isBusy={isSubmitting}
+          size="lg"
+        >
+          <form
+            onSubmit={(event) => void submitCreate(event)}
+            className="grid gap-6"
+            noValidate
+          >
+            <ListingFields
+              idPrefix="add-listing"
+              values={addDetails}
+              onChange={(patch) =>
+                setAddDetails((current) => ({ ...current, ...patch }))
+              }
+            />
+
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white/80">Photos</p>
+                  <p className="text-xs text-white/45">
+                    Up to {PHOTO_LIMIT}. JPG, PNG or WEBP, 5 MB each. The first
+                    one is the cover.
+                  </p>
+                </div>
+                <label
+                  htmlFor="add-listing-photos"
+                  className={`${rowButtonClassName} cursor-pointer ${
+                    photos.length >= PHOTO_LIMIT
+                      ? "pointer-events-none opacity-50"
+                      : ""
+                  }`}
+                >
+                  <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                  Choose photos
                 </label>
-
-                <label className="space-y-1.5 text-sm text-white/70">
-                  Security Deposit
-                  <input
-                    value={form.securityDeposit}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        securityDeposit: event.target.value,
-                      }))
-                    }
-                    className="form-input"
-                    placeholder="1200"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm text-white/70">
-                  Location
-                  <input
-                    value={form.location}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        location: event.target.value,
-                      }))
-                    }
-                    className="form-input"
-                    placeholder="Dhaka"
-                  />
-                </label>
-              </div>
-
-              <div className="rounded-xl border border-dashed border-white/25 bg-void/45 p-4">
-                <p className="text-sm font-semibold text-white">
-                  Photos (up to 6)
-                </p>
-                <p className="mt-1 text-xs text-white/50">
-                  JPG, PNG, WEBP only. Max 5MB each.
-                </p>
-
                 <input
                   ref={fileInputRef}
+                  id="add-listing-photos"
                   type="file"
                   multiple
                   accept="image/jpeg,image/png,image/webp"
                   onChange={onFilesChanged}
-                  className="mt-3 block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                  disabled={photos.length >= PHOTO_LIMIT}
+                  className="sr-only"
                 />
-
-                {previewUrls.length > 0 ? (
-                  <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {previewUrls.map((url, index) => (
-                      <div
-                        key={`${url}-${index}`}
-                        className="relative overflow-hidden rounded-lg"
-                      >
-                        <img
-                          src={url}
-                          alt={`Selected upload ${index + 1}`}
-                          className="h-20 w-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeSelectedPhoto(index)}
-                          className="absolute right-1 top-1 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                          aria-label={`Remove selected image ${index + 1}`}
-                        >
-                          x
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
               </div>
 
-              {formError ? (
-                <p role="alert" className="text-sm text-red-300">
-                  {formError}
-                </p>
-              ) : null}
-
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-glow disabled:cursor-wait disabled:opacity-60"
-              >
-                {isSubmitting ? "Saving listing..." : "Create listing"}
-              </button>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {editingItemId && editDraft ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
-            <div className="flex items-start justify-between">
-              <h3 className="font-heading text-2xl font-bold text-white">
-                Edit Listing
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingItemId(null);
-                  setEditDraft(null);
-                  setEditError("");
-                }}
-                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white/70 hover:border-primary hover:text-white"
-              >
-                Close
-              </button>
+              {previewUrls.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {previewUrls.map((url, index) => (
+                    <div
+                      key={url}
+                      className="relative overflow-hidden rounded-xl"
+                    >
+                      <img
+                        src={url}
+                        alt={`Selected photo ${index + 1}`}
+                        className="aspect-square w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPhotoSelection(
+                            photos.filter((_, photoIndex) => photoIndex !== index),
+                          )
+                        }
+                        className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-void/80 text-white transition-colors hover:bg-void focus-visible:outline-2 focus-visible:outline-glow"
+                        aria-label={`Remove photo ${index + 1}`}
+                      >
+                        <XIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-white/15 text-sm text-white/40">
+                  No photos chosen yet
+                </div>
+              )}
             </div>
 
-            <form
-              onSubmit={(event) => void saveEdit(event)}
-              className="mt-5 space-y-4"
-            >
-              <input
-                value={editDraft.title}
-                onChange={(event) =>
-                  setEditDraft((current) =>
-                    current
-                      ? { ...current, title: event.target.value }
-                      : current,
-                  )
-                }
-                className="form-input"
-                placeholder="Title"
-              />
-              <textarea
-                value={editDraft.description}
-                onChange={(event) =>
-                  setEditDraft((current) =>
-                    current
-                      ? { ...current, description: event.target.value }
-                      : current,
-                  )
-                }
-                rows={4}
-                className="form-input resize-none"
-                placeholder="Description"
-              />
+            {addError ? (
+              <p role="alert" className="text-sm text-red-300">
+                {addError}
+              </p>
+            ) : null}
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <select
-                  value={editDraft.category}
-                  onChange={(event) =>
-                    setEditDraft((current) =>
-                      current
-                        ? {
-                            ...current,
-                            category: event.target.value as EquipmentCategory,
-                          }
-                        : current,
-                    )
-                  }
-                  className="form-input"
-                >
-                  {EQUIPMENT_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  value={editDraft.location}
-                  onChange={(event) =>
-                    setEditDraft((current) =>
-                      current
-                        ? { ...current, location: event.target.value }
-                        : current,
-                    )
-                  }
-                  className="form-input"
-                  placeholder="Location"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <input
-                  value={editDraft.dailyRate}
-                  onChange={(event) =>
-                    setEditDraft((current) =>
-                      current
-                        ? { ...current, dailyRate: event.target.value }
-                        : current,
-                    )
-                  }
-                  className="form-input"
-                  placeholder="Daily rate"
-                />
-
-                <input
-                  value={editDraft.securityDeposit}
-                  onChange={(event) =>
-                    setEditDraft((current) =>
-                      current
-                        ? { ...current, securityDeposit: event.target.value }
-                        : current,
-                    )
-                  }
-                  className="form-input"
-                  placeholder="Security deposit"
-                />
-              </div>
-
-              {editError ? (
-                <p role="alert" className="text-sm text-red-300">
-                  {editError}
-                </p>
-              ) : null}
-
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeAdd}
+                disabled={isSubmitting}
+                className={secondaryButtonClassName}
+              >
+                Cancel
+              </button>
               <button
                 type="submit"
-                disabled={isSavingEdit}
-                className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white hover:bg-glow disabled:opacity-60"
+                disabled={isSubmitting}
+                className={primaryButtonClassName}
               >
-                {isSavingEdit ? "Saving..." : "Save changes"}
+                {isSubmitting ? "Creating..." : "Create listing"}
               </button>
-            </form>
-          </div>
-        </div>
+            </div>
+          </form>
+        </Dialog>
+      ) : null}
+
+      {editingItem ? (
+        <Dialog
+          title="Edit listing"
+          description={editingItem.title}
+          onClose={closeEdit}
+          isBusy={isSavingEdit}
+          size="lg"
+        >
+          <form
+            onSubmit={(event) => void saveEdit(event)}
+            className="grid gap-6"
+            noValidate
+          >
+            <ListingFields
+              idPrefix="edit-listing"
+              values={editDetails}
+              onChange={(patch) =>
+                setEditDetails((current) => ({ ...current, ...patch }))
+              }
+            />
+
+            {editError ? (
+              <p role="alert" className="text-sm text-red-300">
+                {editError}
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-white/45">
+                Photos stay as they were when the listing was created.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  disabled={isSavingEdit}
+                  className={secondaryButtonClassName}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className={primaryButtonClassName}
+                >
+                  {isSavingEdit ? "Saving..." : "Save changes"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </Dialog>
       ) : null}
     </div>
   );

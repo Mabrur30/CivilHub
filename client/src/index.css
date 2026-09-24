@@ -42,6 +42,19 @@
   will-change: auto;
 }
 
+/* Dashboard progress fills draw in from the left on load. Transform only, so
+   the bar's real width is set once and never animated. */
+@keyframes progress-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.progress-grow {
+  transform-origin: left;
+  animation: progress-grow 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .scrollbar-hidden {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -59,6 +72,10 @@
     opacity: 1;
     transform: none;
     transition: none;
+  }
+
+  .progress-grow {
+    animation: none;
   }
 
   html {
