@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { type NextFunction, type Request, type Response, Router } from "express";
 import {
   getMessages,
   getMyConversations,
@@ -10,6 +10,10 @@ import {
   protect,
   type AuthenticatedRequest,
 } from "../middleware/auth.middleware";
+import {
+  handleUploadError,
+  messageAttachmentUpload,
+} from "../middleware/upload.middleware";
 
 const conversationsRouter = Router();
 
@@ -30,7 +34,9 @@ conversationsRouter.get(
 conversationsRouter.post(
   "/:conversationId/messages",
   protect,
-  (req, res, next) =>
+  messageAttachmentUpload.single("attachment"),
+  handleUploadError,
+  (req: Request, res: Response, next: NextFunction) =>
     sendMessage(req as AuthenticatedRequest<SendMessageBody>, res, next),
 );
 

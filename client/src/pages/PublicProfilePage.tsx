@@ -8,8 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
+import { BackButton } from "../components/BackButton";
 import {
   FeedPostCard,
   type FeedAuthor,
@@ -19,6 +19,7 @@ import {
 import { PostComposerModal } from "../components/dashboard/PostComposerModal";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
+import { Link, useLocation, useParams } from "react-router-dom";
 
 interface EngineerPortfolioItem {
   title: string;
@@ -196,6 +197,11 @@ interface InviteProjectsResponse {
 
 interface ErrorResponse {
   message?: string;
+}
+
+interface ProfileBackState {
+  backTo?: string;
+  backLabel?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
@@ -723,6 +729,7 @@ function DetailRow({
 
 export function PublicProfilePage(): ReactElement {
   const { userId } = useParams<{ userId: string }>();
+  const location = useLocation();
   const { currentUser, refetchUser } = useAuth();
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
@@ -2023,6 +2030,33 @@ export function PublicProfilePage(): ReactElement {
   const isClientViewingEngineerProfile =
     currentUser?.role === "client" && isEngineerProfile && !isSelf;
   const composerFirstName = profile.name.trim().split(/\s+/)[0] || profile.name;
+  const rawBackState =
+    location.state && typeof location.state === "object"
+      ? (location.state as ProfileBackState)
+      : null;
+
+  const backDestination =
+    typeof rawBackState?.backTo === "string" && rawBackState.backTo.length > 0
+      ? rawBackState.backTo
+      : isSelf && currentUser?.role
+        ? `/dashboard/${currentUser.role}/overview`
+        : currentUser?.role === "client"
+          ? "/dashboard/client/network"
+          : currentUser?.role === "engineer"
+            ? "/dashboard/engineer/network"
+            : "/search/engineers";
+
+  const backLabel =
+    typeof rawBackState?.backLabel === "string" &&
+    rawBackState.backLabel.length > 0
+      ? rawBackState.backLabel
+      : isSelf
+        ? "Back to Overview"
+        : currentUser?.role === "client"
+          ? "Back to Engineer Directory"
+          : currentUser?.role === "engineer"
+            ? "Back to My Network"
+            : "Back to Engineer Directory";
 
   const reviewBreakdown = [5, 4, 3, 2, 1].map((stars) => {
     const count =
@@ -2214,6 +2248,8 @@ export function PublicProfilePage(): ReactElement {
   return (
     <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
+        <BackButton to={backDestination} label={backLabel} className="mb-5" />
+
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
           <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
             <div

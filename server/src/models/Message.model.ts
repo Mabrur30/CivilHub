@@ -1,9 +1,18 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
+export type MessageType = "text" | "file" | "audio";
+
 export interface IMessage extends Document {
   conversation: Types.ObjectId;
   sender: Types.ObjectId;
-  content: string;
+  messageType: MessageType;
+  content?: string;
+  attachmentUrl?: string;
+  attachmentPublicId?: string;
+  attachmentName?: string;
+  attachmentMimeType?: string;
+  attachmentSize?: number;
+  durationSeconds?: number;
   readBy: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
@@ -23,11 +32,52 @@ const messageSchema = new Schema<IMessage>(
       required: true,
       index: true,
     },
+    messageType: {
+      type: String,
+      enum: ["text", "file", "audio"],
+      default: "text",
+      required: true,
+    },
     content: {
       type: String,
-      required: true,
+      required: function (this: IMessage) {
+        return this.messageType === "text";
+      },
       trim: true,
       maxlength: 4000,
+    },
+    attachmentUrl: {
+      type: String,
+      required: function (this: IMessage) {
+        return this.messageType !== "text";
+      },
+      trim: true,
+    },
+    attachmentPublicId: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    attachmentName: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 255,
+    },
+    attachmentMimeType: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    attachmentSize: {
+      type: Number,
+      required: false,
+      min: 0,
+    },
+    durationSeconds: {
+      type: Number,
+      required: false,
+      min: 0,
     },
     readBy: {
       type: [

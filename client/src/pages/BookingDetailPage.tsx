@@ -7,6 +7,7 @@ import {
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
+import { BackButton } from "../components/BackButton";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -219,12 +220,20 @@ export function BookingDetailPage(): ReactElement {
 
   if (!booking || error || !viewerRole) {
     return (
-      <section
-        className="rounded-2xl border border-red-400/20 bg-red-400/5 p-6"
-        role="alert"
-      >
-        <p className="text-sm text-red-200">{error || "Booking not found."}</p>
-      </section>
+      <div className="space-y-4">
+        <BackButton
+          to="/dashboard/engineer/equipment/bookings"
+          label="Back to My Bookings"
+        />
+        <section
+          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-6"
+          role="alert"
+        >
+          <p className="text-sm text-red-200">
+            {error || "Booking not found."}
+          </p>
+        </section>
+      </div>
     );
   }
 
@@ -517,6 +526,11 @@ export function BookingDetailPage(): ReactElement {
 
   return (
     <div className="space-y-6">
+      <BackButton
+        to="/dashboard/engineer/equipment/bookings"
+        label="Back to My Bookings"
+      />
+
       <div className="rounded-2xl border border-white/10 bg-surface p-5">
         <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
           Equipment booking

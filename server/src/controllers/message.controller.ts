@@ -1,10 +1,16 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
+import cloudinary, { uploadBuffer } from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
 import { Conversation } from "../models/Conversation.model";
 import { Engineer } from "../models/Engineer.model";
-import { Message } from "../models/Message.model";
+import {
+  MESSAGE_AUDIO_MAX_SECONDS,
+  messageAttachmentTypes,
+  messageAudioTypes,
+} from "../middleware/upload.middleware";
+import { type IMessage, Message } from "../models/Message.model";
 import { Notification } from "../models/Notification.model";
 import { User, type UserRole } from "../models/User.model";
 
@@ -18,7 +24,9 @@ interface ConversationParams {
 }
 
 export interface SendMessageBody {
-  content: string;
+  content?: string;
+  messageType?: string;
+  durationSeconds?: string;
 }
 
 interface PopulatedUser {
@@ -123,6 +131,111 @@ const getConversationIfParticipant = async (
   }
 
   return conversation;
+};
+
+const getBaseMimeType = (mimeType: string): string =>
+  mimeType.split(";")[0].trim().toLowerCase();
+
+// Recorded audio can run slightly past the client-side cap before the recorder stops.
+const AUDIO_DURATION_TOLERANCE_SECONDS = 2;
+
+const toAttachmentView = (message: IMessage) =>
+  message.messageType === "text" || !message.attachmentUrl
+    ? null
+    : {
+        url: message.attachmentUrl,
+        name: message.attachmentName ?? "Attachment",
+        mimeType: message.attachmentMimeType ?? "application/octet-stream",
+        size: message.attachmentSize ?? null,
+        durationSeconds: message.durationSeconds ?? null,
+      };
+
+interface UploadedAttachment {
+  messageType: "file" | "audio";
+  url: string;
+  publicId: string;
+  resourceType: "image" | "video" | "raw";
+  name: string;
+  mimeType: string;
+  size: number;
+  durationSeconds?: number;
+}
+
+const uploadMessageAttachment = async (
+  file: Express.Multer.File,
+  requestedType: string | undefined,
+  clientDuration: string | undefined,
+): Promise<UploadedAttachment> => {
+  const mimeType = getBaseMimeType(file.mimetype);
+  const name = file.originalname.trim() || "Attachment";
+
+  if (requestedType === "audio") {
+    if (!messageAudioTypes.includes(mimeType)) {
+      throw createMessageError("Unsupported audio format.", 400);
+    }
+
+    const result = await uploadBuffer(file.buffer, {
+      folder: "civilhub/messages/audio",
+      resource_type: "video",
+    });
+
+    const reportedDuration = Number(clientDuration);
+    const durationSeconds =
+      typeof result.duration === "number" && Number.isFinite(result.duration)
+        ? result.duration
+        : Number.isFinite(reportedDuration) && reportedDuration > 0
+          ? reportedDuration
+          : 0;
+
+    if (
+      durationSeconds >
+      MESSAGE_AUDIO_MAX_SECONDS + AUDIO_DURATION_TOLERANCE_SECONDS
+    ) {
+      await cloudinary.uploader.destroy(result.public_id, {
+        resource_type: "video",
+      });
+      throw createMessageError(
+        "Voice messages must be 5 minutes or shorter.",
+        400,
+      );
+    }
+
+    return {
+      messageType: "audio",
+      url: result.secure_url,
+      publicId: result.public_id,
+      resourceType: "video",
+      name,
+      mimeType,
+      size: file.size,
+      durationSeconds: Math.round(durationSeconds),
+    };
+  }
+
+  if (!messageAttachmentTypes.includes(mimeType)) {
+    throw createMessageError("Unsupported file type.", 400);
+  }
+
+  // Images stay as images so they can be previewed; everything else is stored
+  // as a raw file so it downloads unchanged with its original extension.
+  const resourceType = mimeType.startsWith("image/") ? "image" : "raw";
+  const result = await uploadBuffer(file.buffer, {
+    folder: "civilhub/messages/files",
+    resource_type: resourceType,
+    ...(resourceType === "raw"
+      ? { use_filename: true, unique_filename: true, filename_override: name }
+      : {}),
+  });
+
+  return {
+    messageType: "file",
+    url: result.secure_url,
+    publicId: result.public_id,
+    resourceType,
+    name,
+    mimeType,
+    size: file.size,
+  };
 };
 
 const toUserView = (
@@ -274,7 +387,11 @@ export const getMyConversations = async (
 
     const conversations = await Conversation.find({ participants: userId })
       .populate("participants", "name role")
-      .populate({ path: "lastMessage", select: "content createdAt sender" })
+      .populate({
+        path: "lastMessage",
+        select:
+          "content createdAt sender messageType attachmentName durationSeconds",
+      })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .exec();
 
@@ -316,9 +433,12 @@ export const getMyConversations = async (
           "sender" in lastMessageValue
             ? (lastMessageValue as {
                 _id: Types.ObjectId;
-                content: string;
+                content?: string;
                 createdAt: Date;
                 sender: Types.ObjectId;
+                messageType?: IMessage["messageType"];
+                attachmentName?: string;
+                durationSeconds?: number;
               })
             : null;
 
@@ -343,7 +463,10 @@ export const getMyConversations = async (
           lastMessage: lastMessage
             ? {
                 id: lastMessage._id.toString(),
-                content: lastMessage.content,
+                content: lastMessage.content ?? "",
+                messageType: lastMessage.messageType ?? "text",
+                attachmentName: lastMessage.attachmentName ?? null,
+                durationSeconds: lastMessage.durationSeconds ?? null,
                 createdAt: lastMessage.createdAt.toISOString(),
                 senderId: lastMessage.sender.toString(),
               }
@@ -426,7 +549,9 @@ export const getMessages = async (
         return {
           id: message._id.toString(),
           conversationId: conversation._id.toString(),
-          content: message.content,
+          messageType: message.messageType ?? "text",
+          content: message.content ?? "",
+          attachment: toAttachmentView(message),
           createdAt: message.createdAt.toISOString(),
           sender: {
             userId: sender._id.toString(),
@@ -459,7 +584,7 @@ export const sendMessage = async (
     }
 
     const content = req.body.content?.trim();
-    if (!content) {
+    if (!content && !req.file) {
       throw createMessageError("Message content is required", 400);
     }
 
@@ -470,12 +595,43 @@ export const sendMessage = async (
 
     const senderObjectId = new Types.ObjectId(userId);
 
-    const message = await Message.create({
-      conversation: conversation._id,
-      sender: senderObjectId,
-      content,
-      readBy: [senderObjectId],
-    });
+    const attachment = req.file
+      ? await uploadMessageAttachment(
+          req.file,
+          req.body.messageType,
+          req.body.durationSeconds,
+        )
+      : null;
+
+    let message: IMessage;
+    try {
+      message = await Message.create({
+        conversation: conversation._id,
+        sender: senderObjectId,
+        messageType: attachment?.messageType ?? "text",
+        content: content || undefined,
+        ...(attachment
+          ? {
+              attachmentUrl: attachment.url,
+              attachmentPublicId: attachment.publicId,
+              attachmentName: attachment.name,
+              attachmentMimeType: attachment.mimeType,
+              attachmentSize: attachment.size,
+              durationSeconds: attachment.durationSeconds,
+            }
+          : {}),
+        readBy: [senderObjectId],
+      });
+    } catch (error: unknown) {
+      if (attachment) {
+        await cloudinary.uploader
+          .destroy(attachment.publicId, {
+            resource_type: attachment.resourceType,
+          })
+          .catch(() => undefined);
+      }
+      throw error;
+    }
 
     conversation.lastMessage = message._id;
     conversation.lastMessageAt = message.createdAt;
@@ -511,7 +667,9 @@ export const sendMessage = async (
     res.status(201).json({
       id: message._id.toString(),
       conversationId: conversation._id.toString(),
-      content: message.content,
+      messageType: message.messageType,
+      content: message.content ?? "",
+      attachment: toAttachmentView(message),
       createdAt: message.createdAt.toISOString(),
       sender: {
         userId,

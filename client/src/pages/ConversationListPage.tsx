@@ -1,7 +1,9 @@
+import { PaperclipIcon, WaveformIcon } from "@phosphor-icons/react";
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
+import { formatDuration } from "../lib/messageAttachments";
 
 interface ConversationParticipant {
   userId: string;
@@ -13,6 +15,9 @@ interface ConversationParticipant {
 interface ConversationPreviewMessage {
   id: string;
   content: string;
+  messageType?: "text" | "file" | "audio";
+  attachmentName?: string | null;
+  durationSeconds?: number | null;
   createdAt: string;
   senderId: string;
 }
@@ -97,6 +102,33 @@ const formatRelativeTime = (value: string): string => {
 
   return date.toLocaleDateString();
 };
+
+function MessagePreview({
+  message,
+}: {
+  message: ConversationPreviewMessage | null;
+}): ReactElement {
+  if (message?.messageType === "file" || message?.messageType === "audio") {
+    const isAudio = message.messageType === "audio";
+    const Icon = isAudio ? WaveformIcon : PaperclipIcon;
+    const label = isAudio
+      ? `Voice message${typeof message.durationSeconds === "number" ? ` (${formatDuration(message.durationSeconds)})` : ""}`
+      : (message.attachmentName ?? "Attachment");
+
+    return (
+      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-white/60">
+        <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span className="truncate">{label}</span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-1 truncate text-xs text-white/60">
+      {message ? truncate(message.content, 88) : "No messages yet"}
+    </p>
+  );
+}
 
 const truncate = (value: string, maxLength: number): string => {
   if (value.length <= maxLength) return value;
@@ -251,11 +283,7 @@ export function ConversationListPage(): ReactElement {
                         )}
                       </p>
                     </div>
-                    <p className="mt-1 truncate text-xs text-white/60">
-                      {conversation.lastMessage
-                        ? truncate(conversation.lastMessage.content, 88)
-                        : "No messages yet"}
-                    </p>
+                    <MessagePreview message={conversation.lastMessage} />
                   </div>
 
                   {conversation.unreadCount > 0 ? (
