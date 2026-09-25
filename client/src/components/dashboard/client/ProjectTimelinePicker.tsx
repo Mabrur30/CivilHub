@@ -162,7 +162,7 @@ export function ProjectTimelinePicker({
           <p className="mt-2 text-xs text-white/55">Starts around {formatLongDate(start)}</p>
         ) : null}
         {startError ? (
-          <p id="targetStartDate-error" className="mt-2 text-xs text-red-300">
+          <p id="targetStartDate-error" className="mt-2 text-xs text-rose-300">
             {startError}
           </p>
         ) : null}
@@ -205,7 +205,7 @@ export function ProjectTimelinePicker({
           <p className="mt-2 text-xs text-white/55">Choose a start first, and the finish date follows.</p>
         ) : null}
         {finishError ? (
-          <p id="targetCompletionDate-error" className="mt-2 text-xs text-red-300">
+          <p id="targetCompletionDate-error" className="mt-2 text-xs text-rose-300">
             {finishError}
           </p>
         ) : null}

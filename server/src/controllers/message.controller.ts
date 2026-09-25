@@ -23,6 +23,11 @@ interface ConversationParams {
   otherUserId?: string;
 }
 
+export interface ConversationFlagsBody {
+  starred?: unknown;
+  archived?: unknown;
+}
+
 export interface SendMessageBody {
   content?: string;
   messageType?: string;
@@ -111,6 +116,27 @@ const getConversationIfParticipant = async (
   }
 
   return conversation;
+};
+
+const hasUser = (ids: Types.ObjectId[] | undefined, userId: string): boolean =>
+  (ids ?? []).some((id) => id.toString() === userId);
+
+const markConversationMessagesRead = async (
+  conversationId: Types.ObjectId,
+  userId: string,
+): Promise<void> => {
+  await Message.updateMany(
+    {
+      conversation: conversationId,
+      sender: { $ne: new Types.ObjectId(userId) },
+      readBy: { $ne: new Types.ObjectId(userId) },
+    },
+    {
+      $addToSet: {
+        readBy: new Types.ObjectId(userId),
+      },
+    },
+  ).exec();
 };
 
 const getBaseMimeType = (mimeType: string): string =>
@@ -433,6 +459,8 @@ export const getMyConversations = async (
             },
             lastMessage: null,
             unreadCount: 0,
+            isStarred: hasUser(conversation.starredBy, userId),
+            isArchived: hasUser(conversation.archivedBy, userId),
             updatedAt: conversation.updatedAt.toISOString(),
           };
         }
@@ -453,6 +481,8 @@ export const getMyConversations = async (
             : null,
           unreadCount:
             unreadByConversation.get(conversation._id.toString()) ?? 0,
+          isStarred: hasUser(conversation.starredBy, userId),
+          isArchived: hasUser(conversation.archivedBy, userId),
           updatedAt: conversation.updatedAt.toISOString(),
         };
       }),
@@ -495,18 +525,7 @@ export const getMessages = async (
 
     const photoByUser = await getPhotoMap(senders);
 
-    await Message.updateMany(
-      {
-        conversation: conversation._id,
-        sender: { $ne: new Types.ObjectId(userId) },
-        readBy: { $ne: new Types.ObjectId(userId) },
-      },
-      {
-        $addToSet: {
-          readBy: new Types.ObjectId(userId),
-        },
-      },
-    ).exec();
+    await markConversationMessagesRead(conversation._id, userId);
 
     const participants = await User.find({
       _id: { $in: conversation.participants },
@@ -615,6 +634,8 @@ export const sendMessage = async (
 
     conversation.lastMessage = message._id;
     conversation.lastMessageAt = message.createdAt;
+    // A new message brings an archived conversation back to both inboxes.
+    conversation.archivedBy = [];
     await conversation.save();
 
     const recipient = conversation.participants.find(
@@ -659,6 +680,94 @@ export const sendMessage = async (
       },
       isReadByRequester: true,
     });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const updateConversationFlags = async (
+  req: AuthenticatedRequest<ConversationFlagsBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = requireUser(req);
+    const { conversationId } = getParams(req);
+
+    if (!conversationId) {
+      throw createMessageError("Conversation ID is required", 400);
+    }
+
+    const { starred, archived } = req.body ?? {};
+    const isOptionalBoolean = (value: unknown): boolean =>
+      value === undefined || typeof value === "boolean";
+
+    if (
+      !isOptionalBoolean(starred) ||
+      !isOptionalBoolean(archived) ||
+      (starred === undefined && archived === undefined)
+    ) {
+      throw createMessageError(
+        "Send starred and/or archived as true or false",
+        400,
+      );
+    }
+
+    const conversation = await getConversationIfParticipant(
+      conversationId,
+      userId,
+    );
+    const userObjectId = new Types.ObjectId(userId);
+
+    const update: Record<string, Record<string, Types.ObjectId>> = {};
+    const addTo = (field: string): void => {
+      update.$addToSet = { ...update.$addToSet, [field]: userObjectId };
+    };
+    const pullFrom = (field: string): void => {
+      update.$pull = { ...update.$pull, [field]: userObjectId };
+    };
+
+    if (starred === true) addTo("starredBy");
+    if (starred === false) pullFrom("starredBy");
+    if (archived === true) addTo("archivedBy");
+    if (archived === false) pullFrom("archivedBy");
+
+    const updated = await Conversation.findByIdAndUpdate(
+      conversation._id,
+      update,
+      { returnDocument: "after" },
+    ).exec();
+
+    res.status(200).json({
+      id: conversation._id.toString(),
+      isStarred: hasUser(updated?.starredBy, userId),
+      isArchived: hasUser(updated?.archivedBy, userId),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const markConversationRead = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = requireUser(req);
+    const { conversationId } = getParams(req);
+
+    if (!conversationId) {
+      throw createMessageError("Conversation ID is required", 400);
+    }
+
+    const conversation = await getConversationIfParticipant(
+      conversationId,
+      userId,
+    );
+    await markConversationMessagesRead(conversation._id, userId);
+
+    res.status(200).json({ id: conversation._id.toString(), unreadCount: 0 });
   } catch (error: unknown) {
     next(error);
   }

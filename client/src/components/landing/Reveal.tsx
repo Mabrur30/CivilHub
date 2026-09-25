@@ -3,7 +3,7 @@ import { useReveal } from "../../hooks/useReveal";
 
 export interface RevealProps {
   children: ReactNode;
-  /** "head" uses the shorter, slower travel tuned for large Playfair headings. */
+  /** "head" uses the shorter, slower travel tuned for large display headings. */
   variant?: "head" | "default";
   /** Milliseconds, for staggering siblings within one group. */
   delay?: number;

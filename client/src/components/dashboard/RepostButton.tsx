@@ -127,7 +127,7 @@ export function RepostButton({
             ) : null}
           </div>
           {error ? (
-            <p className="mt-2 text-xs text-red-200" role="alert">
+            <p className="mt-2 text-xs text-rose-200" role="alert">
               {error}
             </p>
           ) : null}
@@ -135,7 +135,7 @@ export function RepostButton({
             type="button"
             onClick={() => void submitRepost()}
             disabled={isSubmitting}
-            className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="mt-3 w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {isSubmitting ? "Reposting..." : "Repost"}
           </button>

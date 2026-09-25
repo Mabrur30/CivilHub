@@ -27,7 +27,9 @@ export function AuthShell({
     // "user" drops transform animations (entrance offset, button scale) for
     // reduced-motion users while keeping opacity fades such as the focus ring.
     <MotionConfig reducedMotion="user">
-      <main className="relative isolate flex min-h-screen items-center justify-center bg-void px-4 py-12 text-white sm:px-6">
+      <main
+        data-theme="dark"
+        className="relative isolate flex min-h-screen items-center justify-center bg-void px-4 py-12 text-white sm:px-6">
         {/* Fixed so the tall Signup form scrolls over a still background
             instead of stretching the image to the document height. */}
         <div aria-hidden="true" className="fixed inset-0 -z-10">

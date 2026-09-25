@@ -170,7 +170,7 @@ export function PostComposerModal({
               <button
                 type="button"
                 onClick={onClearImage}
-                className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary"
+                className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-semibold text-snow transition-colors duration-200 hover:bg-primary hover:text-on-primary"
               >
                 X
               </button>
@@ -178,7 +178,7 @@ export function PostComposerModal({
           ) : null}
 
           {composerError ? (
-            <p className="mt-3 text-sm text-red-300" role="alert">
+            <p className="mt-3 text-sm text-rose-300" role="alert">
               {composerError}
             </p>
           ) : null}
@@ -186,7 +186,7 @@ export function PostComposerModal({
           <button
             type="submit"
             disabled={isPosting || !content.trim()}
-            className="mt-5 w-full rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-5 w-full rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isPosting ? "Posting..." : "Post"}
           </button>

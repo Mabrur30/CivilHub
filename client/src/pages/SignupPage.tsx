@@ -117,7 +117,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
       <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-primary">
         Join CivilHub
       </p>
-      <h1 className="mt-3 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+      <h1 className="mt-3 font-heading text-4xl font-bold text-white sm:text-5xl">
         Create your account
       </h1>
       <div className="mt-5 inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
@@ -175,7 +175,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
             : `Continue as ${roleLabelMap[role]}`}
         </GlassSubmitButton>
         {error ? (
-          <p role="alert" className="text-center text-sm text-red-300">
+          <p role="alert" className="text-center text-sm text-rose-300">
             {error}
           </p>
         ) : null}

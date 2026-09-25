@@ -96,7 +96,7 @@ function StateColumn({ project }: { project: ClientProject }): ReactElement {
   const state = describeProjectState(project);
   if (state.needsYou) {
     return (
-      <p className="text-sm font-semibold text-amber-200">{state.text}</p>
+      <p className="text-sm font-semibold text-violet-200">{state.text}</p>
     );
   }
 

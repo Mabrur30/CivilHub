@@ -17,7 +17,7 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
+        <h1 className="font-heading text-4xl font-bold text-white sm:text-5xl">
           {title}
         </h1>
         <p className="mt-3 max-w-2xl text-white/60">{summary}</p>

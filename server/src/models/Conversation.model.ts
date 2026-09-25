@@ -5,6 +5,10 @@ export interface IConversation extends Document {
   pairKey: string;
   lastMessage?: Types.ObjectId;
   lastMessageAt?: Date;
+  // Per-user inbox flags: a conversation is starred or archived for whoever is
+  // listed, independently of the other participant.
+  starredBy: Types.ObjectId[];
+  archivedBy: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +46,14 @@ const conversationSchema = new Schema<IConversation>(
       type: Date,
       required: false,
       index: true,
+    },
+    starredBy: {
+      type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
+    archivedBy: {
+      type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
     },
   },
   { timestamps: true },

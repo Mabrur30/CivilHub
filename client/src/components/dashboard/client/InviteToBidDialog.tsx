@@ -120,7 +120,7 @@ export function InviteToBidDialog({
       isBusy={sendingId !== null}
     >
       {loadError ? (
-        <p role="alert" className="text-sm text-red-300">
+        <p role="alert" className="text-sm text-rose-300">
           {loadError}
         </p>
       ) : projects === null ? (
@@ -164,7 +164,7 @@ export function InviteToBidDialog({
         </ul>
       )}
       {error ? (
-        <p role="alert" className="mt-4 text-sm text-red-300">
+        <p role="alert" className="mt-4 text-sm text-rose-300">
           {error}
         </p>
       ) : null}

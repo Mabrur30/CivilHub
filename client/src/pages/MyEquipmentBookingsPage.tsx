@@ -160,7 +160,7 @@ function BookingRow({
       </div>
 
       {payError ? (
-        <p className="text-sm text-red-300 lg:col-span-12" role="alert">
+        <p className="text-sm text-rose-300 lg:col-span-12" role="alert">
           {payError}
         </p>
       ) : null}

@@ -125,7 +125,7 @@ function RequestChangesDialog({
           </p>
         </div>
         {error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-rose-300">
             {error}
           </p>
         ) : null}
@@ -158,13 +158,13 @@ export function ChangeRequestNote({
   changeRequest: PhaseChangeRequest;
 }): ReactElement {
   return (
-    <div className="mt-4 flex gap-3 rounded-xl border border-amber-300/25 bg-amber-300/5 p-3.5">
+    <div className="mt-4 flex gap-3 rounded-xl border border-violet-300/25 bg-violet-300/5 p-3.5">
       <ChatCircleTextIcon
-        className="mt-0.5 h-4 w-4 shrink-0 text-amber-200"
+        className="mt-0.5 h-4 w-4 shrink-0 text-violet-200"
         aria-hidden="true"
       />
       <div className="min-w-0">
-        <p className="text-xs font-semibold text-amber-100">
+        <p className="text-xs font-semibold text-violet-100">
           Client asked for changes on {formatShortDate(changeRequest.requestedAt)}
         </p>
         <p className="mt-1 whitespace-pre-line text-sm leading-6 text-white/75">

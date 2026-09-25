@@ -954,7 +954,7 @@ export function MyNetworkPage(): ReactElement {
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-bold ${
                     incoming.length > 0
-                      ? "bg-primary text-white"
+                      ? "bg-primary text-on-primary"
                       : "bg-white/10 text-white/55"
                   } ${pulsePending && incoming.length > 0 ? "animate-pulse" : ""}`}
                 >
@@ -1016,7 +1016,7 @@ export function MyNetworkPage(): ReactElement {
 
           {feedError ? (
             <section
-              className="rounded-2xl border border-red-400/20 bg-red-400/5 p-6 text-sm text-red-200"
+              className="rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6 text-sm text-rose-200"
               role="alert"
             >
               {feedError}
@@ -1062,7 +1062,7 @@ export function MyNetworkPage(): ReactElement {
                     block: "start",
                   });
                 }}
-                className="mt-5 inline-flex rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-white"
+                className="mt-5 inline-flex rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-on-primary"
               >
                 Find people
               </button>
@@ -1173,7 +1173,7 @@ export function MyNetworkPage(): ReactElement {
                             type="button"
                             onClick={() => void respond(request.id, "accept")}
                             disabled={isActing}
-                            className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white transition-colors duration-200 hover:bg-glow disabled:opacity-60"
+                            className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
                           >
                             {isActing ? "..." : "Accept"}
                           </button>
@@ -1181,7 +1181,7 @@ export function MyNetworkPage(): ReactElement {
                             type="button"
                             onClick={() => void respond(request.id, "decline")}
                             disabled={isActing}
-                            className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-red-300 hover:text-red-200 disabled:opacity-60"
+                            className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-rose-300 hover:text-rose-200 disabled:opacity-60"
                           >
                             Decline
                           </button>
@@ -1235,7 +1235,7 @@ export function MyNetworkPage(): ReactElement {
             ) : null}
 
             {browseError || searchError || searchActionError ? (
-              <p className="mt-3 text-sm text-red-300" role="alert">
+              <p className="mt-3 text-sm text-rose-300" role="alert">
                 {browseError || searchError || searchActionError}
               </p>
             ) : null}
@@ -1289,11 +1289,11 @@ export function MyNetworkPage(): ReactElement {
                               You
                             </span>
                           ) : pendingIncoming ? (
-                            <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                            <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
                               Request received
                             </span>
                           ) : pendingSent ? (
-                            <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                            <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
                               Request sent
                             </span>
                           ) : (
@@ -1303,7 +1303,7 @@ export function MyNetworkPage(): ReactElement {
                                 void sendConnectionRequest(person.id)
                               }
                               disabled={activeSearchUserId === person.id}
-                              className="rounded-full bg-primary px-3 py-1.5 text-[11px] font-semibold text-white transition-colors duration-200 hover:bg-glow disabled:opacity-60"
+                              className="rounded-full bg-primary px-3 py-1.5 text-[11px] font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
                             >
                               {activeSearchUserId === person.id
                                 ? "Sending..."
@@ -1411,7 +1411,7 @@ export function MyNetworkPage(): ReactElement {
                             </p>
                           </div>
                         </div>
-                        <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                        <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2 py-0.5 text-[11px] font-semibold text-violet-200">
                           Pending
                         </span>
                       </div>
@@ -1496,7 +1496,7 @@ export function MyNetworkPage(): ReactElement {
           </section>
 
           {networkError || actionError ? (
-            <p className="text-sm text-red-300" role="alert">
+            <p className="text-sm text-rose-300" role="alert">
               {networkError || actionError}
             </p>
           ) : null}

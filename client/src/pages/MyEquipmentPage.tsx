@@ -163,7 +163,7 @@ function InlineError({
       className="flex flex-col gap-3 border-t border-white/10 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6"
       role="alert"
     >
-      <p className="text-sm text-red-200">{message}</p>
+      <p className="text-sm text-rose-200">{message}</p>
       <button type="button" onClick={onRetry} className={rowButtonClassName}>
         Try again
       </button>
@@ -585,7 +585,7 @@ export function MyEquipmentPage(): ReactElement {
                     </div>
                     {errorFor(booking.id) ? (
                       <p
-                        className="text-sm text-red-300 lg:col-span-12"
+                        className="text-sm text-rose-300 lg:col-span-12"
                         role="alert"
                       >
                         {errorFor(booking.id)}
@@ -725,7 +725,7 @@ export function MyEquipmentPage(): ReactElement {
 
                   {errorFor(item.id) ? (
                     <p
-                      className="text-sm text-red-300 lg:col-span-12"
+                      className="text-sm text-rose-300 lg:col-span-12"
                       role="alert"
                     >
                       {errorFor(item.id)}
@@ -905,7 +905,7 @@ export function MyEquipmentPage(): ReactElement {
             </div>
 
             {addError ? (
-              <p role="alert" className="text-sm text-red-300">
+              <p role="alert" className="text-sm text-rose-300">
                 {addError}
               </p>
             ) : null}
@@ -953,7 +953,7 @@ export function MyEquipmentPage(): ReactElement {
             />
 
             {editError ? (
-              <p role="alert" className="text-sm text-red-300">
+              <p role="alert" className="text-sm text-rose-300">
                 {editError}
               </p>
             ) : null}

@@ -44,16 +44,16 @@ export function Hero(_props: HeroProps): ReactElement {
           className="h-full w-full"
           preserveAspectRatio="xMidYMid slice"
         >
-          <g fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1">
+          <g fill="none" className="stroke-white/8" strokeWidth="1">
             <path d="M0 120H1200M0 240H1200M0 360H1200M0 480H1200M0 600H1200M0 720H1200" />
             <path d="M120 0V900M240 0V900M360 0V900M480 0V900M600 0V900M720 0V900M840 0V900M960 0V900M1080 0V900" />
           </g>
-          <g fill="none" stroke="rgba(255,59,78,0.28)" strokeWidth="2">
+          <g fill="none" className="stroke-glow/30" strokeWidth="2">
             <path d="M80 700L330 560L600 620L870 430L1120 470" />
             <path d="M80 712L330 572L600 632L870 442L1120 482" />
-            <circle cx="330" cy="560" r="6" fill="rgba(255,59,78,0.45)" />
-            <circle cx="600" cy="620" r="6" fill="rgba(255,59,78,0.45)" />
-            <circle cx="870" cy="430" r="6" fill="rgba(255,59,78,0.45)" />
+            <circle cx="330" cy="560" r="6" className="fill-glow/45" />
+            <circle cx="600" cy="620" r="6" className="fill-glow/45" />
+            <circle cx="870" cy="430" r="6" className="fill-glow/45" />
           </g>
         </svg>
       </div>
@@ -85,7 +85,7 @@ export function Hero(_props: HeroProps): ReactElement {
                 {persona.label}
               </p>
 
-              <p className="mt-4 max-w-lg font-heading text-3xl font-bold leading-[1.12] tracking-[-0.03em] text-white sm:text-4xl lg:text-[2.4rem]">
+              <p className="mt-4 max-w-lg font-heading text-3xl font-bold leading-[1.12] text-white sm:text-4xl lg:text-[2.4rem]">
                 {persona.headline}
               </p>
 
@@ -97,7 +97,7 @@ export function Hero(_props: HeroProps): ReactElement {
                 to={persona.to}
                 className={`mt-6 inline-flex w-fit rounded-full px-6 py-3.5 text-base font-semibold transition-all duration-300 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow ${
                   persona.side === "client"
-                    ? "bg-primary text-white shadow-[0_0_28px_rgba(255,59,78,0.28)] hover:bg-glow hover:shadow-[0_0_34px_rgba(255,59,78,0.45)]"
+                    ? "bg-primary text-on-primary shadow-[0_0_28px_rgba(255,133,52,0.28)] hover:bg-glow hover:shadow-[0_0_34px_rgba(255,133,52,0.45)]"
                     : "border border-white/20 bg-white/5 text-white hover:border-primary hover:text-primary"
                 }`}
               >
@@ -110,7 +110,7 @@ export function Hero(_props: HeroProps): ReactElement {
         {/* The project both sides are working on, sitting across the seam. */}
         <div className="relative mx-auto mt-6 w-full max-w-sm lg:mt-2">
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-md">
-            <div className="rounded-[24px] border border-white/10 bg-[#101011] p-4">
+            <div className="rounded-[24px] border border-white/10 bg-void p-4">
               <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.24em] text-white/45">

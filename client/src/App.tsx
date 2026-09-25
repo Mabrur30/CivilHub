@@ -19,8 +19,8 @@ import { ClientBrowseEngineersPage } from "./pages/ClientBrowseEngineersPage";
 import { PublicProfilePage } from "./pages/PublicProfilePage";
 import { ProjectProgressPage } from "./pages/ProjectProgressPage";
 import { PostProjectPage } from "./pages/PostProjectPage";
-import { ConversationListPage } from "./pages/ConversationListPage";
-import { ChatPage } from "./pages/ChatPage";
+import { InboxPage } from "./pages/InboxPage";
+import { RoleDashboardLayout } from "./components/dashboard/RoleDashboardLayout";
 import { SearchEngineersPage } from "./pages/SearchEngineersPage";
 import { FeedPage } from "./pages/FeedPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -154,21 +154,15 @@ function App(): ReactElement {
         }
       />
       <Route
-        path="/messages"
         element={
           <ProtectedRoute>
-            <ConversationListPage />
+            <RoleDashboardLayout />
           </ProtectedRoute>
         }
-      />
-      <Route
-        path="/messages/:targetId"
-        element={
-          <ProtectedRoute>
-            <ChatPage />
-          </ProtectedRoute>
-        }
-      />
+      >
+        <Route path="/messages" element={<InboxPage />} />
+        <Route path="/messages/:targetId" element={<InboxPage />} />
+      </Route>
       <Route
         path="/notifications"
         element={

@@ -22,7 +22,7 @@ function StatValue({
 
   return (
     <div
-      className="font-heading text-4xl font-bold tracking-[-0.04em] text-white tabular-nums sm:text-5xl"
+      className="font-heading text-4xl font-bold text-white tabular-nums sm:text-5xl"
       // Screen readers get the real figure once, rather than every frame of the count.
       aria-label={value}
     >

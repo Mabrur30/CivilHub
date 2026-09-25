@@ -10,7 +10,7 @@ export interface MilestoneRowProps {
 
 const stateClassMap: Record<MilestoneState, string> = {
   done: "text-emerald-400",
-  active: "text-amber-300",
+  active: "text-sky-300",
   pending: "text-white/40",
 };
 
@@ -27,7 +27,7 @@ export function MilestoneRow({
             state === "done"
               ? "bg-emerald-400"
               : state === "active"
-                ? "bg-amber-300"
+                ? "bg-sky-300"
                 : "bg-white/25"
           }`}
         />

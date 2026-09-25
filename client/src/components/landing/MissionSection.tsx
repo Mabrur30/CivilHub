@@ -12,6 +12,7 @@ export function MissionSection(_props: MissionSectionProps): ReactElement {
   return (
     <section
       id="mission"
+      data-theme="dark"
       className="relative isolate overflow-hidden bg-void"
     >
       {/* Scaled past the frame so the parallax translate never exposes an edge. */}
@@ -35,13 +36,13 @@ export function MissionSection(_props: MissionSectionProps): ReactElement {
         aria-hidden="true"
         className="absolute inset-0 bg-gradient-to-b from-void via-void/60 to-void"
       />
-      {/* Kept low: the rebar's rust tones and the primary red are close enough
+      {/* Kept low: the rebar's rust tones and the primary orange are close enough
           that a heavier wash turns the steel muddy brown. */}
       <div aria-hidden="true" className="absolute inset-0 bg-primary/5" />
 
       <div className="relative mx-auto flex max-w-4xl items-center justify-center px-4 py-28 sm:px-6 sm:py-36 lg:px-8">
         <Reveal variant="head">
-          <p className="text-center font-heading text-4xl font-bold leading-[1.14] tracking-[-0.03em] text-white sm:text-5xl lg:text-6xl">
+          <p className="text-center font-heading text-4xl font-bold leading-[1.14] text-white sm:text-5xl lg:text-6xl">
             Infrastructure is built on coordination long before it is built on
             concrete.
           </p>

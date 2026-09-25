@@ -1,10 +1,13 @@
 import { type NextFunction, type Request, type Response, Router } from "express";
 import {
+  type ConversationFlagsBody,
   getMessages,
   getMyConversations,
   getOrCreateConversation,
+  markConversationRead,
   type SendMessageBody,
   sendMessage,
+  updateConversationFlags,
 } from "../controllers/message.controller";
 import {
   protect,
@@ -23,6 +26,18 @@ conversationsRouter.get("/", protect, (req, res, next) =>
 
 conversationsRouter.get("/with/:otherUserId", protect, (req, res, next) =>
   getOrCreateConversation(req as AuthenticatedRequest, res, next),
+);
+
+conversationsRouter.patch("/:conversationId", protect, (req, res, next) =>
+  updateConversationFlags(
+    req as AuthenticatedRequest<ConversationFlagsBody>,
+    res,
+    next,
+  ),
+);
+
+conversationsRouter.patch("/:conversationId/read", protect, (req, res, next) =>
+  markConversationRead(req as AuthenticatedRequest, res, next),
 );
 
 conversationsRouter.get(

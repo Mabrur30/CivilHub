@@ -289,7 +289,7 @@ export function PostProjectPage(): ReactElement {
           </p>
         ) : null}
         {errors[name] ? (
-          <p id={errorId} className="text-xs text-red-300">
+          <p id={errorId} className="text-xs text-rose-300">
             {errors[name]}
           </p>
         ) : null}
@@ -298,7 +298,7 @@ export function PostProjectPage(): ReactElement {
   };
 
   const inputClass = (name: FieldName): string =>
-    `${inputClassName} ${errors[name] ? "border-red-400/60" : ""}`;
+    `${inputClassName} ${errors[name] ? "border-rose-400/60" : ""}`;
 
   return (
     <div className="space-y-8">
@@ -319,7 +319,7 @@ export function PostProjectPage(): ReactElement {
           className={`${panelClassName} grid gap-6 p-5 sm:p-8`}
         >
           {error ? (
-            <p role="alert" className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+            <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
               {error}
             </p>
           ) : null}

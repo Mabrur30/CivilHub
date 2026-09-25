@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { ThemeToggle } from "../ThemeToggle";
 import { TopNavAlerts } from "./TopNavAlerts";
 import { UserMenu } from "./UserMenu";
 
@@ -41,12 +42,13 @@ export function EngineerDashboardLayout(
               <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
                 C
               </span>
-              <span className="font-heading text-xl font-bold tracking-tight">
+              <span className="font-heading text-xl font-bold">
                 CivilHub
               </span>
             </button>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <TopNavAlerts role="engineer" />
               {currentUser ? (
                 <UserMenu

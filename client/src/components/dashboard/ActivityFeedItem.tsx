@@ -166,7 +166,7 @@ const getFeedEntryIcon = (entry: FeedEntry): ReactElement => {
   return categoryIcons[category === "all" ? "projects" : category];
 };
 
-// Own actions get a red ring around the icon so they read as authored-by-you
+// Own actions get an orange ring around the icon so they read as authored-by-you
 // at a glance, rather than sharing the plain well of things that happened to you.
 const isOwnAction = (entry: FeedEntry): boolean =>
   entry.source === "own_bid" || entry.source === "own_phase_completion";

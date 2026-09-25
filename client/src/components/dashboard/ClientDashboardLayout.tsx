@@ -5,6 +5,7 @@ import {
   ClientWorkspaceProvider,
   useClientWorkspace,
 } from "./client/ClientWorkspace";
+import { ThemeToggle } from "../ThemeToggle";
 import { TopNavAlerts } from "./TopNavAlerts";
 import { UserMenu } from "./UserMenu";
 
@@ -58,12 +59,13 @@ function ClientShell(): ReactElement {
               <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
                 C
               </span>
-              <span className="font-heading text-xl font-bold tracking-tight">
+              <span className="font-heading text-xl font-bold">
                 CivilHub
               </span>
             </button>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               <TopNavAlerts role="client" />
               {currentUser ? (
                 <UserMenu

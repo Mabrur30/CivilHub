@@ -124,7 +124,7 @@ function BudgetMarker({
 
   const verdict =
     amount > max
-      ? { text: `${formatCurrency(amount - max)} over budget`, tone: "text-amber-200" }
+      ? { text: `${formatCurrency(amount - max)} over budget`, tone: "text-violet-200" }
       : amount < min
         ? { text: `${formatCurrency(min - amount)} under budget`, tone: "text-white/60" }
         : { text: "Within budget", tone: "text-emerald-200" };
@@ -401,7 +401,7 @@ function DecisionDialog({
         </p>
       )}
       {error ? (
-        <p role="alert" className="mt-4 text-sm text-red-300">
+        <p role="alert" className="mt-4 text-sm text-rose-300">
           {error}
         </p>
       ) : null}

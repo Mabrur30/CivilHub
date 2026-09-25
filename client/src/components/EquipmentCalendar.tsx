@@ -273,7 +273,7 @@ export function EquipmentCalendar({
                       ? "border-white/5 text-white/35"
                       : "border-white/10 text-white hover:border-primary/60"
                 } ${isInRange ? "bg-primary/20" : "bg-transparent"} ${
-                  isStart || isEnd ? "border-primary bg-primary text-white" : ""
+                  isStart || isEnd ? "border-primary bg-primary text-on-primary" : ""
                 }`}
                 aria-label={`${day.toDateString()}${isBlocked ? " unavailable" : ""}`}
               >
@@ -284,7 +284,7 @@ export function EquipmentCalendar({
                 ) : null}
 
                 {isBlocked ? (
-                  <span className="pointer-events-none absolute inset-0 rounded-lg bg-[repeating-linear-gradient(135deg,rgba(225,29,46,0.18),rgba(225,29,46,0.18)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />
+                  <span className="pointer-events-none absolute inset-0 rounded-lg bg-[repeating-linear-gradient(135deg,rgba(242,106,27,0.18),rgba(242,106,27,0.18)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />
                 ) : null}
               </button>
             );
@@ -302,19 +302,19 @@ export function EquipmentCalendar({
           Today
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[repeating-linear-gradient(135deg,rgba(225,29,46,0.22),rgba(225,29,46,0.22)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />{" "}
+          <span className="h-2.5 w-2.5 rounded-sm bg-[repeating-linear-gradient(135deg,rgba(242,106,27,0.22),rgba(242,106,27,0.22)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />{" "}
           Unavailable
         </span>
       </div>
 
       {loadError ? (
-        <p role="alert" className="mt-3 text-sm text-red-300">
+        <p role="alert" className="mt-3 text-sm text-rose-300">
           {loadError}
         </p>
       ) : null}
 
       {selectionError ? (
-        <p role="alert" className="mt-2 text-sm text-amber-200">
+        <p role="alert" className="mt-2 text-sm text-rose-300">
           {selectionError}
         </p>
       ) : null}

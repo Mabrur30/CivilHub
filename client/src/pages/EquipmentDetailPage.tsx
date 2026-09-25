@@ -125,10 +125,10 @@ export function EquipmentDetailPage(): ReactElement {
   if (error || !item) {
     return (
       <section
-        className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
+        className="rounded-2xl border border-rose-400/20 bg-rose-400/5 p-8 text-center"
         role="alert"
       >
-        <p className="text-sm text-red-200">{error || "Listing not found."}</p>
+        <p className="text-sm text-rose-200">{error || "Listing not found."}</p>
       </section>
     );
   }
@@ -227,7 +227,7 @@ export function EquipmentDetailPage(): ReactElement {
         <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
           Listing details
         </p>
-        <h1 className="mt-2 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
+        <h1 className="mt-2 font-heading text-4xl font-bold text-white sm:text-5xl">
           Equipment Detail
         </h1>
       </div>
@@ -274,7 +274,7 @@ export function EquipmentDetailPage(): ReactElement {
           </div>
 
           <div className="rounded-2xl border border-white/10 bg-surface/80 p-6">
-            <span className="inline-flex rounded-full border border-amber-300/40 bg-amber-300/15 px-3 py-1 text-xs font-semibold text-amber-100">
+            <span className="inline-flex rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-white/80">
               {item.category}
             </span>
             <h2 className="mt-4 font-heading text-3xl font-bold text-white">
@@ -302,7 +302,7 @@ export function EquipmentDetailPage(): ReactElement {
             </div>
 
             {reviewsError ? (
-              <p className="mt-4 text-sm text-red-300">{reviewsError}</p>
+              <p className="mt-4 text-sm text-rose-300">{reviewsError}</p>
             ) : isLoadingReviews ? (
               <p className="mt-4 text-sm text-white/55">Loading reviews...</p>
             ) : !reviews || reviews.reviews.length === 0 ? (
@@ -387,7 +387,7 @@ export function EquipmentDetailPage(): ReactElement {
                                 type="button"
                                 onClick={() => void submitReply(review.id)}
                                 disabled={isSubmittingReply}
-                                className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-glow disabled:opacity-60"
+                                className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary hover:bg-glow disabled:opacity-60"
                               >
                                 {isSubmittingReply
                                   ? "Sending..."
@@ -507,7 +507,7 @@ export function EquipmentDetailPage(): ReactElement {
                       type="button"
                       onClick={() => void submitBookingRequest()}
                       disabled={isSubmittingBooking}
-                      className="mt-3 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                      className="mt-3 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
                     >
                       {isSubmittingBooking
                         ? "Sending request..."
@@ -523,7 +523,7 @@ export function EquipmentDetailPage(): ReactElement {
                 ) : null}
 
                 {bookingError ? (
-                  <p role="alert" className="mt-3 text-sm text-red-300">
+                  <p role="alert" className="mt-3 text-sm text-rose-300">
                     {bookingError}
                   </p>
                 ) : null}

@@ -1,21 +1,113 @@
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --color-void: #0a0a0b;
-  --color-surface: #161617;
-  --color-primary: #e11d2e;
-  --color-glow: #ff3b4e;
-  --color-muted: #3a1418;
-  --font-heading: "Playfair Display", serif;
-  --font-body: "Open Sans", sans-serif;
+  /* Charcoal and safety orange. Text on a solid primary or glow fill uses
+     on-primary, never white or void directly, because the pair flips between
+     themes. Rose is kept for errors and destructive actions only. */
+  --color-void: #121110;
+  --color-surface: #1c1a17;
+  --color-primary: #f26a1b;
+  --color-glow: #ff8534;
+  --color-muted: #3a2314;
+  --color-on-primary: #121110;
+  /* Stays white in both themes, for text over photos and black overlays. */
+  --color-snow: #ffffff;
+  --font-heading: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
+/* Themes.
+   Components are written dark-first: `white` is the ink colour and void/surface
+   are the grounds. Light mode swaps those variables instead of restyling every
+   component, so `text-white/60` becomes 60% charcoal and `border-white/10` a
+   faint dark hairline. The status shades the app uses (pale 100-400 tints made
+   for dark grounds) are remapped to their deep 600-800 counterparts so they stay
+   readable on white. Primary darkens to orange-700 in light mode, because the
+   bright safety orange fails contrast as text on a light ground; buttons then
+   take white text.
+
+   The script in index.html sets data-theme on <html> before first paint. A
+   subtree can pin itself with its own data-theme (the auth screens and the
+   photo band on the landing page stay dark), which is why the dark block
+   restates every value instead of relying on the @theme defaults. */
+:root {
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-void: #f2f0eb;
+  --color-surface: #fbfaf7;
+  --color-white: #1c1a17;
+  --color-primary: #c2410c;
+  --color-glow: #9a3412;
+  --color-muted: #f6dcc8;
+  --color-on-primary: #ffffff;
+
+  --color-amber-200: oklch(76.9% 0.188 70.08);
+  --color-amber-300: oklch(76.9% 0.188 70.08);
+  --color-amber-400: oklch(66.6% 0.179 58.318);
+  --color-cyan-300: oklch(52% 0.105 223.128);
+  --color-emerald-200: oklch(50.8% 0.118 165.612);
+  --color-emerald-300: oklch(50.8% 0.118 165.612);
+  --color-emerald-400: oklch(59.6% 0.145 163.225);
+  --color-green-300: oklch(52.7% 0.154 150.069);
+  --color-green-500: oklch(62.7% 0.194 149.214);
+  --color-rose-200: oklch(51.4% 0.222 16.935);
+  --color-rose-300: oklch(51.4% 0.222 16.935);
+  --color-rose-400: oklch(58.6% 0.253 17.585);
+  --color-rose-500: oklch(58.6% 0.253 17.585);
+  --color-sky-200: oklch(50% 0.134 242.749);
+  --color-sky-300: oklch(50% 0.134 242.749);
+  --color-sky-400: oklch(58.8% 0.158 241.966);
+  --color-violet-100: oklch(43.2% 0.232 292.759);
+  --color-violet-200: oklch(49.1% 0.27 292.581);
+  --color-violet-300: oklch(49.1% 0.27 292.581);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-void: #121110;
+  --color-surface: #1c1a17;
+  --color-white: #ffffff;
+  --color-primary: #f26a1b;
+  --color-glow: #ff8534;
+  --color-muted: #3a2314;
+  --color-on-primary: #121110;
+
+  --color-amber-200: oklch(92.4% 0.12 95.746);
+  --color-amber-300: oklch(87.9% 0.169 91.605);
+  --color-amber-400: oklch(82.8% 0.189 84.429);
+  --color-cyan-300: oklch(86.5% 0.127 207.078);
+  --color-emerald-200: oklch(90.5% 0.093 164.15);
+  --color-emerald-300: oklch(84.5% 0.143 164.978);
+  --color-emerald-400: oklch(76.5% 0.177 163.223);
+  --color-green-300: oklch(87.1% 0.15 154.449);
+  --color-green-500: oklch(72.3% 0.219 149.579);
+  --color-rose-200: oklch(89.2% 0.058 10.001);
+  --color-rose-300: oklch(81% 0.117 11.638);
+  --color-rose-400: oklch(71.2% 0.194 13.428);
+  --color-rose-500: oklch(64.5% 0.246 16.439);
+  --color-sky-200: oklch(90.1% 0.058 230.902);
+  --color-sky-300: oklch(82.8% 0.111 230.318);
+  --color-sky-400: oklch(74.6% 0.16 232.661);
+  --color-violet-100: oklch(94.3% 0.029 294.588);
+  --color-violet-200: oklch(89.4% 0.057 293.283);
+  --color-violet-300: oklch(81.1% 0.111 293.571);
+}
+
+/* A pinned subtree sets its own ink and ground, since it may sit inside a page
+   of the other theme. */
+[data-theme] {
+  color: var(--color-white);
 }
 
 /* Scroll reveals.
    Two variants, one treatment. Cards travel the full 16px; headings travel less
-   over longer, because Playfair Display at display sizes carries far more optical
-   mass than a sans and the full distance reads as the heading dropping rather
-   than settling. */
+   over longer, because large display headings carry more optical mass than
+   body text and the full distance reads as the heading dropping rather than
+   settling. */
 .reveal,
 .reveal-head {
   opacity: 0;
@@ -85,8 +177,8 @@
 
 :root {
   font-family: var(--font-body);
-  color: white;
-  background-color: #0a0a0b;
+  color: var(--color-white);
+  background-color: var(--color-void);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -101,7 +193,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #0a0a0b;
+  background: var(--color-void);
 }
 
 #root {
@@ -113,30 +205,22 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* The app is dark everywhere, so native controls (date pickers, select
-   menus, scrollbars inside them) should draw their dark variants too. */
-input,
-select,
-textarea {
-  color-scheme: dark;
-}
-
 .form-input {
   width: 100%;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid color-mix(in oklab, var(--color-white) 10%, transparent);
   border-radius: 1rem;
-  background: #0a0a0b;
+  background: var(--color-void);
   padding: 0.75rem 1rem;
-  color: white;
+  color: var(--color-white);
   outline: none;
 }
 
 .form-input::placeholder {
-  color: rgb(255 255 255 / 0.35);
+  color: color-mix(in oklab, var(--color-white) 35%, transparent);
 }
 
 .form-input:focus {
-  border-color: #e11d2e;
+  border-color: var(--color-primary);
 }
 
 /* Auth glass.
@@ -170,8 +254,8 @@ textarea {
 .glass-panel {
   background: linear-gradient(
     160deg,
-    rgb(22 22 23 / 0.72),
-    rgb(10 10 11 / 0.62)
+    rgb(28 26 23 / 0.72),
+    rgb(18 17 16 / 0.62)
   );
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.05),
@@ -186,7 +270,7 @@ textarea {
     rgb(255 255 255 / 0.18),
     rgb(255 255 255 / 0.05) 35%,
     rgb(255 255 255 / 0.03) 70%,
-    rgb(225 29 46 / 0.22)
+    rgb(242 106 27 / 0.22)
   );
 }
 
@@ -195,9 +279,9 @@ textarea {
 .glass-field {
   background: linear-gradient(
     -75deg,
-    rgb(10 10 11 / 0.35),
-    rgb(22 22 23 / 0.55),
-    rgb(10 10 11 / 0.35)
+    rgb(18 17 16 / 0.35),
+    rgb(28 26 23 / 0.55),
+    rgb(18 17 16 / 0.35)
   );
   box-shadow:
     inset 0 2px 4px rgb(0 0 0 / 0.45),
@@ -224,15 +308,15 @@ textarea {
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow: 0 0 0 4px rgb(225 29 46 / 0.14);
+  box-shadow: 0 0 0 4px rgb(242 106 27 / 0.14);
 }
 
 .glass-field-focus::before {
   background: linear-gradient(
     135deg,
-    #ff3b4e,
-    rgb(225 29 46 / 0.4) 45%,
-    rgb(225 29 46 / 0.4) 60%,
-    #e11d2e
+    #ff8534,
+    rgb(242 106 27 / 0.4) 45%,
+    rgb(242 106 27 / 0.4) 60%,
+    #f26a1b
   );
 }

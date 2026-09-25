@@ -67,7 +67,7 @@ export function ForClientsForEngineers(
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
             Built for both sides
           </p>
-          <h2 className="mt-4 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+          <h2 className="mt-4 font-heading text-4xl font-bold text-white sm:text-5xl">
             Purpose-built collaboration for every stakeholder.
           </h2>
         </Reveal>

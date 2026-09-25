@@ -46,7 +46,7 @@ export function GetStartedMenu(_props: GetStartedMenuProps): ReactElement {
         aria-expanded={isOpen}
         aria-haspopup="menu"
         onClick={() => setIsOpen((open) => !open)}
-        className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:bg-glow hover:shadow-[0_0_28px_rgba(255,59,78,0.45)]"
+        className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:bg-glow hover:shadow-[0_0_28px_rgba(255,133,52,0.45)]"
       >
         Get Started
       </button>

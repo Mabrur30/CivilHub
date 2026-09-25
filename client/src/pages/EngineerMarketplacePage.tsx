@@ -631,7 +631,7 @@ export function EngineerMarketplacePage(): ReactElement {
                 </p>
               </div>
               {bidError ? (
-                <p id="bid-error" role="alert" className="text-sm text-red-300">
+                <p id="bid-error" role="alert" className="text-sm text-rose-300">
                   {bidError}
                 </p>
               ) : null}

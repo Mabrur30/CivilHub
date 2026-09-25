@@ -131,7 +131,7 @@ export function UpNextProjects({
         </ul>
       ) : error ? (
         <div className="border-t border-white/10 px-5 py-8 sm:px-6" role="alert">
-          <p className="text-sm text-red-200">{error}</p>
+          <p className="text-sm text-rose-200">{error}</p>
           <button
             type="button"
             onClick={onRetry}

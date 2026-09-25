@@ -45,7 +45,7 @@ function CellWrapper({
   return (
     <Link
       to={route}
-      className={`${cellClassName} transition-colors hover:bg-[#1b1b1c] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow active:bg-[#1b1b1c]`}
+      className={`${cellClassName} transition-colors hover:bg-white/[0.03] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow active:bg-white/[0.03]`}
     >
       {children}
     </Link>

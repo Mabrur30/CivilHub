@@ -15,7 +15,7 @@ interface FilterTabsProps<Key extends string> {
 }
 
 // Quiet toggle buttons for narrowing a list in place. The selected option gets a
-// soft fill rather than the red accent, which stays reserved for actions.
+// soft fill rather than the orange accent, which stays reserved for actions.
 export function FilterTabs<Key extends string>({
   options,
   value,

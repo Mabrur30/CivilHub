@@ -55,7 +55,7 @@ export function HowItWorks(_props: HowItWorksProps): ReactElement {
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
             How it works
           </p>
-          <h2 className="mt-4 text-balance font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+          <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
             A clearer path from scope to site delivery.
           </h2>
         </Reveal>

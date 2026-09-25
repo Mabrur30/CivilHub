@@ -353,7 +353,7 @@ export function BrowseEquipmentPage(): ReactElement {
           {hasMore ? (
             <div className="flex flex-col items-center gap-3 pt-2">
               {loadMoreError ? (
-                <p className="text-sm text-red-300" role="alert">
+                <p className="text-sm text-rose-300" role="alert">
                   {loadMoreError}
                 </p>
               ) : null}

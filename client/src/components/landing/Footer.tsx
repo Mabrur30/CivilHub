@@ -47,7 +47,7 @@ export function Footer(_props: FooterProps): ReactElement {
               <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
                 C
               </div>
-              <div className="font-heading text-xl font-bold tracking-tight">
+              <div className="font-heading text-xl font-bold">
                 CivilHub
               </div>
             </div>

@@ -126,7 +126,7 @@ export function FeedPostCard({
                 type="button"
                 onClick={onDeletePost}
                 disabled={isDeleting}
-                className="absolute right-0 top-10 whitespace-nowrap rounded-lg border border-red-400/30 bg-void px-3 py-2 text-xs font-semibold text-red-200 transition-colors duration-200 hover:bg-red-400/10 disabled:opacity-60"
+                className="absolute right-0 top-10 whitespace-nowrap rounded-lg border border-rose-400/30 bg-void px-3 py-2 text-xs font-semibold text-rose-200 transition-colors duration-200 hover:bg-rose-400/10 disabled:opacity-60"
               >
                 {isDeleting ? "Deleting..." : "Delete post"}
               </button>

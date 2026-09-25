@@ -190,7 +190,7 @@ export function ClientProfileView({
       {photoError || actionError ? (
         <p
           role="alert"
-          className="rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm text-red-200"
+          className="rounded-xl border border-rose-400/20 bg-rose-400/5 px-4 py-3 text-sm text-rose-200"
         >
           {photoError || actionError}
         </p>

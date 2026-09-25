@@ -1900,14 +1900,14 @@ export function PublicProfilePage(): ReactElement {
   if (error || !profile) {
     return (
       <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-        <section className="mx-auto max-w-3xl rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center">
-          <p className="text-sm text-red-200">
+        <section className="mx-auto max-w-3xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-8 text-center">
+          <p className="text-sm text-rose-200">
             {error || "Profile not found."}
           </p>
           <button
             type="button"
             onClick={() => refreshProfile()}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
+            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-on-primary"
           >
             Try again
           </button>
@@ -2053,7 +2053,7 @@ export function PublicProfilePage(): ReactElement {
       ) : null}
 
       {postsError ? (
-        <p className="rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200">
+        <p className="rounded-xl border border-rose-400/20 bg-rose-400/5 p-4 text-sm text-rose-200">
           {postsError}
         </p>
       ) : posts.length === 0 ? (
@@ -2185,7 +2185,7 @@ export function PublicProfilePage(): ReactElement {
                             onClick={() => avatarInputRef.current?.click()}
                             disabled={isUploadingAvatar}
                             aria-label="Change profile photo"
-                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
+                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-snow backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
                               isUploadingAvatar
                                 ? "opacity-100"
                                 : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
@@ -2263,7 +2263,7 @@ export function PublicProfilePage(): ReactElement {
                             type="button"
                             onClick={() => void saveBio()}
                             disabled={isSavingBio}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
                           >
                             {isSavingBio ? "Saving..." : "Save"}
                           </button>
@@ -2276,7 +2276,7 @@ export function PublicProfilePage(): ReactElement {
                           </button>
                         </div>
                         {bioSaveError ? (
-                          <p className="text-xs text-red-300" role="alert">
+                          <p className="text-xs text-rose-300" role="alert">
                             {bioSaveError}
                           </p>
                         ) : null}
@@ -2324,7 +2324,7 @@ export function PublicProfilePage(): ReactElement {
                       <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                         <Link
                           to={`/messages/${profile.userId}`}
-                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary"
                         >
                           Message
                         </Link>
@@ -2345,7 +2345,7 @@ export function PublicProfilePage(): ReactElement {
                               </p>
                               <Link
                                 to="/dashboard/client/post-project"
-                                className="mt-3 inline-flex rounded-full border border-primary px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                                className="mt-3 inline-flex rounded-full border border-primary px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary"
                               >
                                 Post a project
                               </Link>
@@ -2398,7 +2398,7 @@ export function PublicProfilePage(): ReactElement {
                                           disabled={
                                             inviteActionProjectId === project.id
                                           }
-                                          className="rounded-full border border-primary px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:opacity-50"
+                                          className="rounded-full border border-primary px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary disabled:opacity-50"
                                         >
                                           {inviteActionProjectId === project.id
                                             ? "Sending..."
@@ -2421,7 +2421,7 @@ export function PublicProfilePage(): ReactElement {
                           <p className="text-xs text-primary">{inviteSuccess}</p>
                         ) : null}
                         {inviteError ? (
-                          <p className="text-xs text-red-300" role="alert">
+                          <p className="text-xs text-rose-300" role="alert">
                             {inviteError}
                           </p>
                         ) : null}
@@ -2436,7 +2436,7 @@ export function PublicProfilePage(): ReactElement {
                             type="button"
                             onClick={() => void sendRequest()}
                             disabled={isActioning}
-                            className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                            className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isActioning ? "Sending..." : "Connect"}
                           </button>
@@ -2448,7 +2448,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void respondRequest("accept")}
                               disabled={isActioning}
-                              className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {isActioning ? "Updating..." : "Accept"}
                             </button>
@@ -2456,7 +2456,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void respondRequest("decline")}
                               disabled={isActioning}
-                              className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {isActioning ? "Updating..." : "Decline"}
                             </button>
@@ -2464,7 +2464,7 @@ export function PublicProfilePage(): ReactElement {
                         ) : null}
 
                         {profile.connectionStatus === "pending_sent" ? (
-                          <span className="block w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2.5 text-center text-sm font-semibold text-amber-200">
+                          <span className="block w-full rounded-full border border-violet-300/30 bg-violet-300/10 px-4 py-2.5 text-center text-sm font-semibold text-violet-200">
                             Request sent
                           </span>
                         ) : null}
@@ -2482,12 +2482,12 @@ export function PublicProfilePage(): ReactElement {
                   ) : null}
 
                   {avatarError ? (
-                    <p className="mt-4 text-xs text-red-300" role="alert">
+                    <p className="mt-4 text-xs text-rose-300" role="alert">
                       {avatarError}
                     </p>
                   ) : null}
                   {actionError ? (
-                    <p className="mt-4 text-xs text-red-300" role="alert">
+                    <p className="mt-4 text-xs text-rose-300" role="alert">
                       {actionError}
                     </p>
                   ) : null}
@@ -2536,7 +2536,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void saveBio()}
                               disabled={isSavingBio}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isSavingBio ? "Saving..." : "Save"}
                             </button>
@@ -2552,7 +2552,7 @@ export function PublicProfilePage(): ReactElement {
                             </span>
                           </div>
                           {bioSaveError ? (
-                            <p className="text-xs text-red-300" role="alert">
+                            <p className="text-xs text-rose-300" role="alert">
                               {bioSaveError}
                             </p>
                           ) : null}
@@ -2629,7 +2629,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void saveEngineerRateLocation()}
                               disabled={isSavingEngineerDetails}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isSavingEngineerDetails ? "Saving..." : "Save"}
                             </button>
@@ -2661,7 +2661,7 @@ export function PublicProfilePage(): ReactElement {
                           </div>
                           {engineerDetailsError ? (
                             <p
-                              className="sm:col-span-3 text-xs text-red-300"
+                              className="sm:col-span-3 text-xs text-rose-300"
                               role="alert"
                             >
                               {engineerDetailsError}
@@ -2796,7 +2796,7 @@ export function PublicProfilePage(): ReactElement {
                                     onClick={() =>
                                       void removeExperienceEntry(entry.id)
                                     }
-                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
                                   >
                                     Remove
                                   </button>
@@ -2862,7 +2862,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void addExperienceEntry()}
                               disabled={isSavingExperience}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isSavingExperience
                                 ? "Saving..."
@@ -2881,7 +2881,7 @@ export function PublicProfilePage(): ReactElement {
                           </div>
                           {experienceError ? (
                             <p
-                              className="sm:col-span-2 text-xs text-red-300"
+                              className="sm:col-span-2 text-xs text-rose-300"
                               role="alert"
                             >
                               {experienceError}
@@ -2949,7 +2949,7 @@ export function PublicProfilePage(): ReactElement {
                                     onClick={() =>
                                       void removeEducationEntry(entry.id)
                                     }
-                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
                                   >
                                     Remove
                                   </button>
@@ -3000,7 +3000,7 @@ export function PublicProfilePage(): ReactElement {
                               type="button"
                               onClick={() => void addEducationEntry()}
                               disabled={isSavingEducation}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isSavingEducation ? "Saving..." : "Save education"}
                             </button>
@@ -3017,7 +3017,7 @@ export function PublicProfilePage(): ReactElement {
                           </div>
                           {educationError ? (
                             <p
-                              className="sm:col-span-2 text-xs text-red-300"
+                              className="sm:col-span-2 text-xs text-rose-300"
                               role="alert"
                             >
                               {educationError}
@@ -3083,7 +3083,7 @@ export function PublicProfilePage(): ReactElement {
                                       onClick={() =>
                                         void deleteOwnItem("portfolio", item._id)
                                       }
-                                      className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                      className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
                                     >
                                       {deletingItemId === item._id
                                         ? "Removing..."
@@ -3126,13 +3126,13 @@ export function PublicProfilePage(): ReactElement {
                             ref={portfolioFileInputRef}
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
-                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-on-primary"
                           />
                           <div className="flex items-center gap-3">
                             <button
                               type="submit"
                               disabled={isUploadingPortfolio}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isUploadingPortfolio
                                 ? "Uploading..."
@@ -3147,7 +3147,7 @@ export function PublicProfilePage(): ReactElement {
                             </button>
                           </div>
                           {portfolioError ? (
-                            <p className="text-xs text-red-300" role="alert">
+                            <p className="text-xs text-rose-300" role="alert">
                               {portfolioError}
                             </p>
                           ) : null}
@@ -3230,7 +3230,7 @@ export function PublicProfilePage(): ReactElement {
                                         certificate._id,
                                       )
                                     }
-                                    className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                    className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
                                   >
                                     {deletingItemId === certificate._id
                                       ? "Removing..."
@@ -3260,13 +3260,13 @@ export function PublicProfilePage(): ReactElement {
                             ref={certificateFileInputRef}
                             type="file"
                             accept="image/jpeg,image/png,image/webp,application/pdf"
-                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-on-primary"
                           />
                           <div className="flex items-center gap-3">
                             <button
                               type="submit"
                               disabled={isUploadingCertificate}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
                               {isUploadingCertificate
                                 ? "Uploading..."
@@ -3281,7 +3281,7 @@ export function PublicProfilePage(): ReactElement {
                             </button>
                           </div>
                           {certificateError ? (
-                            <p className="text-xs text-red-300" role="alert">
+                            <p className="text-xs text-rose-300" role="alert">
                               {certificateError}
                             </p>
                           ) : null}
@@ -3312,7 +3312,7 @@ export function PublicProfilePage(): ReactElement {
                       </div>
 
                       {reviewsError ? (
-                        <p className="mt-4 text-sm text-red-200">
+                        <p className="mt-4 text-sm text-rose-200">
                           {reviewsError}
                         </p>
                       ) : !reviews ? (
@@ -3423,7 +3423,7 @@ export function PublicProfilePage(): ReactElement {
                                             void submitReply(review.id)
                                           }
                                           disabled={isSubmittingReply}
-                                          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                                          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-50"
                                         >
                                           {isSubmittingReply
                                             ? "Sending..."

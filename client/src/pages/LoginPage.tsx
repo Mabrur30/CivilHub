@@ -80,7 +80,7 @@ export function LoginPage(): ReactElement {
 
   return (
     <AuthShell>
-      <h1 className="mt-6 font-heading text-4xl font-bold tracking-[-0.04em] text-white">
+      <h1 className="mt-6 font-heading text-4xl font-bold text-white">
         Login
       </h1>
       <p className="mt-4 text-base text-white/70">
@@ -111,7 +111,7 @@ export function LoginPage(): ReactElement {
           placeholder="Your password"
         />
         {error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-rose-300">
             {error}
           </p>
         ) : null}

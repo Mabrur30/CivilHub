@@ -160,7 +160,7 @@ function ProjectSnapshot({
                     </span>
                     <span
                       className={
-                        state.needsYou ? "text-amber-200" : "text-white/60"
+                        state.needsYou ? "text-violet-200" : "text-white/60"
                       }
                     >
                       {state.text}

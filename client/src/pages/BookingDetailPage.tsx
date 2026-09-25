@@ -62,11 +62,11 @@ const formatDateRange = (startDate: string, endDate: string): string => {
 };
 
 const statusBadgeClass: Record<EquipmentMyBooking["status"], string> = {
-  pending: "border-amber-300/40 bg-amber-300/10 text-amber-200",
+  pending: "border-violet-300/40 bg-violet-300/10 text-violet-200",
   approved: "border-sky-300/40 bg-sky-300/10 text-sky-200",
   in_progress: "border-primary/50 bg-primary/15 text-primary",
   completed: "border-emerald-300/40 bg-emerald-300/10 text-emerald-200",
-  declined: "border-red-300/40 bg-red-300/10 text-red-200",
+  declined: "border-rose-300/40 bg-rose-300/10 text-rose-200",
   cancelled: "border-white/20 bg-white/5 text-white/65",
 };
 
@@ -223,10 +223,10 @@ export function BookingDetailPage(): ReactElement {
           label="Back to My Bookings"
         />
         <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-6"
+          className="rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6"
           role="alert"
         >
-          <p className="text-sm text-red-200">
+          <p className="text-sm text-rose-200">
             {error || "Booking not found."}
           </p>
         </section>
@@ -585,10 +585,10 @@ export function BookingDetailPage(): ReactElement {
 
       {error ? (
         <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-4"
+          className="rounded-2xl border border-rose-400/20 bg-rose-400/5 p-4"
           role="alert"
         >
-          <p className="text-sm text-red-200">{error}</p>
+          <p className="text-sm text-rose-200">{error}</p>
         </section>
       ) : null}
 
@@ -689,7 +689,7 @@ export function BookingDetailPage(): ReactElement {
                 type="button"
                 onClick={() => void submitPay()}
                 disabled={isPaying}
-                className="mt-4 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                className="mt-4 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
                 {isPaying ? "Processing..." : "Pay Now (Mock)"}
               </button>
@@ -734,7 +734,7 @@ export function BookingDetailPage(): ReactElement {
                 type="button"
                 onClick={() => void submitPickup()}
                 disabled={isSubmittingAction}
-                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
                 {isSubmittingAction ? "Submitting..." : "Confirm Pickup"}
               </button>
@@ -779,7 +779,7 @@ export function BookingDetailPage(): ReactElement {
                 type="button"
                 onClick={() => void submitReturn()}
                 disabled={isSubmittingAction}
-                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
                 {isSubmittingAction ? "Submitting..." : "Confirm Return"}
               </button>
@@ -863,7 +863,7 @@ export function BookingDetailPage(): ReactElement {
                 type="button"
                 onClick={() => void submitDeposit()}
                 disabled={isSubmittingAction}
-                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
                 {isSubmittingAction ? "Submitting..." : "Submit Decision"}
               </button>
@@ -907,12 +907,12 @@ export function BookingDetailPage(): ReactElement {
                 type="button"
                 onClick={() => void submitReview()}
                 disabled={isSubmittingReview}
-                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-glow disabled:opacity-60"
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
                 {isSubmittingReview ? "Submitting..." : "Submit Review"}
               </button>
               {reviewError ? (
-                <p className="mt-2 text-sm text-red-300" role="alert">
+                <p className="mt-2 text-sm text-rose-300" role="alert">
                   {reviewError}
                 </p>
               ) : null}

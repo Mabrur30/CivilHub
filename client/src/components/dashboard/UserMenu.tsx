@@ -105,7 +105,7 @@ export function UserMenu({
           type="button"
           role="menuitem"
           onClick={() => void handleLogout()}
-          className="block w-full rounded-lg border-l-2 border-transparent px-3 py-2.5 text-left text-sm font-semibold text-red-300 transition-colors duration-200 hover:border-primary hover:bg-primary/10 hover:text-red-200"
+          className="block w-full rounded-lg border-l-2 border-transparent px-3 py-2.5 text-left text-sm font-semibold text-rose-300 transition-colors duration-200 hover:border-primary hover:bg-primary/10 hover:text-rose-200"
         >
           Log Out
         </button>

@@ -213,7 +213,7 @@ export function EditClientProfileDialog({
             <span>What you build, and how you like to work with engineers.</span>
             <span
               className={`tabular-nums ${
-                draft.bio.length >= BIO_LIMIT - 50 ? "text-amber-200" : ""
+                draft.bio.length >= BIO_LIMIT - 50 ? "text-violet-200" : ""
               }`}
             >
               {draft.bio.length}/{BIO_LIMIT}
@@ -244,7 +244,7 @@ export function EditClientProfileDialog({
         </div>
 
         {error ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-rose-300">
             {error}
           </p>
         ) : null}

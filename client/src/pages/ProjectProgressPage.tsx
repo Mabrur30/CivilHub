@@ -139,9 +139,9 @@ const statusLabels: Record<ProjectPhaseStatus, string> = {
 const statusBadgeClass: Record<ProjectPhaseStatus, string> = {
   not_started: "border-white/20 bg-white/10 text-white/70",
   in_progress: "border-sky-300/40 bg-sky-300/10 text-sky-200",
-  awaiting_approval: "border-amber-300/40 bg-amber-300/10 text-amber-200",
+  awaiting_approval: "border-violet-300/40 bg-violet-300/10 text-violet-200",
   completed: "border-emerald-300/40 bg-emerald-300/10 text-emerald-200",
-  delayed: "border-red-300/40 bg-red-300/10 text-red-200",
+  delayed: "border-rose-300/40 bg-rose-300/10 text-rose-200",
 };
 
 const getErrorMessage = (value: unknown): string => {
@@ -855,7 +855,7 @@ export function ProjectProgressPage(): ReactElement {
       ) : projectProgress && phasePlan ? (
         <>
           <header>
-            <h1 className="font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
+            <h1 className="font-heading text-4xl font-bold text-white sm:text-5xl">
               {projectProgress.project.name}
             </h1>
             <p className="mt-3 max-w-2xl text-white/60">{getHeaderSummary()}</p>
@@ -943,7 +943,7 @@ export function ProjectProgressPage(): ReactElement {
                 </p>
               </div>
               {reviewError && (
-                <p className="mt-3 text-sm text-red-300" role="alert">
+                <p className="mt-3 text-sm text-rose-300" role="alert">
                   {reviewError}
                 </p>
               )}
@@ -1003,8 +1003,8 @@ export function ProjectProgressPage(): ReactElement {
                 </p>
 
                 {phasePlan.phasePlanFeedback ? (
-                  <div className="mt-5 rounded-xl border border-amber-300/25 bg-amber-300/5 p-4">
-                    <p className="text-sm font-semibold text-amber-100">
+                  <div className="mt-5 rounded-xl border border-violet-300/25 bg-violet-300/5 p-4">
+                    <p className="text-sm font-semibold text-violet-100">
                       The client asked for changes on{" "}
                       {formatDate(phasePlan.phasePlanFeedback.rejectedAt)}
                     </p>
@@ -1017,7 +1017,7 @@ export function ProjectProgressPage(): ReactElement {
                 {phasePlanErrors.length > 0 && (
                   <ul
                     role="alert"
-                    className="mt-5 grid gap-1 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                    className="mt-5 grid gap-1 rounded-xl border border-rose-400/20 bg-rose-400/5 p-4 text-sm text-rose-200"
                   >
                     {phasePlanErrors.map((err) => (
                       <li key={err}>{err}</li>
@@ -1094,7 +1094,7 @@ export function ProjectProgressPage(): ReactElement {
                     </span>{" "}
                     of {formatCurrency(totalAgreedValue)}
                   </p>
-                  <p className={`text-sm font-semibold ${pricesMatch ? "text-emerald-200" : "text-amber-200"}`}>
+                  <p className={`text-sm font-semibold ${pricesMatch ? "text-emerald-200" : "text-violet-200"}`}>
                     {pricesMatch
                       ? "Matches the agreed price"
                       : totalPhasePrice > totalAgreedValue
@@ -1150,7 +1150,7 @@ export function ProjectProgressPage(): ReactElement {
                 {phasePlanErrors.length > 0 && (
                   <ul
                     role="alert"
-                    className="mt-5 grid gap-1 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                    className="mt-5 grid gap-1 rounded-xl border border-rose-400/20 bg-rose-400/5 p-4 text-sm text-rose-200"
                   >
                     {phasePlanErrors.map((err) => (
                       <li key={err}>{err}</li>
@@ -1279,7 +1279,7 @@ export function ProjectProgressPage(): ReactElement {
               {paymentError && (
                 <p
                   role="alert"
-                  className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                  className="mt-4 rounded-xl border border-rose-400/20 bg-rose-400/5 p-4 text-sm text-rose-200"
                 >
                   {paymentError}
                 </p>
@@ -1397,8 +1397,8 @@ export function ProjectProgressPage(): ReactElement {
                 </div>
 
                 {updateError && (
-                  <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 p-4">
-                    <p className="text-sm text-red-200">{updateError}</p>
+                  <div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-4">
+                    <p className="text-sm text-rose-200">{updateError}</p>
                   </div>
                 )}
 
@@ -1425,7 +1425,7 @@ export function ProjectProgressPage(): ReactElement {
                     return (
                       <article
                         key={phase.id}
-                        className={`relative rounded-xl border p-4 transition-colors duration-200 ${isLocked ? "border-white/10 bg-void/60 opacity-65" : phase.status === "awaiting_approval" ? "border-amber-300/30 bg-void/45" : "border-white/10 bg-void/45"}`}
+                        className={`relative rounded-xl border p-4 transition-colors duration-200 ${isLocked ? "border-white/10 bg-void/60 opacity-65" : phase.status === "awaiting_approval" ? "border-violet-300/30 bg-void/45" : "border-white/10 bg-void/45"}`}
                       >
                         <span
                           className={`absolute -left-[2.05rem] top-6 flex h-5 w-5 items-center justify-center rounded-full border-2 bg-surface sm:-left-[2.35rem] ${phase.status === "completed" ? "border-primary text-primary" : isLocked ? "border-white/20 text-white/40" : "border-white/30 text-white/70"}`}

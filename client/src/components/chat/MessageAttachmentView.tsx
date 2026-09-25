@@ -20,7 +20,6 @@ import {
 interface MessageAttachmentViewProps {
   messageType: MessageType;
   attachment: MessageAttachment;
-  isMine: boolean;
 }
 
 export const FileTypeIcon = ({
@@ -51,12 +50,8 @@ export const FileTypeIcon = ({
 export function MessageAttachmentView({
   messageType,
   attachment,
-  isMine,
 }: MessageAttachmentViewProps): ReactElement {
-  // Inner surfaces are tinted so they read against both bubble colors.
-  const insetClassName = isMine
-    ? "border-white/20 bg-black/20"
-    : "border-white/10 bg-void/70";
+  const insetClassName = "border-white/10 bg-void/70";
 
   if (messageType === "audio") {
     return (

@@ -153,7 +153,7 @@ export function NotificationsPage(): ReactElement {
               type="button"
               onClick={() => void handleMarkAllRead()}
               disabled={unreadCount === 0}
-              className="rounded-full border border-primary/50 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-full border border-primary/50 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary hover:text-on-primary disabled:cursor-not-allowed disabled:opacity-40"
             >
               Mark all as read
             </button>
@@ -174,10 +174,10 @@ export function NotificationsPage(): ReactElement {
           </div>
         ) : error ? (
           <div
-            className="mt-6 rounded-xl border border-red-400/25 bg-red-400/10 p-4"
+            className="mt-6 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4"
             role="alert"
           >
-            <p className="text-sm text-red-200">{error}</p>
+            <p className="text-sm text-rose-200">{error}</p>
           </div>
         ) : notifications.length === 0 ? (
           <div className="mt-6 rounded-xl border border-dashed border-white/15 bg-void/40 p-8 text-center">

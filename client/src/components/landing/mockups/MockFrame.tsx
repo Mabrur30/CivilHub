@@ -30,7 +30,7 @@ export function MockFrame({
 
   return (
     <div className="relative rounded-[32px] border border-white/10 bg-white/5 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.26)] backdrop-blur-sm sm:p-5">
-      <div className="rounded-[24px] border border-white/10 bg-[#101011] p-4 sm:p-5">
+      <div className="rounded-[24px] border border-white/10 bg-void p-4 sm:p-5">
         <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-white/45">

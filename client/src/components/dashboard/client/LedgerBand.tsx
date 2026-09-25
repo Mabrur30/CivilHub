@@ -7,7 +7,7 @@ export interface LedgerEntry {
 }
 
 // Money reads as a ledger: plain tabular figures separated by hairlines. The
-// large red display numbers stay with counts on the engineer side; amounts a
+// large orange display numbers stay with counts on the engineer side; amounts a
 // client pays should be easy to compare, not loud.
 export function LedgerBand({
   entries,

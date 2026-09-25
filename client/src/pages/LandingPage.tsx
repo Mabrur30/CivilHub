@@ -42,7 +42,7 @@ export function LandingPage(): ReactElement {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
               Get Started
             </p>
-            <h2 className="mt-3 font-heading text-3xl font-bold tracking-[-0.03em] text-white">
+            <h2 className="mt-3 font-heading text-3xl font-bold text-white">
               Choose your role
             </h2>
             <p className="mt-3 text-sm text-white/65">
@@ -53,7 +53,7 @@ export function LandingPage(): ReactElement {
               <button
                 type="button"
                 onClick={() => continueAsRole("client")}
-                className="w-full rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:bg-glow"
+                className="w-full rounded-full bg-primary px-5 py-3 text-sm font-semibold text-on-primary shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:bg-glow"
               >
                 Continue as Client
               </button>

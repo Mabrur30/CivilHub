@@ -53,14 +53,14 @@ export function MoneyInput({
           aria-invalid={invalid || Boolean(parsed.error)}
           aria-describedby={[readbackId, describedBy].filter(Boolean).join(" ")}
           className={`${inputClassName} pl-9 tabular-nums ${
-            invalid || parsed.error ? "border-red-400/60!" : ""
+            invalid || parsed.error ? "border-rose-400/60!" : ""
           } ${className}`}
         />
       </div>
       <p
         id={readbackId}
         aria-live="polite"
-        className={`text-xs ${parsed.error ? "text-amber-200" : "text-white/50"}`}
+        className={`text-xs ${parsed.error ? "text-rose-300" : "text-white/50"}`}
       >
         {parsed.error
           ? parsed.error

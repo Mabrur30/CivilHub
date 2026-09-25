@@ -8,13 +8,13 @@ interface GlassSubmitButtonProps {
 }
 
 const RESTING_SHADOW =
-  "0 14px 32px -12px rgba(225, 29, 46, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.22)";
+  "0 14px 32px -12px rgba(242, 106, 27, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.22)";
 // The shadow pulls in as the button sinks, so it reads as pressing toward the
 // card rather than just shrinking.
 const HOVER_SHADOW =
-  "0 8px 22px -10px rgba(255, 59, 78, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.28)";
+  "0 8px 22px -10px rgba(255, 133, 52, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.28)";
 const PRESS_SHADOW =
-  "0 4px 12px -6px rgba(255, 59, 78, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.18)";
+  "0 4px 12px -6px rgba(255, 133, 52, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.18)";
 
 const SPRING = { type: "spring", stiffness: 420, damping: 30 } as const;
 
@@ -40,7 +40,7 @@ export function GlassSubmitButton({
         press: { scale: 0.965, boxShadow: PRESS_SHADOW },
       }}
       transition={SPRING}
-      className={`flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-glow px-5 py-3.5 text-base font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow ${disabled ? "cursor-wait opacity-60" : "cursor-pointer"}`}
+      className={`flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-primary to-glow px-5 py-3.5 text-base font-semibold text-on-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow ${disabled ? "cursor-wait opacity-60" : "cursor-pointer"}`}
     >
       <span>{children}</span>
       {disabled ? null : (

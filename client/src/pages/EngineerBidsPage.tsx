@@ -291,7 +291,7 @@ function InvitationRow({
           {error ? (
             <p
               id={errorId}
-              className="text-sm text-red-300 sm:col-span-2"
+              className="text-sm text-rose-300 sm:col-span-2"
               role="alert"
             >
               {error}
@@ -316,7 +316,7 @@ function InvitationRow({
           </div>
         </form>
       ) : error ? (
-        <p className="mt-3 text-sm text-red-300" role="alert">
+        <p className="mt-3 text-sm text-rose-300" role="alert">
           {error}
         </p>
       ) : null}

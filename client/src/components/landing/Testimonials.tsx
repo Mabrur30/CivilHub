@@ -149,7 +149,7 @@ export function Testimonials(_props: TestimonialsProps): ReactElement {
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
               From both sides
             </p>
-            <h2 className="mt-4 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+            <h2 className="mt-4 font-heading text-4xl font-bold text-white sm:text-5xl">
               What delivery looks like when nothing gets lost.
             </h2>
           </Reveal>

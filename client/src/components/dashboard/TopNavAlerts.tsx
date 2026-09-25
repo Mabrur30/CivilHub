@@ -2,6 +2,12 @@ import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import { BellIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { fetchConversations } from "../messages/api";
+import { InboxDropdown } from "../messages/InboxDropdown";
+import {
+  type ConversationSummary,
+  conversationActivityTime,
+} from "../messages/types";
 import {
   formatRelativeTime,
   getNotificationDotClassName,
@@ -15,10 +21,6 @@ interface TopNavAlertsProps {
   role: "client" | "engineer";
 }
 
-interface ConversationUnreadSummary {
-  unreadCount: number;
-}
-
 interface ErrorResponse {
   message?: string;
 }
@@ -26,17 +28,6 @@ interface ErrorResponse {
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const POLL_MS = 9000;
 const DROPDOWN_LIMIT = 8;
-
-const isConversationUnreadSummary = (
-  value: unknown,
-): value is ConversationUnreadSummary => {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const summary = value as Record<string, unknown>;
-  return typeof summary.unreadCount === "number";
-};
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
@@ -61,7 +52,7 @@ const renderIconBadge = (count: number): ReactElement | null => {
   }
 
   return (
-    <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+    <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-on-primary">
       {count}
     </span>
   );
@@ -72,7 +63,10 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
   const { currentUser } = useAuth();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(false);
-  const [messageUnreadCount, setMessageUnreadCount] = useState<number>(0);
+  const [isInboxOpen, setIsInboxOpen] = useState<boolean>(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>(
+    [],
+  );
   const [notificationUnreadCount, setNotificationUnreadCount] =
     useState<number>(0);
   const [notifications, setNotifications] = useState<NotificationListItem[]>(
@@ -92,21 +86,24 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
     [notifications],
   );
 
-  const loadMessageUnreadCount = async (): Promise<void> => {
-    const response = await fetch(`${API_BASE_URL}/api/conversations`, {
-      credentials: "include",
-    });
-    const body: unknown = await response.json();
+  const messageUnreadCount = useMemo(
+    () => conversations.reduce((sum, item) => sum + item.unreadCount, 0),
+    [conversations],
+  );
 
-    if (!response.ok || !Array.isArray(body)) {
+  // One request feeds both the badge and the inbox dropdown.
+  const loadConversations = async (): Promise<void> => {
+    const result = await fetchConversations().catch(() => null);
+    if (!result?.ok) {
       return;
     }
 
-    const totalUnread = body
-      .filter(isConversationUnreadSummary)
-      .reduce((sum, item) => sum + item.unreadCount, 0);
-
-    setMessageUnreadCount(totalUnread);
+    setConversations(
+      [...result.data].sort(
+        (first, second) =>
+          conversationActivityTime(second) - conversationActivityTime(first),
+      ),
+    );
   };
 
   const loadNotifications = async (options?: {
@@ -158,7 +155,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
 
   const refreshCounts = async (): Promise<void> => {
     await Promise.all([
-      loadMessageUnreadCount(),
+      loadConversations(),
       loadNotifications({ silent: true, limit: DROPDOWN_LIMIT }),
     ]);
   };
@@ -191,12 +188,14 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
         !menuRef.current.contains(event.target)
       ) {
         setIsOpen(false);
+        setIsInboxOpen(false);
       }
     };
 
     const handleEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         setIsOpen(false);
+        setIsInboxOpen(false);
       }
     };
 
@@ -212,6 +211,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
   const handleToggleNotifications = (): void => {
     const nextOpen = !isOpen;
     setIsOpen(nextOpen);
+    setIsInboxOpen(false);
 
     if (nextOpen) {
       void loadNotifications();
@@ -265,14 +265,33 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
 
   return (
     <div className="flex items-center gap-2" ref={menuRef}>
-      <Link
-        to="/messages"
-        aria-label="Messages"
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/70 transition-colors hover:border-primary hover:text-white"
-      >
-        <ChatCircleIcon className="h-5 w-5" aria-hidden="true" />
-        {renderIconBadge(messageUnreadCount)}
-      </Link>
+      <div className="relative">
+        <button
+          type="button"
+          aria-label="Messages"
+          aria-haspopup="menu"
+          aria-expanded={isInboxOpen}
+          onClick={() => {
+            const nextOpen = !isInboxOpen;
+            setIsInboxOpen(nextOpen);
+            setIsOpen(false);
+            if (nextOpen) {
+              void loadConversations();
+            }
+          }}
+          className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/70 transition-colors hover:border-primary hover:text-white"
+        >
+          <ChatCircleIcon className="h-5 w-5" aria-hidden="true" />
+          {renderIconBadge(messageUnreadCount)}
+        </button>
+        <InboxDropdown
+          isOpen={isInboxOpen}
+          conversations={conversations}
+          unreadCount={messageUnreadCount}
+          currentUserId={currentUser?.id}
+          onNavigate={() => setIsInboxOpen(false)}
+        />
+      </div>
 
       <div className="relative">
         <button
@@ -326,7 +345,7 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
               </div>
             ) : notificationsError ? (
               <div className="px-2 py-3">
-                <p className="rounded-xl border border-red-400/25 bg-red-400/10 p-3 text-xs text-red-200">
+                <p className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-3 text-xs text-rose-200">
                   {notificationsError}
                 </p>
               </div>

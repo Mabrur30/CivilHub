@@ -12,10 +12,10 @@ export function ErrorPanel({
 }: ErrorPanelProps): ReactElement {
   return (
     <section
-      className="flex flex-col gap-4 rounded-2xl border border-red-400/20 bg-red-400/5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"
+      className="flex flex-col gap-4 rounded-2xl border border-rose-400/20 bg-rose-400/5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"
       role="alert"
     >
-      <p className="text-sm text-red-200">{message}</p>
+      <p className="text-sm text-rose-200">{message}</p>
       <button type="button" onClick={onRetry} className={retryButtonClassName}>
         Try again
       </button>

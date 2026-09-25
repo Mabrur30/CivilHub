@@ -394,7 +394,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
             <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
               C
             </span>
-            <span className="font-heading text-2xl font-bold tracking-tight text-white">
+            <span className="font-heading text-2xl font-bold text-white">
               CivilHub
             </span>
           </Link>
@@ -417,7 +417,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
                 </Link>
                 <Link
                   to="/signup/client"
-                  className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-glow"
+                  className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition hover:bg-glow"
                 >
                   Join CivilHub
                 </Link>
@@ -435,7 +435,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
             <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
             AI & Civil Engineering Construction Model
           </div>
-          <h1 className="mt-4 font-heading text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+          <h1 className="mt-4 font-heading text-3xl font-bold text-white sm:text-4xl lg:text-5xl">
             House & Building Cost Estimator
           </h1>
           <p className="mt-3 text-base text-white/70 sm:text-lg leading-relaxed">
@@ -527,7 +527,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-300">
           {error}
         </div>
       ) : null}
@@ -795,7 +795,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-2xl bg-primary py-3.5 text-sm font-bold text-white shadow-glow transition-all duration-300 hover:bg-glow hover:-translate-y-0.5 disabled:opacity-50"
+              className="w-full rounded-2xl bg-primary py-3.5 text-sm font-bold text-on-primary shadow-glow transition-all duration-300 hover:bg-glow hover:-translate-y-0.5 disabled:opacity-50"
             >
               {loading ? "Calculating Estimates..." : "Update Cost Estimate"}
             </button>
@@ -911,7 +911,7 @@ Generated via CivilHub AI & BNBC Construction Model`;
                 <button
                   type="button"
                   onClick={handlePostProject}
-                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-glow transition hover:bg-glow"
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-on-primary shadow-glow transition hover:bg-glow"
                 >
                   <span>🚀</span>
                   <span>Post Project with this Estimate</span>

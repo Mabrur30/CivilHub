@@ -2,6 +2,7 @@ import { type ReactElement, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { scrollToSection } from "../../lib/scrollToSection";
+import { ThemeToggle } from "../ThemeToggle";
 import { GetStartedMenu } from "./GetStartedMenu";
 
 interface NavbarProps {}
@@ -41,9 +42,7 @@ export function Navbar(_props: NavbarProps): ReactElement {
             C
           </div>
           <div>
-            <div className="font-heading text-xl font-bold tracking-tight">
-              CivilHub
-            </div>
+            <div className="font-heading text-xl font-bold">CivilHub</div>
           </div>
         </button>
 
@@ -60,28 +59,31 @@ export function Navbar(_props: NavbarProps): ReactElement {
           ))}
         </div>
 
-        <div className="hidden items-center gap-3 lg:flex">
-          <Link
-            to="/login"
-            className="rounded-full border border-white/20 bg-transparent px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 hover:border-primary hover:text-primary"
-          >
-            Log In
-          </Link>
-          <GetStartedMenu />
-        </div>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <div className="hidden items-center gap-3 lg:flex">
+            <Link
+              to="/login"
+              className="rounded-full border border-white/20 bg-transparent px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 hover:border-primary hover:text-primary"
+            >
+              Log In
+            </Link>
+            <GetStartedMenu />
+          </div>
 
-        <button
-          type="button"
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-white lg:hidden"
-          aria-label="Toggle menu"
-          onClick={() => setIsOpen((open) => !open)}
-        >
-          <span className="flex flex-col gap-1.5">
-            <span className="block h-0.5 w-5 rounded-full bg-white" />
-            <span className="block h-0.5 w-5 rounded-full bg-white" />
-            <span className="block h-0.5 w-5 rounded-full bg-white" />
-          </span>
-        </button>
+          <button
+            type="button"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-white lg:hidden"
+            aria-label="Toggle menu"
+            onClick={() => setIsOpen((open) => !open)}
+          >
+            <span className="flex flex-col gap-1.5">
+              <span className="block h-0.5 w-5 rounded-full bg-white" />
+              <span className="block h-0.5 w-5 rounded-full bg-white" />
+              <span className="block h-0.5 w-5 rounded-full bg-white" />
+            </span>
+          </button>
+        </div>
       </nav>
 
       {isOpen ? (
