@@ -9,6 +9,12 @@ import {
   type IProjectPhase,
   type ProjectPhaseStatus,
 } from "../models/ProjectPhase.model";
+import {
+  getAmountsPaidByPhase,
+  getPhaseAmountsDue,
+  getRemainingBalance,
+} from "../utils/phasePayments";
+import { formatTaka } from "../utils/money";
 
 interface ProjectProgressError extends Error {
   statusCode: number;
@@ -23,14 +29,27 @@ export interface UpdateProjectPhaseBody {
   status?: ProjectPhaseStatus;
 }
 
+export interface RequestPhaseChangesBody {
+  note?: string;
+}
+
 interface ProjectProgressPhaseResponse {
   id: string;
   name: string;
+  description: string;
   order: number;
   status: ProjectPhaseStatus;
   dueDate: string | null;
   completedAt: string | null;
   updatedAt: string;
+  price: number;
+  paymentStatus: IProjectPhase["paymentStatus"];
+  paidAt: string | null;
+  /** What approving this phase costs on the phase-by-phase plan. */
+  amountDue: number;
+  /** What has actually been charged for this phase so far. */
+  amountPaid: number;
+  changeRequest: { note: string; requestedAt: string } | null;
 }
 
 interface ProjectProgressResponse {
@@ -57,6 +76,27 @@ const validStatuses: ProjectPhaseStatus[] = [
   "delayed",
 ];
 
+const statusLabels: Record<ProjectPhaseStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  awaiting_approval: "Awaiting approval",
+  completed: "Completed",
+  delayed: "Delayed",
+};
+
+// The only moves an engineer can make. Completing a phase is the client's
+// decision (approve), and so is sending it back (request changes), so neither
+// appears here, and a completed phase can never be reopened.
+const engineerTransitions: Record<ProjectPhaseStatus, ProjectPhaseStatus[]> = {
+  not_started: ["in_progress"],
+  in_progress: ["delayed", "awaiting_approval"],
+  delayed: ["in_progress", "awaiting_approval"],
+  awaiting_approval: [],
+  completed: [],
+};
+
+const CHANGE_NOTE_LIMIT = 500;
+
 const createProjectProgressError = (
   message: string,
   statusCode: number,
@@ -72,6 +112,9 @@ const getParams = (req: AuthenticatedRequest): ProjectParams =>
 const isProjectPhaseStatus = (value: unknown): value is ProjectPhaseStatus =>
   typeof value === "string" &&
   validStatuses.includes(value as ProjectPhaseStatus);
+
+const projectLabel = (project: IProject, fallback: string): string =>
+  project.title ?? project.name ?? fallback;
 
 const calculateProgressPercentage = (phases: IProjectPhase[]): number => {
   if (phases.length === 0) {
@@ -122,42 +165,46 @@ const getNextMilestone = (
 
 const toPhaseResponse = (
   phase: IProjectPhase,
-): ProjectProgressPhaseResponse => ({
-  id: phase._id.toString(),
-  name: phase.name,
-  order: phase.order,
-  status: phase.status,
-  dueDate: phase.dueDate ? phase.dueDate.toISOString() : null,
-  completedAt: phase.completedAt ? phase.completedAt.toISOString() : null,
-  updatedAt: phase.updatedAt.toISOString(),
-});
+  amountsDue: Map<string, number>,
+  amountsPaid: Map<string, number>,
+): ProjectProgressPhaseResponse => {
+  const id = phase._id.toString();
+  return {
+    id,
+    name: phase.name,
+    description: phase.description ?? "",
+    order: phase.order,
+    status: phase.status,
+    dueDate: phase.dueDate ? phase.dueDate.toISOString() : null,
+    completedAt: phase.completedAt ? phase.completedAt.toISOString() : null,
+    updatedAt: phase.updatedAt.toISOString(),
+    price: phase.price,
+    paymentStatus: phase.paymentStatus,
+    paidAt: phase.paidAt ? phase.paidAt.toISOString() : null,
+    amountDue: amountsDue.get(id) ?? 0,
+    amountPaid: amountsPaid.get(id) ?? 0,
+    changeRequest: phase.changeRequest
+      ? {
+          note: phase.changeRequest.note,
+          requestedAt: phase.changeRequest.requestedAt.toISOString(),
+        }
+      : null,
+  };
+};
 
 const syncProjectProgressSnapshot = async (
   project: IProject,
-): Promise<{
-  currentPhaseName: string;
-  progressPercentage: number;
-  nextMilestone: string;
-}> => {
+): Promise<void> => {
   const phases = await ProjectPhase.find({ project: project._id })
     .sort({ order: 1 })
     .exec();
 
-  const progressPercentage = calculateProgressPercentage(phases);
-  const currentPhaseName = getCurrentPhaseName(phases);
   const nextMilestone = getNextMilestone(phases);
-
-  project.progressPercentage = progressPercentage;
-  project.currentPhaseName = currentPhaseName;
+  project.progressPercentage = calculateProgressPercentage(phases);
+  project.currentPhaseName = getCurrentPhaseName(phases);
   project.nextMilestone = nextMilestone.name;
   project.nextMilestoneDueDate = nextMilestone.dueDate ?? undefined;
   await project.save();
-
-  return {
-    currentPhaseName,
-    progressPercentage,
-    nextMilestone: nextMilestone.name,
-  };
 };
 
 export const isProjectFullyComplete = async (
@@ -200,6 +247,16 @@ export const backfillCompletedProjectStatuses = async (): Promise<void> => {
   }
 };
 
+// Payments change the project with conditional single-document updates, so
+// the in-memory copy is out of date afterwards. Re-read it before deriving
+// progress or completion from it.
+const refreshProjectState = async (projectId: Types.ObjectId): Promise<void> => {
+  const fresh = await Project.findById(projectId).exec();
+  if (!fresh) return;
+  await syncProjectProgressSnapshot(fresh);
+  await syncProjectCompletionStatus(fresh);
+};
+
 const loadProjectForViewer = async (
   req: AuthenticatedRequest,
 ): Promise<{ project: IProject; canUpdate: boolean }> => {
@@ -228,6 +285,57 @@ const loadProjectForViewer = async (
   return { project, canUpdate: isAssignedEngineer };
 };
 
+const loadOwnedProject = async (
+  req: AuthenticatedRequest,
+): Promise<IProject> => {
+  if (!req.user?.userId || req.user.role !== "client") {
+    throw createProjectProgressError("Client access required", 403);
+  }
+
+  const { projectId } = getParams(req);
+  if (!projectId || !Types.ObjectId.isValid(projectId)) {
+    throw createProjectProgressError("Project not found", 404);
+  }
+
+  const project = await Project.findById(projectId).exec();
+  if (!project) {
+    throw createProjectProgressError("Project not found", 404);
+  }
+
+  if (project.client?.toString() !== req.user.userId) {
+    throw createProjectProgressError("You do not own this project", 403);
+  }
+  return project;
+};
+
+const loadPhase = async (
+  req: AuthenticatedRequest,
+  project: IProject,
+): Promise<IProjectPhase> => {
+  const { phaseId } = getParams(req);
+  if (!phaseId || !Types.ObjectId.isValid(phaseId)) {
+    throw createProjectProgressError("Project phase not found", 404);
+  }
+
+  const phase = await ProjectPhase.findOne({
+    _id: phaseId,
+    project: project._id,
+  }).exec();
+  if (!phase) {
+    throw createProjectProgressError("Project phase not found", 404);
+  }
+  return phase;
+};
+
+const requireApprovedPlan = (project: IProject): void => {
+  if (project.phasePlanStatus !== "approved") {
+    throw createProjectProgressError(
+      "The phase plan has to be approved before phases can change",
+      409,
+    );
+  }
+};
+
 export const getProjectProgress = async (
   req: AuthenticatedRequest,
   res: Response<ProjectProgressResponse>,
@@ -238,33 +346,43 @@ export const getProjectProgress = async (
     const phases = await ProjectPhase.find({ project: project._id })
       .sort({ order: 1 })
       .exec();
-
-    const progressPercentage = calculateProgressPercentage(phases);
-    const currentPhaseName = getCurrentPhaseName(phases);
+    const amountsDue = getPhaseAmountsDue(project, phases);
+    const amountsPaid = await getAmountsPaidByPhase(project._id);
     const nextMilestone = getNextMilestone(phases);
 
     res.status(200).json({
       project: {
         id: project._id.toString(),
-        name: project.title ?? project.name ?? "Untitled project",
+        name: projectLabel(project, "Untitled project"),
         status: project.status,
         clientId: project.client ? project.client.toString() : null,
         assignedEngineerId: project.assignedEngineer
           ? project.assignedEngineer.toString()
           : null,
-        currentPhaseName,
-        progressPercentage,
+        currentPhaseName: getCurrentPhaseName(phases),
+        progressPercentage: calculateProgressPercentage(phases),
         nextMilestone: nextMilestone.name,
         nextMilestoneDueDate: nextMilestone.dueDate
           ? nextMilestone.dueDate.toISOString()
           : null,
       },
-      phases: phases.map(toPhaseResponse),
+      phases: phases.map((phase) =>
+        toPhaseResponse(phase, amountsDue, amountsPaid),
+      ),
       canUpdate,
     });
   } catch (error: unknown) {
     next(error);
   }
+};
+
+const engineerUpdateMessages: Partial<
+  Record<ProjectPhaseStatus, (phase: string, project: string) => string>
+> = {
+  in_progress: (phase, project) => `Work on ${phase} has started for ${project}.`,
+  delayed: (phase, project) => `${phase} is running late on ${project}.`,
+  awaiting_approval: (phase, project) =>
+    `${phase} is ready for your approval on ${project}.`,
 };
 
 export const updateProjectPhase = async (
@@ -281,103 +399,290 @@ export const updateProjectPhase = async (
     if (!canUpdate) {
       throw createProjectProgressError("Forbidden", 403);
     }
-
-    const { phaseId } = getParams(req);
-    if (!phaseId || !Types.ObjectId.isValid(phaseId)) {
-      throw createProjectProgressError("Project phase not found", 404);
-    }
+    requireApprovedPlan(project);
 
     const { status } = req.body;
     if (!isProjectPhaseStatus(status)) {
       throw createProjectProgressError("Invalid phase status", 400);
     }
 
-    const phase = await ProjectPhase.findOne({
-      _id: phaseId,
-      project: project._id,
-    }).exec();
+    const phase = await loadPhase(req, project);
+    const from = phase.status;
 
-    if (!phase) {
-      throw createProjectProgressError("Project phase not found", 404);
-    }
-
-    // ===== NEW GATING RULES =====
-
-    // Rule 1: Block any phase from moving to 'in_progress' if advance not paid
-    if (status === "in_progress" && !project.advancePaid) {
+    if (from === status) {
       throw createProjectProgressError(
-        "Advance payment required before work can begin",
-        403,
+        `${phase.name} is already ${statusLabels[status].toLowerCase()}`,
+        409,
       );
     }
+    if (!engineerTransitions[from].includes(status)) {
+      const reason =
+        from === "completed"
+          ? `${phase.name} is complete and can no longer change`
+          : from === "awaiting_approval"
+            ? `${phase.name} is waiting for the client to approve it or request changes`
+            : status === "completed"
+              ? "The client completes a phase by approving it. Submit it for approval instead"
+              : `${phase.name} can't move from ${statusLabels[from]} to ${statusLabels[status]}`;
+      throw createProjectProgressError(reason, 409);
+    }
 
-    // Rule 2: Enforce sequential order - phase can only move to 'in_progress' if previous phase is completed
-    if (status === "in_progress" && phase.order > 0) {
-      const previousPhase = await ProjectPhase.findOne({
-        project: project._id,
-        order: phase.order - 1,
-      }).exec();
-
-      if (!previousPhase || previousPhase.status !== "completed") {
+    // Starting a phase for the first time needs the advance and a finished
+    // previous phase. Resuming a delayed phase has already passed these.
+    if (from === "not_started" && status === "in_progress") {
+      if (!project.advancePaid) {
         throw createProjectProgressError(
-          `Complete and pay for phase "${previousPhase?.name || "the previous phase"}" first`,
-          403,
+          "Advance payment required before work can begin",
+          409,
         );
       }
-
-      // If phase_by_phase payment, also check if previous phase is paid
-      if (project.paymentPlan === "phase_by_phase") {
-        if (previousPhase.paymentStatus !== "paid") {
+      if (phase.order > 0) {
+        const previousPhase = await ProjectPhase.findOne({
+          project: project._id,
+          order: phase.order - 1,
+        }).exec();
+        const previousDone =
+          previousPhase?.status === "completed" &&
+          (project.paymentPlan !== "phase_by_phase" ||
+            previousPhase.paymentStatus === "paid");
+        if (!previousDone) {
           throw createProjectProgressError(
-            `Previous phase must be paid before this phase can start`,
-            403,
+            `${previousPhase?.name ?? "The previous phase"} has to be approved before this phase can start`,
+            409,
           );
         }
       }
     }
 
-    // Rule 3: If full_upfront, block final phase from completing until remaining balance paid
-    if (
-      status === "completed" &&
-      project.paymentPlan === "full_upfront" &&
-      phase.order ===
-        (await ProjectPhase.countDocuments({ project: project._id })) - 1
-    ) {
-      if (!project.fullPaymentPaid) {
-        throw createProjectProgressError(
-          "Final payment required before project completion",
-          403,
-        );
-      }
+    // Conditional on the status we just checked, so two quick clicks can't
+    // both apply a transition.
+    const updated = await ProjectPhase.findOneAndUpdate(
+      { _id: phase._id, status: from },
+      { $set: { status } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!updated) {
+      throw createProjectProgressError(
+        "This phase was just updated. Refresh to see its current status.",
+        409,
+      );
     }
 
-    // ===== END GATING RULES =====
+    await refreshProjectState(project._id);
 
-    phase.status = status;
-    phase.completedAt = status === "completed" ? new Date() : undefined;
-    await phase.save();
-
-    await syncProjectProgressSnapshot(project);
-    await syncProjectCompletionStatus(project);
-
-    if (
-      (status === "completed" ||
-        status === "delayed" ||
-        status === "awaiting_approval") &&
-      project.client
-    ) {
+    const message = engineerUpdateMessages[status];
+    if (message && project.client) {
       await Notification.create({
         recipient: project.client,
         type: "project_phase_updated",
-        message: `${phase.name} is now ${status.replace(/_/g, " ")} for ${project.title ?? project.name ?? "your project"}.`,
+        message: message(updated.name, projectLabel(project, "your project")),
+        project: project._id,
+      });
+    }
+
+    const phases = await ProjectPhase.find({ project: project._id }).exec();
+    res.status(200).json({
+      success: true,
+      phase: toPhaseResponse(
+        updated,
+        getPhaseAmountsDue(project, phases),
+        await getAmountsPaidByPhase(project._id),
+      ),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+// ============ Client phase decisions ============
+
+/** Marks the remaining balance paid once, however many requests race for it. */
+const collectRemainingBalance = async (
+  project: IProject,
+  paidBy: string,
+): Promise<number | null> => {
+  const paidAt = new Date();
+  const claimed = await Project.findOneAndUpdate(
+    { _id: project._id, advancePaid: true, fullPaymentPaid: false },
+    { $set: { fullPaymentPaid: true, fullPaymentPaidAt: paidAt } },
+    { returnDocument: "after" },
+  ).exec();
+  if (!claimed) return null;
+
+  const amount = getRemainingBalance(project);
+  await Payment.create({
+    project: project._id,
+    type: "full_remaining",
+    amount,
+    paidBy,
+    method: "mock",
+    paidAt,
+  });
+  return amount;
+};
+
+export const approvePhase = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const project = await loadOwnedProject(req);
+    requireApprovedPlan(project);
+    const phase = await loadPhase(req, project);
+    const clientId = req.user?.userId as string;
+    const isPhaseByPhase = project.paymentPlan === "phase_by_phase";
+
+    // Phases an engineer marked complete under the old rules were never paid
+    // for; approving them now settles the payment.
+    const isLegacyUnpaid =
+      isPhaseByPhase &&
+      phase.status === "completed" &&
+      phase.paymentStatus === "unpaid";
+
+    if (phase.status === "completed" && !isLegacyUnpaid) {
+      throw createProjectProgressError(
+        `${phase.name} has already been approved`,
+        409,
+      );
+    }
+    if (phase.status !== "awaiting_approval" && !isLegacyUnpaid) {
+      throw createProjectProgressError(
+        `${phase.name} hasn't been submitted for approval yet`,
+        409,
+      );
+    }
+    if (!project.advancePaid) {
+      throw createProjectProgressError(
+        "Pay the advance before approving phases",
+        409,
+      );
+    }
+
+    const phases = await ProjectPhase.find({ project: project._id }).exec();
+    const isFinalPhase =
+      phase.order === Math.max(...phases.map((item) => item.order));
+    const now = new Date();
+    const phaseAmount = isPhaseByPhase
+      ? (getPhaseAmountsDue(project, phases).get(phase._id.toString()) ?? 0)
+      : 0;
+
+    const approved = await ProjectPhase.findOneAndUpdate(
+      isLegacyUnpaid
+        ? { _id: phase._id, status: "completed", paymentStatus: "unpaid" }
+        : { _id: phase._id, status: "awaiting_approval" },
+      {
+        $set: {
+          status: "completed",
+          completedAt: isLegacyUnpaid ? (phase.completedAt ?? now) : now,
+          changeRequest: null,
+          ...(isPhaseByPhase ? { paymentStatus: "paid", paidAt: now } : {}),
+        },
+      },
+      { returnDocument: "after" },
+    ).exec();
+    if (!approved) {
+      throw createProjectProgressError(
+        `${phase.name} has already been approved`,
+        409,
+      );
+    }
+
+    let amountCharged = 0;
+    if (isPhaseByPhase) {
+      await Payment.create({
+        project: project._id,
+        phase: phase._id,
+        type: "phase",
+        amount: phaseAmount,
+        paidBy: clientId,
+        method: "mock",
+        paidAt: now,
+      });
+      amountCharged = phaseAmount;
+    } else if (isFinalPhase) {
+      amountCharged = (await collectRemainingBalance(project, clientId)) ?? 0;
+    }
+
+    await refreshProjectState(project._id);
+
+    if (project.assignedEngineer) {
+      const label = projectLabel(project, "your project");
+      await Notification.create({
+        recipient: project.assignedEngineer,
+        type: amountCharged > 0 ? "phase_payment_received" : "project_phase_updated",
+        message:
+          amountCharged > 0
+            ? `The client approved ${phase.name} on ${label} and paid ${formatTaka(amountCharged)}.`
+            : `The client approved ${phase.name} on ${label}.`,
         project: project._id,
       });
     }
 
     res.status(200).json({
       success: true,
-      phase: toPhaseResponse(phase),
+      phase: phase.name,
+      amountCharged,
+      paidAt: amountCharged > 0 ? now.toISOString() : null,
     });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const requestPhaseChanges = async (
+  req: AuthenticatedRequest<RequestPhaseChangesBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const project = await loadOwnedProject(req);
+    requireApprovedPlan(project);
+    const phase = await loadPhase(req, project);
+
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+    if (!note) {
+      throw createProjectProgressError(
+        "Say what needs to change so the engineer knows what to fix",
+        400,
+      );
+    }
+    if (note.length > CHANGE_NOTE_LIMIT) {
+      throw createProjectProgressError(
+        `Keep the note to ${CHANGE_NOTE_LIMIT} characters or fewer`,
+        400,
+      );
+    }
+
+    const updated = await ProjectPhase.findOneAndUpdate(
+      { _id: phase._id, status: "awaiting_approval" },
+      {
+        $set: {
+          status: "in_progress",
+          changeRequest: { note, requestedAt: new Date() },
+        },
+      },
+      { returnDocument: "after" },
+    ).exec();
+    if (!updated) {
+      throw createProjectProgressError(
+        `${phase.name} isn't waiting for your approval`,
+        409,
+      );
+    }
+
+    await refreshProjectState(project._id);
+
+    if (project.assignedEngineer) {
+      await Notification.create({
+        recipient: project.assignedEngineer,
+        type: "project_phase_updated",
+        message: `The client asked for changes to ${phase.name} on ${projectLabel(project, "your project")}: "${note}"`,
+        project: project._id,
+      });
+    }
+
+    res.status(200).json({ success: true, phase: updated.name });
   } catch (error: unknown) {
     next(error);
   }
@@ -386,10 +691,6 @@ export const updateProjectPhase = async (
 // ============ Payment Methods ============
 
 export interface PayAdvanceRequestBody {
-  // Mock payment - no additional data needed
-}
-
-export interface PayForPhaseRequestBody {
   // Mock payment - no additional data needed
 }
 
@@ -403,23 +704,7 @@ export const payAdvance = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "client") {
-      throw createProjectProgressError("Client access required", 403);
-    }
-
-    const { projectId } = getParams(req);
-    if (!projectId) {
-      throw createProjectProgressError("Project ID is required", 400);
-    }
-
-    const project = await Project.findById(projectId).exec();
-    if (!project) {
-      throw createProjectProgressError("Project not found", 404);
-    }
-
-    if (project.client?.toString() !== req.user.userId) {
-      throw createProjectProgressError("You do not own this project", 403);
-    }
+    const project = await loadOwnedProject(req);
 
     if (project.phasePlanStatus !== "approved") {
       throw createProjectProgressError(
@@ -428,37 +713,34 @@ export const payAdvance = async (
       );
     }
 
-    if (project.advancePaid) {
+    const paidAt = new Date();
+    const claimed = await Project.findOneAndUpdate(
+      { _id: project._id, phasePlanStatus: "approved", advancePaid: false },
+      { $set: { advancePaid: true, advancePaidAt: paidAt } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!claimed) {
       throw createProjectProgressError(
         "Advance payment has already been made",
         409,
       );
     }
 
-    const advanceAmount = project.advanceRequiredAmount || 0;
-    const paymentDate = new Date();
-
-    // Create payment record
+    const advanceAmount = claimed.advanceRequiredAmount || 0;
     await Payment.create({
       project: project._id,
       type: "advance",
       amount: advanceAmount,
-      paidBy: req.user.userId,
+      paidBy: req.user?.userId,
       method: "mock",
-      paidAt: paymentDate,
+      paidAt,
     });
 
-    // Update project
-    project.advancePaid = true;
-    project.advancePaidAt = paymentDate;
-    await project.save();
-
-    // Notify engineer
     if (project.assignedEngineer) {
       await Notification.create({
         recipient: project.assignedEngineer,
         type: "advance_payment_received",
-        message: `Advance payment of $${advanceAmount.toFixed(2)} received for ${project.title ?? project.name ?? "your project"}. Work can now begin.`,
+        message: `Advance payment of ${formatTaka(advanceAmount)} received for ${projectLabel(project, "your project")}. Work can now begin.`,
         project: project._id,
       });
     }
@@ -467,107 +749,7 @@ export const payAdvance = async (
       success: true,
       message: "Advance payment processed (mock)",
       amount: advanceAmount,
-      paidAt: paymentDate.toISOString(),
-    });
-  } catch (error: unknown) {
-    next(error);
-  }
-};
-
-export const payForPhase = async (
-  req: AuthenticatedRequest<PayForPhaseRequestBody>,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    if (!req.user?.userId || req.user.role !== "client") {
-      throw createProjectProgressError("Client access required", 403);
-    }
-
-    const { projectId, phaseId } = getParams(req);
-    if (!projectId || !phaseId) {
-      throw createProjectProgressError(
-        "Project ID and phase ID are required",
-        400,
-      );
-    }
-
-    if (!Types.ObjectId.isValid(phaseId)) {
-      throw createProjectProgressError("Invalid phase ID", 400);
-    }
-
-    const project = await Project.findById(projectId).exec();
-    if (!project) {
-      throw createProjectProgressError("Project not found", 404);
-    }
-
-    if (project.client?.toString() !== req.user.userId) {
-      throw createProjectProgressError("You do not own this project", 403);
-    }
-
-    if (project.paymentPlan !== "phase_by_phase") {
-      throw createProjectProgressError(
-        "This project uses a different payment plan",
-        409,
-      );
-    }
-
-    const phase = await ProjectPhase.findOne({
-      _id: phaseId,
-      project: project._id,
-    }).exec();
-
-    if (!phase) {
-      throw createProjectProgressError("Phase not found", 404);
-    }
-
-    if (phase.status !== "awaiting_approval" && phase.status !== "completed") {
-      throw createProjectProgressError(
-        "Phase must be completed or awaiting approval to pay",
-        409,
-      );
-    }
-
-    if (phase.paymentStatus === "paid") {
-      throw createProjectProgressError("This phase has already been paid", 409);
-    }
-
-    const paymentDate = new Date();
-    const phasePrice = phase.price;
-
-    // Create payment record
-    await Payment.create({
-      project: project._id,
-      phase: phase._id,
-      type: "phase",
-      amount: phasePrice,
-      paidBy: req.user.userId,
-      method: "mock",
-      paidAt: paymentDate,
-    });
-
-    // Update phase
-    phase.paymentStatus = "paid";
-    phase.paidAt = paymentDate;
-    await phase.save();
-    await syncProjectCompletionStatus(project);
-
-    // Notify engineer
-    if (project.assignedEngineer) {
-      await Notification.create({
-        recipient: project.assignedEngineer,
-        type: "phase_payment_received",
-        message: `Payment of $${phasePrice.toFixed(2)} received for phase "${phase.name}" in ${project.title ?? project.name ?? "your project"}.`,
-        project: project._id,
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Phase payment processed (mock)",
-      phase: phase.name,
-      amount: phasePrice,
-      paidAt: paymentDate.toISOString(),
+      paidAt: paidAt.toISOString(),
     });
   } catch (error: unknown) {
     next(error);
@@ -580,23 +762,7 @@ export const payFullRemaining = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "client") {
-      throw createProjectProgressError("Client access required", 403);
-    }
-
-    const { projectId } = getParams(req);
-    if (!projectId) {
-      throw createProjectProgressError("Project ID is required", 400);
-    }
-
-    const project = await Project.findById(projectId).exec();
-    if (!project) {
-      throw createProjectProgressError("Project not found", 404);
-    }
-
-    if (project.client?.toString() !== req.user.userId) {
-      throw createProjectProgressError("You do not own this project", 403);
-    }
+    const project = await loadOwnedProject(req);
 
     if (project.paymentPlan !== "full_upfront") {
       throw createProjectProgressError(
@@ -604,7 +770,6 @@ export const payFullRemaining = async (
         409,
       );
     }
-
     if (!project.advancePaid) {
       throw createProjectProgressError(
         "Advance payment must be made first",
@@ -612,38 +777,24 @@ export const payFullRemaining = async (
       );
     }
 
-    if (project.fullPaymentPaid) {
+    const amount = await collectRemainingBalance(
+      project,
+      req.user?.userId as string,
+    );
+    if (amount === null) {
       throw createProjectProgressError(
         "Full payment has already been made",
         409,
       );
     }
 
-    const paymentDate = new Date();
-    const remainingAmount =
-      (project.totalAgreedValue || 0) - (project.advanceRequiredAmount || 0);
+    await refreshProjectState(project._id);
 
-    // Create payment record
-    await Payment.create({
-      project: project._id,
-      type: "full_remaining",
-      amount: remainingAmount,
-      paidBy: req.user.userId,
-      method: "mock",
-      paidAt: paymentDate,
-    });
-
-    // Update project
-    project.fullPaymentPaid = true;
-    project.fullPaymentPaidAt = paymentDate;
-    await project.save();
-
-    // Notify engineer
     if (project.assignedEngineer) {
       await Notification.create({
         recipient: project.assignedEngineer,
         type: "full_payment_received",
-        message: `Remaining payment of $${remainingAmount.toFixed(2)} received for ${project.title ?? project.name ?? "your project"}.`,
+        message: `Remaining payment of ${formatTaka(amount)} received for ${projectLabel(project, "your project")}.`,
         project: project._id,
       });
     }
@@ -651,8 +802,8 @@ export const payFullRemaining = async (
     res.status(200).json({
       success: true,
       message: "Remaining payment processed (mock)",
-      amount: remainingAmount,
-      paidAt: paymentDate.toISOString(),
+      amount,
+      paidAt: new Date().toISOString(),
     });
   } catch (error: unknown) {
     next(error);

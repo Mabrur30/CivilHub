@@ -1,6 +1,5 @@
 import { MagnifyingGlassIcon, MapPinIcon } from "@phosphor-icons/react";
 import {
-  type ChangeEvent,
   type ReactElement,
   useEffect,
   useMemo,
@@ -27,6 +26,8 @@ import {
   type EquipmentCategory,
   type EquipmentListing,
 } from "./equipment.api";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { toPlainAmount } from "../lib/money";
 
 const ALL_TYPES = "all";
 type CategoryFilter = typeof ALL_TYPES | EquipmentCategory;
@@ -180,8 +181,8 @@ export function BrowseEquipmentPage(): ReactElement {
       const response = await fetchBrowseEquipmentListings({
         category,
         location,
-        minPrice,
-        maxPrice,
+        minPrice: toPlainAmount(minPrice),
+        maxPrice: toPlainAmount(maxPrice),
         search: debouncedSearch,
         page: nextPage,
       });
@@ -223,15 +224,6 @@ export function BrowseEquipmentPage(): ReactElement {
     setMinPrice("");
     setMaxPrice("");
   };
-
-  const onPriceChange =
-    (setter: (value: string) => void) =>
-    (event: ChangeEvent<HTMLInputElement>): void => {
-      const value = event.target.value;
-      if (value === "" || /^\d+$/.test(value)) {
-        setter(value);
-      }
-    };
 
   const summary =
     isLoading || error
@@ -277,25 +269,11 @@ export function BrowseEquipmentPage(): ReactElement {
               className={inputClassName}
             />
           </FormField>
-          <FormField id="equipment-min" label="Min per day ($)">
-            <input
-              id="equipment-min"
-              type="text"
-              inputMode="numeric"
-              value={minPrice}
-              onChange={onPriceChange(setMinPrice)}
-              className={inputClassName}
-            />
+          <FormField id="equipment-min" label="Min per day">
+            <MoneyInput id="equipment-min" value={minPrice} onChange={setMinPrice} />
           </FormField>
-          <FormField id="equipment-max" label="Max per day ($)">
-            <input
-              id="equipment-max"
-              type="text"
-              inputMode="numeric"
-              value={maxPrice}
-              onChange={onPriceChange(setMaxPrice)}
-              className={inputClassName}
-            />
+          <FormField id="equipment-max" label="Max per day">
+            <MoneyInput id="equipment-max" value={maxPrice} onChange={setMaxPrice} />
           </FormField>
         </div>
 

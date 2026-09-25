@@ -6,6 +6,7 @@ import {
 import { inputClassName } from "../ui/buttonStyles";
 import { FormField } from "../ui/FormField";
 import { DESCRIPTION_LIMIT, type ListingDetails } from "./listingDetails";
+import { MoneyInput } from "../ui/MoneyInput";
 
 interface ListingFieldsProps {
   idPrefix: string;
@@ -67,29 +68,23 @@ export function ListingFields({
         />
       </FormField>
 
-      <FormField id={id("rate")} label="Daily rate ($)">
-        <input
+      <FormField id={id("rate")} label="Daily rate">
+        <MoneyInput
           id={id("rate")}
-          inputMode="decimal"
           value={values.dailyRate}
-          onChange={(event) => onChange({ dailyRate: event.target.value })}
-          className={inputClassName}
+          onChange={(value) => onChange({ dailyRate: value })}
         />
       </FormField>
 
       <FormField
         id={id("deposit")}
-        label="Security deposit ($)"
+        label="Security deposit"
         hint="Held while the equipment is out, then released or claimed."
       >
-        <input
+        <MoneyInput
           id={id("deposit")}
-          inputMode="decimal"
           value={values.securityDeposit}
-          onChange={(event) =>
-            onChange({ securityDeposit: event.target.value })
-          }
-          className={inputClassName}
+          onChange={(value) => onChange({ securityDeposit: value })}
         />
       </FormField>
 

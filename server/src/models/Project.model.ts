@@ -7,6 +7,12 @@ export type PhasePlanStatus =
   | "approved";
 export type PaymentPlan = "phase_by_phase" | "full_upfront";
 
+/** Why the client sent the phase plan back, kept so the engineer sees it while revising. */
+export interface PhasePlanFeedback {
+  note: string;
+  rejectedAt: Date;
+}
+
 export interface IProject extends Document {
   title?: string;
   name?: string;
@@ -33,6 +39,7 @@ export interface IProject extends Document {
   nextMilestone?: string;
   nextMilestoneDueDate?: Date;
   phasePlanStatus: PhasePlanStatus;
+  phasePlanFeedback?: PhasePlanFeedback | null;
   totalAgreedValue?: number;
   paymentPlan?: PaymentPlan | null;
   advanceRequiredAmount?: number | null;
@@ -139,6 +146,16 @@ const projectSchema = new Schema<IProject>(
       enum: ["not_created", "draft", "pending_client_approval", "approved"],
       default: "not_created",
       required: true,
+    },
+    phasePlanFeedback: {
+      type: new Schema<PhasePlanFeedback>(
+        {
+          note: { type: String, required: true, trim: true, maxlength: 1000 },
+          rejectedAt: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
     totalAgreedValue: {
       type: Number,

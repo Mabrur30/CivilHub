@@ -21,8 +21,9 @@ import {
   type UpdateProjectPhaseBody,
   payAdvance,
   type PayAdvanceRequestBody,
-  payForPhase,
-  type PayForPhaseRequestBody,
+  approvePhase,
+  requestPhaseChanges,
+  type RequestPhaseChangesBody,
   payFullRemaining,
   type PayFullRemainingRequestBody,
 } from "../controllers/projectProgress.controller";
@@ -66,6 +67,25 @@ projectsRouter.patch("/:projectId/phases/:phaseId", protect, (req, res, next) =>
   ),
 );
 
+// Only the client completes a phase: approving it (and paying for it on the
+// phase-by-phase plan), or sending it back with a note.
+projectsRouter.post(
+  "/:projectId/phases/:phaseId/approve",
+  protect,
+  (req, res, next) =>
+    approvePhase(req as AuthenticatedRequest, res, next),
+);
+projectsRouter.post(
+  "/:projectId/phases/:phaseId/request-changes",
+  protect,
+  (req, res, next) =>
+    requestPhaseChanges(
+      req as AuthenticatedRequest<RequestPhaseChangesBody>,
+      res,
+      next,
+    ),
+);
+
 // ===== Phase Planning Routes =====
 projectsRouter.post("/:projectId/phase-plan", protect, (req, res, next) =>
   createPhasePlan(
@@ -107,12 +127,6 @@ projectsRouter.post(
 // ===== Payment Routes =====
 projectsRouter.post("/:projectId/payments/advance", protect, (req, res, next) =>
   payAdvance(req as AuthenticatedRequest<PayAdvanceRequestBody>, res, next),
-);
-projectsRouter.post(
-  "/:projectId/phases/:phaseId/payments",
-  protect,
-  (req, res, next) =>
-    payForPhase(req as AuthenticatedRequest<PayForPhaseRequestBody>, res, next),
 );
 projectsRouter.post(
   "/:projectId/payments/full-remaining",

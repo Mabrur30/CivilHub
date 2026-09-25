@@ -5,11 +5,11 @@ import cloudinary from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
 import { Comment } from "../models/Comment.model";
-import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Post, type IPost } from "../models/Post.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
 
 interface PostError extends Error {
   statusCode: number;
@@ -163,32 +163,9 @@ const getAcceptedConnectionUserIds = async (
   return Array.from(ids);
 };
 
-const getEngineerPhotoMapByUserIds = async (
+const getPhotoMapByUserIds = (
   userIds: string[],
-): Promise<Map<string, string>> => {
-  if (userIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const objectIds = userIds
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-
-  if (objectIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const engineers = await Engineer.find({ user: { $in: objectIds } })
-    .select("user profilePhoto")
-    .exec();
-
-  return new Map(
-    engineers.map((engineer) => [
-      engineer.user.toString(),
-      engineer.profilePhoto?.url ?? "",
-    ]),
-  );
-};
+): Promise<Map<string, string>> => getProfilePhotoMap(userIds);
 
 const getEngineerRatingMapByUserIds = async (
   userIds: string[],
@@ -325,7 +302,7 @@ export const createPost = async (
       throw createPostError("Unable to load the created post", 500);
     }
 
-    const photoByUserId = await getEngineerPhotoMapByUserIds([userId]);
+    const photoByUserId = await getPhotoMapByUserIds([userId]);
     const ratingByUserId = await getEngineerRatingMapByUserIds([userId]);
 
     const connectionUserIds = await getAcceptedConnectionUserIds(userId);
@@ -396,7 +373,7 @@ export const getFeed = async (
       }
     });
 
-    const photoByUserId = await getEngineerPhotoMapByUserIds(
+    const photoByUserId = await getPhotoMapByUserIds(
       Array.from(photoOwnerIds),
     );
     const ratingByUserId = await getEngineerRatingMapByUserIds(
@@ -456,7 +433,7 @@ export const createRepost = async (
       .exec();
     if (!populated) throw createPostError("Unable to load the repost", 500);
 
-    const photoByUserId = await getEngineerPhotoMapByUserIds([
+    const photoByUserId = await getPhotoMapByUserIds([
       userId,
       originalPost.author.toString(),
     ]);
@@ -523,7 +500,7 @@ export const getUserPosts = async (
         );
       }
     });
-    const photoByUserId = await getEngineerPhotoMapByUserIds(
+    const photoByUserId = await getPhotoMapByUserIds(
       Array.from(photoOwnerIds),
     );
     const ratingByUserId = await getEngineerRatingMapByUserIds(

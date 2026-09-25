@@ -1,4 +1,5 @@
 import { type NextFunction, type Request, type Response } from "express";
+import { Types } from "mongoose";
 import { getTotalUnreadMessageCount } from "./message.controller";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Bid } from "../models/Bid.model";
@@ -14,6 +15,12 @@ import {
 } from "../models/Project.model";
 import { ProjectPhase, type IProjectPhase } from "../models/ProjectPhase.model";
 import { User } from "../models/User.model";
+import {
+  getAdvanceAmount,
+  getPhaseAmountsDue,
+  getRemainingBalance,
+} from "../utils/phasePayments";
+import { budgetLabel, formatTaka } from "../utils/money";
 
 export interface CreateProjectRequestBody {
   title: string;
@@ -44,12 +51,29 @@ export interface ClientPostedProjectResponse {
   currentPhaseName: string;
   progressPercentage: number;
   nextMilestone: string;
-  nextMilestoneDueDate: string;
+  /** Null until the project has a real milestone date. */
+  nextMilestoneDueDate: string | null;
+  status: IProject["status"];
+  postedDate: string;
+  budgetRange: string;
+  category: string;
+  bidCount: number;
+  pendingBidCount: number;
+  phasePlanStatus: PhasePlanStatus;
+  advancePaid: boolean;
+  phasesAwaitingApproval: number;
+}
+
+interface PostedProjectCounts {
+  bidCount: number;
+  pendingBidCount: number;
+  phasesAwaitingApproval: number;
 }
 
 export interface OpenProjectResponse {
   id: string;
   title: string;
+  clientId: string | null;
   clientName: string;
   description: string;
   budgetRange: string;
@@ -79,14 +103,6 @@ export interface EngineerOverviewResponse {
   pendingBids: number;
   unreadMessages: number;
   upcomingMilestones: number;
-  recentActivity: RecentActivity[];
-}
-
-interface ClientOverviewResponse {
-  activeProjects: number;
-  pendingBidReviews: number;
-  unreadMessages: number;
-  totalSpent: number;
   recentActivity: RecentActivity[];
 }
 
@@ -154,9 +170,10 @@ const toProjectResponse = (project: IProject): ProjectResponse => ({
 const toOpenProjectResponse = (project: IProject): OpenProjectResponse => ({
   id: project._id.toString(),
   title: project.title ?? project.name ?? "Untitled project",
+  clientId: project.client?.toString() ?? null,
   clientName: project.clientName ?? "Client",
   description: project.description ?? "Project brief available on request.",
-  budgetRange: project.budgetRange ?? "Budget to be discussed",
+  budgetRange: budgetLabel(project),
   location: project.location ?? "Location to be confirmed",
   postedDate: (project.postedDate ?? project.createdAt).toISOString(),
   category: project.category ?? "Civil engineering",
@@ -169,6 +186,7 @@ const toClientPostedProjectResponse = (
       name?: string;
     } | null;
   },
+  counts: PostedProjectCounts,
 ): ClientPostedProjectResponse => ({
   id: project._id.toString(),
   projectName: project.title ?? project.name ?? "Untitled project",
@@ -189,7 +207,16 @@ const toClientPostedProjectResponse = (
   nextMilestone: project.nextMilestone ?? "Select engineering partner",
   nextMilestoneDueDate: project.nextMilestoneDueDate
     ? project.nextMilestoneDueDate.toISOString()
-    : project.createdAt.toISOString(),
+    : null,
+  status: project.status,
+  postedDate: (project.postedDate ?? project.createdAt).toISOString(),
+  budgetRange: budgetLabel(project),
+  category: project.category ?? "General",
+  bidCount: counts.bidCount,
+  pendingBidCount: counts.pendingBidCount,
+  phasePlanStatus: project.phasePlanStatus,
+  advancePaid: project.advancePaid,
+  phasesAwaitingApproval: counts.phasesAwaitingApproval,
 });
 
 export const createProject = async (
@@ -267,7 +294,7 @@ export const createProject = async (
       category: category.trim(),
       budgetMin: parsedBudgetMin,
       budgetMax: parsedBudgetMax,
-      budgetRange: `$${parsedBudgetMin.toLocaleString()} - $${parsedBudgetMax.toLocaleString()}`,
+      budgetRange: `${formatTaka(parsedBudgetMin)} - ${formatTaka(parsedBudgetMax)}`,
       location: location.trim(),
       targetStartDate: startDate,
       targetCompletionDate: completionDate,
@@ -343,7 +370,47 @@ export const getMyPostedProjects = async (
       .sort({ createdAt: -1 })
       .exec();
 
-    res.status(200).json(projects.map(toClientPostedProjectResponse));
+    const projectIds = projects.map((project) => project._id);
+    const [bidRows, phaseRows] = await Promise.all([
+      Bid.aggregate<{ _id: Types.ObjectId; total: number; pending: number }>([
+        { $match: { project: { $in: projectIds } } },
+        {
+          $group: {
+            _id: "$project",
+            total: { $sum: 1 },
+            pending: {
+              $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+            },
+          },
+        },
+      ]).exec(),
+      ProjectPhase.aggregate<{ _id: Types.ObjectId; count: number }>([
+        {
+          $match: {
+            project: { $in: projectIds },
+            status: "awaiting_approval",
+          },
+        },
+        { $group: { _id: "$project", count: { $sum: 1 } } },
+      ]).exec(),
+    ]);
+    const bidsByProject = new Map(
+      bidRows.map((row) => [row._id.toString(), row]),
+    );
+    const awaitingByProject = new Map(
+      phaseRows.map((row) => [row._id.toString(), row.count]),
+    );
+
+    res.status(200).json(
+      projects.map((project) => {
+        const id = project._id.toString();
+        return toClientPostedProjectResponse(project, {
+          bidCount: bidsByProject.get(id)?.total ?? 0,
+          pendingBidCount: bidsByProject.get(id)?.pending ?? 0,
+          phasesAwaitingApproval: awaitingByProject.get(id) ?? 0,
+        });
+      }),
+    );
   } catch (error: unknown) {
     next(error);
   }
@@ -504,6 +571,8 @@ export interface PhasePlanPhaseResponse {
   estimatedDueDate: string;
   order: number;
   paymentStatus: string;
+  /** What approving this phase costs on the phase-by-phase plan. */
+  amountDue: number;
 }
 
 export interface PhasePlanResponse {
@@ -516,8 +585,53 @@ export interface PhasePlanResponse {
   advancePaidAt: string | undefined;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt: string | undefined;
+  /** The advance this plan needs, known before the client approves it. */
+  advanceAmount: number;
+  /** Everything after the advance. */
+  remainingBalance: number;
+  phasePlanFeedback: { note: string; rejectedAt: string } | null;
   phases: PhasePlanPhaseResponse[];
 }
+
+const toPhasePlanResponse = (
+  project: IProject,
+  phases: IProjectPhase[],
+): PhasePlanResponse => {
+  const amountsDue = getPhaseAmountsDue(project, phases);
+  return {
+    projectId: project._id.toString(),
+    phasePlanStatus: project.phasePlanStatus,
+    totalAgreedValue: project.totalAgreedValue,
+    paymentPlan: project.paymentPlan,
+    advanceRequiredAmount: project.advanceRequiredAmount,
+    advancePaid: project.advancePaid,
+    advancePaidAt: project.advancePaidAt?.toISOString(),
+    fullPaymentPaid: project.fullPaymentPaid,
+    fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
+    advanceAmount: getAdvanceAmount(project),
+    remainingBalance: getRemainingBalance(project),
+    phasePlanFeedback: project.phasePlanFeedback
+      ? {
+          note: project.phasePlanFeedback.note,
+          rejectedAt: project.phasePlanFeedback.rejectedAt.toISOString(),
+        }
+      : null,
+    phases: [...phases]
+      .sort((a, b) => a.order - b.order)
+      .map((phase) => ({
+        id: phase._id.toString(),
+        title: phase.name,
+        description: phase.description || "",
+        price: phase.price,
+        estimatedDueDate: (phase.dueDate || new Date()).toISOString(),
+        order: phase.order,
+        paymentStatus: phase.paymentStatus,
+        amountDue: amountsDue.get(phase._id.toString()) ?? 0,
+      })),
+  };
+};
+
+const PLAN_FEEDBACK_LIMIT = 1000;
 
 export interface ApprovePhasePlanRequestBody {
   paymentPlan: PaymentPlan;
@@ -526,8 +640,6 @@ export interface ApprovePhasePlanRequestBody {
 export interface RejectPhasePlanRequestBody {
   feedback: string;
 }
-
-const round2Decimals = (value: number): number => Math.round(value * 100) / 100;
 
 export const createPhasePlan = async (
   req: AuthenticatedRequest<CreatePhasePlanRequestBody>,
@@ -581,15 +693,22 @@ export const createPhasePlan = async (
           400,
         );
       }
-      if (phase.price < 0) {
+      if (!Number.isFinite(phase.price) || phase.price < 0) {
         throw createProjectError("Phase price cannot be negative", 400);
+      }
+      const dueDate = new Date(phase.estimatedDueDate);
+      if (Number.isNaN(dueDate.getTime())) {
+        throw createProjectError(
+          `"${phase.title}" has a due date that isn't a valid date`,
+          400,
+        );
       }
       return {
         project: project._id,
         name: phase.title,
         description: phase.description,
         price: phase.price,
-        dueDate: new Date(phase.estimatedDueDate),
+        dueDate,
         order: index,
         status: "not_started" as const,
         paymentStatus: "unpaid" as const,
@@ -605,26 +724,7 @@ export const createPhasePlan = async (
     project.phasePlanStatus = "draft";
     await project.save();
 
-    const response: PhasePlanResponse = {
-      projectId: project._id.toString(),
-      phasePlanStatus: project.phasePlanStatus,
-      totalAgreedValue: project.totalAgreedValue,
-      paymentPlan: project.paymentPlan,
-      advanceRequiredAmount: project.advanceRequiredAmount,
-      advancePaid: project.advancePaid,
-      advancePaidAt: project.advancePaidAt?.toISOString(),
-      fullPaymentPaid: project.fullPaymentPaid,
-      fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
-      phases: createdPhases.map((phase) => ({
-        id: phase._id.toString(),
-        title: phase.name,
-        description: phase.description || "",
-        price: phase.price,
-        estimatedDueDate: (phase.dueDate || new Date()).toISOString(),
-        order: phase.order,
-        paymentStatus: phase.paymentStatus,
-      })),
-    };
+    const response = toPhasePlanResponse(project, createdPhases);
 
     res.status(201).json(response);
   } catch (error: unknown) {
@@ -680,12 +780,13 @@ export const submitPhasePlanForApproval = async (
 
     if (difference > 0.01) {
       throw createProjectError(
-        `Phase prices total ${totalPrice.toFixed(2)} but must equal the agreed project value of ${totalAgreedValue.toFixed(2)}. Difference: ${difference.toFixed(2)}`,
+        `Phase prices total ${formatTaka(totalPrice)} but must equal the agreed project value of ${formatTaka(totalAgreedValue)}. Difference: ${formatTaka(difference)}`,
         400,
       );
     }
 
     project.phasePlanStatus = "pending_client_approval";
+    project.phasePlanFeedback = null;
     await project.save();
 
     // Notify client
@@ -739,26 +840,7 @@ export const getPhasePlan = async (
       .sort({ order: 1 })
       .exec();
 
-    const response: PhasePlanResponse = {
-      projectId: project._id.toString(),
-      phasePlanStatus: project.phasePlanStatus,
-      totalAgreedValue: project.totalAgreedValue,
-      paymentPlan: project.paymentPlan,
-      advanceRequiredAmount: project.advanceRequiredAmount,
-      advancePaid: project.advancePaid,
-      advancePaidAt: project.advancePaidAt?.toISOString(),
-      fullPaymentPaid: project.fullPaymentPaid,
-      fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
-      phases: phases.map((phase) => ({
-        id: phase._id.toString(),
-        title: phase.name,
-        description: phase.description || "",
-        price: phase.price,
-        estimatedDueDate: (phase.dueDate || new Date()).toISOString(),
-        order: phase.order,
-        paymentStatus: phase.paymentStatus,
-      })),
-    };
+    const response = toPhasePlanResponse(project, phases);
 
     res.status(200).json(response);
   } catch (error: unknown) {
@@ -804,8 +886,8 @@ export const approvePhasePlan = async (
 
     project.phasePlanStatus = "approved";
     project.paymentPlan = paymentPlan;
-    const totalAgreedValue = project.totalAgreedValue || 0;
-    project.advanceRequiredAmount = round2Decimals(totalAgreedValue * 0.2);
+    project.advanceRequiredAmount = getAdvanceAmount(project);
+    project.phasePlanFeedback = null;
 
     await project.save();
 
@@ -858,12 +940,20 @@ export const rejectPhasePlan = async (
       throw createProjectError("Phase plan is not awaiting approval", 409);
     }
 
-    const { feedback } = req.body;
-    if (!feedback || typeof feedback !== "string") {
+    const feedback =
+      typeof req.body.feedback === "string" ? req.body.feedback.trim() : "";
+    if (!feedback) {
       throw createProjectError("Feedback is required", 400);
+    }
+    if (feedback.length > PLAN_FEEDBACK_LIMIT) {
+      throw createProjectError(
+        `Keep the feedback to ${PLAN_FEEDBACK_LIMIT} characters or fewer`,
+        400,
+      );
     }
 
     project.phasePlanStatus = "draft";
+    project.phasePlanFeedback = { note: feedback, rejectedAt: new Date() };
     await project.save();
 
     // Notify engineer with feedback
@@ -880,48 +970,6 @@ export const rejectPhasePlan = async (
       phasePlanStatus: project.phasePlanStatus,
       message: "Phase plan returned to draft for revision",
     });
-  } catch (error: unknown) {
-    next(error);
-  }
-};
-
-export const getClientOverview = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    if (!req.user?.userId || req.user.role !== "client") {
-      throw createProjectError("Client access required", 403);
-    }
-
-    const clientFilter = { client: req.user.userId };
-    const clientProjects = await Project.find(clientFilter)
-      .select("_id")
-      .exec();
-    const projectIds = clientProjects.map((project) => project._id);
-
-    const [activeProjects, pendingBidReviews] = await Promise.all([
-      Project.countDocuments({
-        ...clientFilter,
-        status: { $in: ["active", "in-progress"] },
-      }),
-      Bid.countDocuments({
-        project: { $in: projectIds },
-        status: "pending",
-      }),
-    ]);
-
-    // No Notification or Payment model exists yet, so these are intentionally zero.
-    const overview: ClientOverviewResponse = {
-      activeProjects,
-      pendingBidReviews,
-      unreadMessages: 0,
-      totalSpent: 0,
-      recentActivity: [],
-    };
-
-    res.status(200).json(overview);
   } catch (error: unknown) {
     next(error);
   }

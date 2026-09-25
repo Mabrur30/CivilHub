@@ -1,8 +1,7 @@
-export const formatCurrency = (amount: number): string =>
-  `$${amount.toLocaleString("en-US", {
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-    maximumFractionDigits: 2,
-  })}`;
+import { formatTaka } from "./money";
+
+// Every amount in CivilHub is Taka, shown with lakh/crore grouping.
+export const formatCurrency = (amount: number): string => formatTaka(amount);
 
 export const formatDate = (value: string): string => {
   const date = new Date(value);

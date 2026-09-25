@@ -1,8 +1,6 @@
 import { Router } from "express";
-import {
-  getClientOverview,
-  getEngineerOverview,
-} from "../controllers/project.controller";
+import { getClientOverview } from "../controllers/clientDashboard.controller";
+import { getEngineerOverview } from "../controllers/project.controller";
 import {
   protect,
   type AuthenticatedRequest,

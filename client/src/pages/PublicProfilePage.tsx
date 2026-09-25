@@ -17,9 +17,17 @@ import {
   type FeedPost,
 } from "../components/dashboard/FeedPostCard";
 import { PostComposerModal } from "../components/dashboard/PostComposerModal";
+import { ClientProfileView } from "../components/profile/client/ClientProfileView";
+import {
+  type ClientPublicProfile,
+  hasClientProfileFields,
+} from "../components/profile/client/clientProfile";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 import { Link, useLocation, useParams } from "react-router-dom";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { formatCurrency } from "../lib/format";
+import { moneyValue } from "../lib/money";
 
 interface EngineerPortfolioItem {
   title: string;
@@ -157,12 +165,6 @@ interface EngineerPublicProfile extends BasePublicProfile {
   portfolio: EngineerPortfolioItem[];
   certificates: EngineerCertificateItem[];
   completedWork: CompletedWorkItem[];
-}
-
-interface ClientPublicProfile extends BasePublicProfile {
-  role: "client";
-  companyName: string;
-  completedProjects: number;
 }
 
 type PublicProfile = EngineerPublicProfile | ClientPublicProfile;
@@ -440,18 +442,6 @@ const isPortfolioResponse = (
   );
 };
 
-const isOwnClientProfile = (
-  value: unknown,
-): value is { phone: string; companyName: string; bio: string } => {
-  if (typeof value !== "object" || value === null) return false;
-  const profile = value as Record<string, unknown>;
-  return (
-    typeof profile.phone === "string" &&
-    typeof profile.companyName === "string" &&
-    typeof profile.bio === "string"
-  );
-};
-
 const isEngineerReview = (value: unknown): value is EngineerReview => {
   if (typeof value !== "object" || value === null) return false;
   const review = value as Record<string, unknown>;
@@ -518,10 +508,7 @@ const isPublicProfile = (value: unknown): value is PublicProfile => {
     );
   }
 
-  return (
-    typeof profile.companyName === "string" &&
-    typeof profile.completedProjects === "number"
-  );
+  return hasClientProfileFields(profile);
 };
 
 const isFeedAuthor = (value: unknown): value is FeedAuthor => {
@@ -681,34 +668,6 @@ const certificateIcon = (
   </svg>
 );
 
-const buildingIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <rect x="4" y="2" width="16" height="20" rx="1" />
-    <path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01" />
-  </svg>
-);
-
-const checkCircleIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <path d="m9 12 2 2 4-4" />
-  </svg>
-);
-
 function DetailRow({
   icon,
   label,
@@ -768,15 +727,6 @@ export function PublicProfilePage(): ReactElement {
   const [bioDraft, setBioDraft] = useState<string>("");
   const [isSavingBio, setIsSavingBio] = useState<boolean>(false);
   const [bioSaveError, setBioSaveError] = useState<string>("");
-
-  const [ownPhone, setOwnPhone] = useState<string | null>(null);
-  const [isEditingClientDetails, setIsEditingClientDetails] =
-    useState<boolean>(false);
-  const [phoneDraft, setPhoneDraft] = useState<string>("");
-  const [companyDraft, setCompanyDraft] = useState<string>("");
-  const [isSavingClientDetails, setIsSavingClientDetails] =
-    useState<boolean>(false);
-  const [clientDetailsError, setClientDetailsError] = useState<string>("");
 
   const [ownEngineerData, setOwnEngineerData] =
     useState<OwnEngineerData | null>(null);
@@ -1043,45 +993,31 @@ export function PublicProfilePage(): ReactElement {
   }, [currentUser?.id, currentUser?.role, profile, reloadKey]);
 
   useEffect(() => {
-    if (!profile || !currentUser || currentUser.id !== profile.userId) {
+    if (
+      !profile ||
+      profile.role !== "engineer" ||
+      !currentUser ||
+      currentUser.id !== profile.userId
+    ) {
       setOwnEngineerData(null);
-      setOwnPhone(null);
       return;
     }
 
-    if (profile.role === "engineer") {
-      const loadOwnEngineerData = async (): Promise<void> => {
-        try {
-          const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
-            credentials: "include",
-          });
-          const body: unknown = await response.json();
-          if (!response.ok || !isOwnEngineerData(body)) {
-            return;
-          }
-          setOwnEngineerData(body);
-        } catch {
-          // Owner-specific edits fall back to public-profile state.
-        }
-      };
-      void loadOwnEngineerData();
-      return;
-    }
-
-    const loadOwnClientData = async (): Promise<void> => {
+    const loadOwnEngineerData = async (): Promise<void> => {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/clients/me`, {
+        const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
           credentials: "include",
         });
         const body: unknown = await response.json();
-        if (response.ok && isOwnClientProfile(body)) {
-          setOwnPhone(body.phone);
+        if (!response.ok || !isOwnEngineerData(body)) {
+          return;
         }
+        setOwnEngineerData(body);
       } catch {
-        // The contact-details card stays gated until this loads successfully.
+        // Owner-specific edits fall back to public-profile state.
       }
     };
-    void loadOwnClientData();
+    void loadOwnEngineerData();
   }, [profile, currentUser]);
 
   const refreshProfile = (): void => {
@@ -1410,10 +1346,10 @@ export function PublicProfilePage(): ReactElement {
     setIsSavingEngineerDetails(true);
     try {
       const minRate = startingRateMinDraft.trim()
-        ? Number.parseFloat(startingRateMinDraft)
+        ? (moneyValue(startingRateMinDraft) ?? Number.NaN)
         : null;
       const maxRate = startingRateMaxDraft.trim()
-        ? Number.parseFloat(startingRateMaxDraft)
+        ? (moneyValue(startingRateMaxDraft) ?? Number.NaN)
         : null;
       const locationValue = engineerLocationDraft.trim() || null;
 
@@ -1616,50 +1552,6 @@ export function PublicProfilePage(): ReactElement {
     setIsSavingExperience(false);
     if (!didSave) {
       setExperienceError("Unable to remove experience entry.");
-    }
-  };
-
-  const startEditingClientDetails = (): void => {
-    if (ownPhone === null || !profile || profile.role !== "client") return;
-    setPhoneDraft(ownPhone);
-    setCompanyDraft(profile.companyName);
-    setClientDetailsError("");
-    setIsEditingClientDetails(true);
-  };
-
-  const cancelEditingClientDetails = (): void => {
-    setIsEditingClientDetails(false);
-    setClientDetailsError("");
-  };
-
-  const saveClientDetails = async (): Promise<void> => {
-    setIsSavingClientDetails(true);
-    setClientDetailsError("");
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/clients/me`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneDraft, companyName: companyDraft }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setClientDetailsError(
-          getErrorMessageWithFallback(body, "Unable to save your details."),
-        );
-        return;
-      }
-      setOwnPhone(phoneDraft.trim());
-      setProfile((current) =>
-        current && current.role === "client"
-          ? { ...current, companyName: companyDraft.trim() }
-          : current,
-      );
-      setIsEditingClientDetails(false);
-    } catch {
-      setClientDetailsError("Unable to connect to CivilHub. Please try again.");
-    } finally {
-      setIsSavingClientDetails(false);
     }
   };
 
@@ -2250,459 +2142,108 @@ export function PublicProfilePage(): ReactElement {
       <div className="mx-auto max-w-6xl">
         <BackButton to={backDestination} label={backLabel} className="mb-5" />
 
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
-            <div
-              className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)] ${entrance(0).className}`}
-              style={entrance(0).style}
-            >
-              <div className="h-16 w-full bg-linear-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
-              <div className="p-5 pt-0">
-                <div className="-mt-10">
-                  <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
-                    <Avatar
-                      name={profile.name}
-                      photoUrl={profile.profilePhotoUrl}
-                      size="lg"
-                    />
-                    {isSelf && isEngineerProfile ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => avatarInputRef.current?.click()}
-                          disabled={isUploadingAvatar}
-                          aria-label="Change profile photo"
-                          className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
-                            isUploadingAvatar
-                              ? "opacity-100"
-                              : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
-                          }`}
-                        >
-                          {isUploadingAvatar ? (
-                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                          ) : (
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="h-4 w-4"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              aria-hidden="true"
-                            >
-                              <path d="M12 20h9" />
-                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                            </svg>
-                          )}
-                        </button>
-                        <input
-                          ref={avatarInputRef}
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={(event) => void handleAvatarChange(event)}
-                          className="sr-only"
-                        />
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="font-heading text-2xl font-bold text-white">
-                      {profile.name}
-                    </h1>
-                    {isEngineerProfile &&
-                    reviews &&
-                    reviews.totalReviews > 0 ? (
-                      <span className="inline-flex items-center">
-                        <RatingBadge
-                          rating={reviews.averageRating}
-                          reviewCount={reviews.totalReviews}
-                          size="sm"
-                        />
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
-                    {profile.role}
-                  </span>
-                </div>
-
-                <div className="mt-4">
-                  {isEditingBio ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={bioDraft}
-                        onChange={(event) => {
-                          setBioDraft(event.target.value.slice(0, 500));
-                          setBioSaveError("");
-                        }}
-                        maxLength={500}
-                        rows={4}
-                        className="form-input"
-                        placeholder="Add a short introduction for your public profile"
+        {profile.role === "client" ? (
+          <ClientProfileView
+            key={profile.userId}
+            profile={profile}
+            isSelf={isSelf}
+            viewerRole={currentUser?.role ?? null}
+            connection={{
+              isActioning,
+              onConnect: () => void sendRequest(),
+              onRespond: (decision) => void respondRequest(decision),
+            }}
+            actionError={actionError}
+            onProfileChange={(update) =>
+              setProfile((current) =>
+                current?.role === "client" ? update(current) : current,
+              )
+            }
+            onPhotoChanged={refetchUser}
+            posts={postsTotal > 0 ? renderPostsSection(false) : null}
+          />
+        ) : (
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
+              <div
+                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)] ${entrance(0).className}`}
+                style={entrance(0).style}
+              >
+                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
+                <div className="p-5 pt-0">
+                  <div className="-mt-10">
+                    <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
+                      <Avatar
+                        name={profile.name}
+                        photoUrl={profile.profilePhotoUrl}
+                        size="lg"
                       />
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-xs text-white/45">
-                          {bioDraft.length}/500
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => void saveBio()}
-                          disabled={isSavingBio}
-                          className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                        >
-                          {isSavingBio ? "Saving..." : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditingBio}
-                          className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      {bioSaveError ? (
-                        <p className="text-xs text-red-300" role="alert">
-                          {bioSaveError}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="flex-1 text-sm leading-6 text-white/65">
-                        {profile.bio.trim() ||
-                          "This user has not added a bio yet."}
-                      </p>
-                      {isSelf ? (
-                        <button
-                          type="button"
-                          onClick={startEditingBio}
-                          aria-label="Edit bio"
-                          className="shrink-0 text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
-                  <DetailRow
-                    icon={usersIcon}
-                    label="Connections"
-                    value={profile.connectionsCount}
-                  />
-                  {isEngineerProfile ? (
-                    <>
-                      <DetailRow
-                        icon={briefcaseIcon}
-                        label="Portfolio items"
-                        value={portfolioCount}
-                      />
-                      <DetailRow
-                        icon={certificateIcon}
-                        label="Certificates"
-                        value={certificateCount}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <DetailRow
-                        icon={buildingIcon}
-                        label="Company"
-                        value={profile.companyName || "Not specified"}
-                      />
-                      <DetailRow
-                        icon={checkCircleIcon}
-                        label="Completed projects"
-                        value={profile.completedProjects}
-                      />
-                    </>
-                  )}
-                </div>
-
-                {isSelf && !isEngineerProfile ? (
-                  <div className="mt-4 rounded-xl border border-white/10 bg-void/40 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
-                        Contact details
-                      </h3>
-                      {!isEditingClientDetails && ownPhone !== null ? (
-                        <button
-                          type="button"
-                          onClick={startEditingClientDetails}
-                          className="text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </div>
-                    {isEditingClientDetails ? (
-                      <div className="mt-3 space-y-3">
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-white/60">
-                            Phone
-                          </label>
+                      {isSelf && isEngineerProfile ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={isUploadingAvatar}
+                            aria-label="Change profile photo"
+                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
+                              isUploadingAvatar
+                                ? "opacity-100"
+                                : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
+                            }`}
+                          >
+                            {isUploadingAvatar ? (
+                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                            ) : (
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            )}
+                          </button>
                           <input
-                            value={phoneDraft}
-                            onChange={(event) =>
-                              setPhoneDraft(event.target.value)
-                            }
-                            className="form-input"
-                            placeholder="+1 555 000 0000"
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(event) => void handleAvatarChange(event)}
+                            className="sr-only"
                           />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold text-white/60">
-                            Company name
-                          </label>
-                          <input
-                            value={companyDraft}
-                            onChange={(event) =>
-                              setCompanyDraft(event.target.value)
-                            }
-                            className="form-input"
-                            placeholder="Your company"
-                          />
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void saveClientDetails()}
-                            disabled={isSavingClientDetails}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {isSavingClientDetails ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditingClientDetails}
-                            className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        {clientDetailsError ? (
-                          <p className="text-xs text-red-300" role="alert">
-                            {clientDetailsError}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : ownPhone === null ? (
-                      <p className="mt-2 text-xs text-white/40">
-                        Loading contact details...
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm text-white/70">
-                        {ownPhone || "No phone number added"}
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-
-                {!isSelf ? (
-                  isClientViewingEngineerProfile ? (
-                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
-                      <Link
-                        to={`/messages/${profile.userId}`}
-                        className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-                      >
-                        Message
-                      </Link>
-
-                      <div className="rounded-xl border border-white/10 bg-void/40 p-3">
-                        <h3 className="text-sm font-semibold text-white">
-                          Invite to Bid
-                        </h3>
-
-                        {isInviteProjectsLoading ? (
-                          <p className="mt-3 text-xs text-white/55">
-                            Loading your projects...
-                          </p>
-                        ) : inviteProjects.length === 0 ? (
-                          <div className="mt-3">
-                            <p className="text-xs text-white/55">
-                              Post a project to invite this engineer.
-                            </p>
-                            <Link
-                              to="/dashboard/client/post-project"
-                              className="mt-3 inline-flex rounded-full border border-primary px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-                            >
-                              Post a project
-                            </Link>
-                          </div>
-                        ) : (
-                          <div className="mt-3 space-y-2">
-                            {inviteProjects.map((project) => {
-                              const invitation = project.invitation;
-                              const statusLabel = invitation
-                                ? invitation.status === "pending"
-                                  ? "Pending"
-                                  : invitation.status === "accepted"
-                                    ? "Accepted"
-                                    : "Declined"
-                                : null;
-
-                              const statusClass = invitation
-                                ? invitation.status === "pending"
-                                  ? "border-primary/30 bg-primary/10 text-primary"
-                                  : invitation.status === "accepted"
-                                    ? "border-white/20 bg-white/5 text-white"
-                                    : "border-white/20 bg-white/5 text-white/70"
-                                : "";
-
-                              return (
-                                <div
-                                  key={project.id}
-                                  className="rounded-lg border border-white/10 bg-surface p-3"
-                                >
-                                  <p className="text-xs font-semibold text-white">
-                                    {project.title}
-                                  </p>
-                                  <p className="mt-1 text-[11px] capitalize text-white/45">
-                                    {project.status.replaceAll("_", " ")}
-                                  </p>
-
-                                  <div className="mt-2">
-                                    {invitation ? (
-                                      <span
-                                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}
-                                      >
-                                        {statusLabel}
-                                      </span>
-                                    ) : project.canInvite ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void sendBidInvitation(project.id)
-                                        }
-                                        disabled={
-                                          inviteActionProjectId === project.id
-                                        }
-                                        className="rounded-full border border-primary px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:opacity-50"
-                                      >
-                                        {inviteActionProjectId === project.id
-                                          ? "Sending..."
-                                          : "Invite to Bid"}
-                                      </button>
-                                    ) : (
-                                      <span className="text-[11px] text-white/45">
-                                        Not eligible for bidding invitations
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {inviteSuccess ? (
-                        <p className="text-xs text-primary">{inviteSuccess}</p>
-                      ) : null}
-                      {inviteError ? (
-                        <p className="text-xs text-red-300" role="alert">
-                          {inviteError}
-                        </p>
+                        </>
                       ) : null}
                     </div>
-                  ) : (
-                    <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-                      <p className="text-xs font-semibold text-white/50">
-                        {statusLabel(profile.connectionStatus)}
-                      </p>
-                      {profile.connectionStatus === "not_connected" ? (
-                        <button
-                          type="button"
-                          onClick={() => void sendRequest()}
-                          disabled={isActioning}
-                          className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isActioning ? "Sending..." : "Connect"}
-                        </button>
-                      ) : null}
+                  </div>
 
-                      {profile.connectionStatus === "pending_received" ? (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void respondRequest("accept")}
-                            disabled={isActioning}
-                            className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isActioning ? "Updating..." : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void respondRequest("decline")}
-                            disabled={isActioning}
-                            className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isActioning ? "Updating..." : "Decline"}
-                          </button>
-                        </div>
-                      ) : null}
-
-                      {profile.connectionStatus === "pending_sent" ? (
-                        <span className="block w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2.5 text-center text-sm font-semibold text-amber-200">
-                          Request sent
+                  <div className="mt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h1 className="font-heading text-2xl font-bold text-white">
+                        {profile.name}
+                      </h1>
+                      {isEngineerProfile &&
+                      reviews &&
+                      reviews.totalReviews > 0 ? (
+                        <span className="inline-flex items-center">
+                          <RatingBadge
+                            rating={reviews.averageRating}
+                            reviewCount={reviews.totalReviews}
+                            size="sm"
+                          />
                         </span>
                       ) : null}
-
-                      {profile.connectionStatus === "connected" ? (
-                        <Link
-                          to={`/messages/${profile.userId}`}
-                          className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
-                        >
-                          Message
-                        </Link>
-                      ) : null}
                     </div>
-                  )
-                ) : null}
+                    <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
+                      {profile.role}
+                    </span>
+                  </div>
 
-                {avatarError ? (
-                  <p className="mt-4 text-xs text-red-300" role="alert">
-                    {avatarError}
-                  </p>
-                ) : null}
-                {actionError ? (
-                  <p className="mt-4 text-xs text-red-300" role="alert">
-                    {actionError}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </aside>
-
-          <div className="min-w-0 flex-1 space-y-4">
-            {isEngineerProfile && engineerProfile ? (
-              <>
-                {hasAboutSection ? (
-                  <article
-                    className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(1).className}`}
-                    style={entrance(1).style}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        About
-                      </h2>
-                      {isSelf && !isEditingBio ? (
-                        <button
-                          type="button"
-                          onClick={startEditingBio}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                        >
-                          Edit
-                        </button>
-                      ) : null}
-                    </div>
-
+                  <div className="mt-4">
                     {isEditingBio ? (
-                      <div className="mt-4 space-y-2">
+                      <div className="space-y-2">
                         <textarea
                           value={bioDraft}
                           onChange={(event) => {
@@ -2712,27 +2253,27 @@ export function PublicProfilePage(): ReactElement {
                           maxLength={500}
                           rows={4}
                           className="form-input"
-                          placeholder="Add a short introduction"
+                          placeholder="Add a short introduction for your public profile"
                         />
                         <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xs text-white/45">
+                            {bioDraft.length}/500
+                          </span>
                           <button
                             type="button"
                             onClick={() => void saveBio()}
                             disabled={isSavingBio}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
                           >
                             {isSavingBio ? "Saving..." : "Save"}
                           </button>
                           <button
                             type="button"
                             onClick={cancelEditingBio}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
                           >
                             Cancel
                           </button>
-                          <span className="text-xs text-white/45">
-                            {bioDraft.length}/500
-                          </span>
                         </div>
                         {bioSaveError ? (
                           <p className="text-xs text-red-300" role="alert">
@@ -2740,915 +2281,1189 @@ export function PublicProfilePage(): ReactElement {
                           </p>
                         ) : null}
                       </div>
-                    ) : profile.bio.trim() ? (
-                      <p className="mt-4 text-sm leading-6 text-white/70">
-                        {profile.bio}
-                      </p>
-                    ) : isSelf ? (
-                      <button
-                        type="button"
-                        onClick={startEditingBio}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add about
-                      </button>
-                    ) : null}
-                  </article>
-                ) : null}
+                    ) : (
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="flex-1 text-sm leading-6 text-white/65">
+                          {profile.bio.trim() ||
+                            "This user has not added a bio yet."}
+                        </p>
+                        {isSelf ? (
+                          <button
+                            type="button"
+                            onClick={startEditingBio}
+                            aria-label="Edit bio"
+                            className="shrink-0 text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
 
-                {hasRateLocationSection ? (
-                  <article
-                    className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
-                    style={entrance(2).style}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        Rate & Location
-                      </h2>
-                      {isSelf && !isEditingEngineerDetails ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsEditingEngineerDetails(true)}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
+                    <DetailRow
+                      icon={usersIcon}
+                      label="Connections"
+                      value={profile.connectionsCount}
+                    />
+                    <DetailRow
+                      icon={briefcaseIcon}
+                      label="Portfolio items"
+                      value={portfolioCount}
+                    />
+                    <DetailRow
+                      icon={certificateIcon}
+                      label="Certificates"
+                      value={certificateCount}
+                    />
+                  </div>
+
+                  {!isSelf ? (
+                    isClientViewingEngineerProfile ? (
+                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                        <Link
+                          to={`/messages/${profile.userId}`}
+                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
                         >
-                          Edit
-                        </button>
-                      ) : null}
-                    </div>
+                          Message
+                        </Link>
 
-                    {isEditingEngineerDetails ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        <input
-                          value={startingRateMinDraft}
-                          onChange={(event) =>
-                            setStartingRateMinDraft(event.target.value)
-                          }
-                          placeholder="Starting min rate"
-                          type="number"
-                          min={0}
-                          className="form-input"
-                        />
-                        <input
-                          value={startingRateMaxDraft}
-                          onChange={(event) =>
-                            setStartingRateMaxDraft(event.target.value)
-                          }
-                          placeholder="Starting max rate"
-                          type="number"
-                          min={0}
-                          className="form-input"
-                        />
-                        <input
-                          value={engineerLocationDraft}
-                          onChange={(event) =>
-                            setEngineerLocationDraft(event.target.value)
-                          }
-                          placeholder="Your location"
-                          className="form-input"
-                        />
-                        <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void saveEngineerRateLocation()}
-                            disabled={isSavingEngineerDetails}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-                          >
-                            {isSavingEngineerDetails ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsEditingEngineerDetails(false);
-                              setEngineerDetailsError("");
-                              setStartingRateMinDraft(
-                                typeof engineerProfile.startingRateMin ===
-                                  "number"
-                                  ? String(engineerProfile.startingRateMin)
-                                  : "",
-                              );
-                              setStartingRateMaxDraft(
-                                typeof engineerProfile.startingRateMax ===
-                                  "number"
-                                  ? String(engineerProfile.startingRateMax)
-                                  : "",
-                              );
-                              setEngineerLocationDraft(
-                                engineerProfile.location ?? "",
-                              );
-                            }}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                          >
-                            Cancel
-                          </button>
+                        <div className="rounded-xl border border-white/10 bg-void/40 p-3">
+                          <h3 className="text-sm font-semibold text-white">
+                            Invite to Bid
+                          </h3>
+
+                          {isInviteProjectsLoading ? (
+                            <p className="mt-3 text-xs text-white/55">
+                              Loading your projects...
+                            </p>
+                          ) : inviteProjects.length === 0 ? (
+                            <div className="mt-3">
+                              <p className="text-xs text-white/55">
+                                Post a project to invite this engineer.
+                              </p>
+                              <Link
+                                to="/dashboard/client/post-project"
+                                className="mt-3 inline-flex rounded-full border border-primary px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+                              >
+                                Post a project
+                              </Link>
+                            </div>
+                          ) : (
+                            <div className="mt-3 space-y-2">
+                              {inviteProjects.map((project) => {
+                                const invitation = project.invitation;
+                                const statusLabel = invitation
+                                  ? invitation.status === "pending"
+                                    ? "Pending"
+                                    : invitation.status === "accepted"
+                                      ? "Accepted"
+                                      : "Declined"
+                                  : null;
+
+                                const statusClass = invitation
+                                  ? invitation.status === "pending"
+                                    ? "border-primary/30 bg-primary/10 text-primary"
+                                    : invitation.status === "accepted"
+                                      ? "border-white/20 bg-white/5 text-white"
+                                      : "border-white/20 bg-white/5 text-white/70"
+                                  : "";
+
+                                return (
+                                  <div
+                                    key={project.id}
+                                    className="rounded-lg border border-white/10 bg-surface p-3"
+                                  >
+                                    <p className="text-xs font-semibold text-white">
+                                      {project.title}
+                                    </p>
+                                    <p className="mt-1 text-[11px] capitalize text-white/45">
+                                      {project.status.replaceAll("_", " ")}
+                                    </p>
+
+                                    <div className="mt-2">
+                                      {invitation ? (
+                                        <span
+                                          className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}
+                                        >
+                                          {statusLabel}
+                                        </span>
+                                      ) : project.canInvite ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void sendBidInvitation(project.id)
+                                          }
+                                          disabled={
+                                            inviteActionProjectId === project.id
+                                          }
+                                          className="rounded-full border border-primary px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:opacity-50"
+                                        >
+                                          {inviteActionProjectId === project.id
+                                            ? "Sending..."
+                                            : "Invite to Bid"}
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-white/45">
+                                          Not eligible for bidding invitations
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
-                        {engineerDetailsError ? (
-                          <p
-                            className="sm:col-span-3 text-xs text-red-300"
-                            role="alert"
-                          >
-                            {engineerDetailsError}
+
+                        {inviteSuccess ? (
+                          <p className="text-xs text-primary">{inviteSuccess}</p>
+                        ) : null}
+                        {inviteError ? (
+                          <p className="text-xs text-red-300" role="alert">
+                            {inviteError}
                           </p>
                         ) : null}
                       </div>
                     ) : (
-                      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                          <dt className="text-xs text-white/50">
-                            Starting rate
-                          </dt>
-                          <dd className="mt-1 text-sm font-semibold text-white">
-                            {typeof engineerProfile.startingRateMin ===
-                              "number" ||
-                            typeof engineerProfile.startingRateMax === "number"
-                              ? `${
+                      <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+                        <p className="text-xs font-semibold text-white/50">
+                          {statusLabel(profile.connectionStatus)}
+                        </p>
+                        {profile.connectionStatus === "not_connected" ? (
+                          <button
+                            type="button"
+                            onClick={() => void sendRequest()}
+                            disabled={isActioning}
+                            className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isActioning ? "Sending..." : "Connect"}
+                          </button>
+                        ) : null}
+
+                        {profile.connectionStatus === "pending_received" ? (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void respondRequest("accept")}
+                              disabled={isActioning}
+                              className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isActioning ? "Updating..." : "Accept"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void respondRequest("decline")}
+                              disabled={isActioning}
+                              className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-red-300 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isActioning ? "Updating..." : "Decline"}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {profile.connectionStatus === "pending_sent" ? (
+                          <span className="block w-full rounded-full border border-amber-300/30 bg-amber-300/10 px-4 py-2.5 text-center text-sm font-semibold text-amber-200">
+                            Request sent
+                          </span>
+                        ) : null}
+
+                        {profile.connectionStatus === "connected" ? (
+                          <Link
+                            to={`/messages/${profile.userId}`}
+                            className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
+                          >
+                            Message
+                          </Link>
+                        ) : null}
+                      </div>
+                    )
+                  ) : null}
+
+                  {avatarError ? (
+                    <p className="mt-4 text-xs text-red-300" role="alert">
+                      {avatarError}
+                    </p>
+                  ) : null}
+                  {actionError ? (
+                    <p className="mt-4 text-xs text-red-300" role="alert">
+                      {actionError}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </aside>
+
+            <div className="min-w-0 flex-1 space-y-4">
+              {engineerProfile ? (
+                <>
+                  {hasAboutSection ? (
+                    <article
+                      className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(1).className}`}
+                      style={entrance(1).style}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          About
+                        </h2>
+                        {isSelf && !isEditingBio ? (
+                          <button
+                            type="button"
+                            onClick={startEditingBio}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {isEditingBio ? (
+                        <div className="mt-4 space-y-2">
+                          <textarea
+                            value={bioDraft}
+                            onChange={(event) => {
+                              setBioDraft(event.target.value.slice(0, 500));
+                              setBioSaveError("");
+                            }}
+                            maxLength={500}
+                            rows={4}
+                            className="form-input"
+                            placeholder="Add a short introduction"
+                          />
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void saveBio()}
+                              disabled={isSavingBio}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                            >
+                              {isSavingBio ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditingBio}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                            <span className="text-xs text-white/45">
+                              {bioDraft.length}/500
+                            </span>
+                          </div>
+                          {bioSaveError ? (
+                            <p className="text-xs text-red-300" role="alert">
+                              {bioSaveError}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : profile.bio.trim() ? (
+                        <p className="mt-4 text-sm leading-6 text-white/70">
+                          {profile.bio}
+                        </p>
+                      ) : isSelf ? (
+                        <button
+                          type="button"
+                          onClick={startEditingBio}
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                        >
+                          + Add about
+                        </button>
+                      ) : null}
+                    </article>
+                  ) : null}
+
+                  {hasRateLocationSection ? (
+                    <article
+                      className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
+                      style={entrance(2).style}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          Rate & Location
+                        </h2>
+                        {isSelf && !isEditingEngineerDetails ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingEngineerDetails(true)}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {isEditingEngineerDetails ? (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <div className="grid content-start gap-1.5">
+                            <label htmlFor="starting-rate-min" className="text-xs font-semibold text-white/60">
+                              Starting rate from
+                            </label>
+                            <MoneyInput
+                              id="starting-rate-min"
+                              value={startingRateMinDraft}
+                              onChange={setStartingRateMinDraft}
+                            />
+                          </div>
+                          <div className="grid content-start gap-1.5">
+                            <label htmlFor="starting-rate-max" className="text-xs font-semibold text-white/60">
+                              Starting rate up to
+                            </label>
+                            <MoneyInput
+                              id="starting-rate-max"
+                              value={startingRateMaxDraft}
+                              onChange={setStartingRateMaxDraft}
+                            />
+                          </div>
+                          <input
+                            aria-label="Your location"
+                            value={engineerLocationDraft}
+                            onChange={(event) =>
+                              setEngineerLocationDraft(event.target.value)
+                            }
+                            placeholder="Your location"
+                            className="form-input"
+                          />
+                          <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void saveEngineerRateLocation()}
+                              disabled={isSavingEngineerDetails}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                            >
+                              {isSavingEngineerDetails ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditingEngineerDetails(false);
+                                setEngineerDetailsError("");
+                                setStartingRateMinDraft(
                                   typeof engineerProfile.startingRateMin ===
-                                  "number"
-                                    ? `$${engineerProfile.startingRateMin.toLocaleString()}`
-                                    : "-"
-                                } to ${
+                                    "number"
+                                    ? String(engineerProfile.startingRateMin)
+                                    : "",
+                                );
+                                setStartingRateMaxDraft(
                                   typeof engineerProfile.startingRateMax ===
-                                  "number"
-                                    ? `$${engineerProfile.startingRateMax.toLocaleString()}`
-                                    : "-"
-                                }`
-                              : isSelf
-                                ? "Not added yet"
-                                : ""}
-                          </dd>
+                                    "number"
+                                    ? String(engineerProfile.startingRateMax)
+                                    : "",
+                                );
+                                setEngineerLocationDraft(
+                                  engineerProfile.location ?? "",
+                                );
+                              }}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {engineerDetailsError ? (
+                            <p
+                              className="sm:col-span-3 text-xs text-red-300"
+                              role="alert"
+                            >
+                              {engineerDetailsError}
+                            </p>
+                          ) : null}
                         </div>
-                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                          <dt className="text-xs text-white/50">
-                            Typical rate (accepted bids)
-                          </dt>
-                          <dd className="mt-1 text-sm font-semibold text-white">
-                            {typeof engineerProfile.typicalRate === "number"
-                              ? `$${engineerProfile.typicalRate.toLocaleString()} (${engineerProfile.acceptedBidCount})`
-                              : "No accepted bid history yet"}
-                          </dd>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                          <dt className="text-xs text-white/50">
-                            Self-declared location
-                          </dt>
-                          <dd className="mt-1 text-sm font-semibold text-white">
-                            {engineerProfile.location ||
-                              (isSelf ? "Not added yet" : "")}
-                          </dd>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                          <dt className="text-xs text-white/50">
-                            Derived location (completed work)
-                          </dt>
-                          <dd className="mt-1 text-sm font-semibold text-white">
-                            {engineerProfile.derivedLocation
-                              ? `${engineerProfile.derivedLocation} (${engineerProfile.completedLocationProjectCount})`
-                              : "No completed-work location history yet"}
-                          </dd>
-                        </div>
-                      </dl>
-                    )}
+                      ) : (
+                        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                            <dt className="text-xs text-white/50">
+                              Starting rate
+                            </dt>
+                            <dd className="mt-1 text-sm font-semibold text-white">
+                              {typeof engineerProfile.startingRateMin ===
+                                "number" ||
+                              typeof engineerProfile.startingRateMax === "number"
+                                ? `${
+                                    typeof engineerProfile.startingRateMin ===
+                                    "number"
+                                      ? formatCurrency(engineerProfile.startingRateMin)
+                                      : "-"
+                                  } to ${
+                                    typeof engineerProfile.startingRateMax ===
+                                    "number"
+                                      ? formatCurrency(engineerProfile.startingRateMax)
+                                      : "-"
+                                  }`
+                                : isSelf
+                                  ? "Not added yet"
+                                  : ""}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                            <dt className="text-xs text-white/50">
+                              Typical rate (accepted bids)
+                            </dt>
+                            <dd className="mt-1 text-sm font-semibold text-white">
+                              {typeof engineerProfile.typicalRate === "number"
+                                ? `${formatCurrency(engineerProfile.typicalRate)} (${engineerProfile.acceptedBidCount})`
+                                : "No accepted bid history yet"}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                            <dt className="text-xs text-white/50">
+                              Self-declared location
+                            </dt>
+                            <dd className="mt-1 text-sm font-semibold text-white">
+                              {engineerProfile.location ||
+                                (isSelf ? "Not added yet" : "")}
+                            </dd>
+                          </div>
+                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                            <dt className="text-xs text-white/50">
+                              Derived location (completed work)
+                            </dt>
+                            <dd className="mt-1 text-sm font-semibold text-white">
+                              {engineerProfile.derivedLocation
+                                ? `${engineerProfile.derivedLocation} (${engineerProfile.completedLocationProjectCount})`
+                                : "No completed-work location history yet"}
+                            </dd>
+                          </div>
+                        </dl>
+                      )}
 
-                    {!hasSelfDeclaredRateOrLocation &&
-                    !hasDerivedRateOrLocation &&
-                    isSelf &&
-                    !isEditingEngineerDetails ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingEngineerDetails(true)}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add rate & location
-                      </button>
-                    ) : null}
-                  </article>
-                ) : null}
+                      {!hasSelfDeclaredRateOrLocation &&
+                      !hasDerivedRateOrLocation &&
+                      isSelf &&
+                      !isEditingEngineerDetails ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingEngineerDetails(true)}
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                        >
+                          + Add rate & location
+                        </button>
+                      ) : null}
+                    </article>
+                  ) : null}
 
-                {hasExperienceSection ? (
-                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        Experience
-                      </h2>
-                      {isSelf && !isAddingExperience ? (
+                  {hasExperienceSection ? (
+                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          Experience
+                        </h2>
+                        {isSelf && !isAddingExperience ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingExperience(true)}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          >
+                            + Add
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {engineerProfile.experience.length === 0 &&
+                      isSelf &&
+                      !isAddingExperience ? (
                         <button
                           type="button"
                           onClick={() => setIsAddingExperience(true)}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
                         >
-                          + Add
+                          + Add experience
                         </button>
                       ) : null}
-                    </div>
 
-                    {engineerProfile.experience.length === 0 &&
-                    isSelf &&
-                    !isAddingExperience ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingExperience(true)}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add experience
-                      </button>
-                    ) : null}
-
-                    {engineerProfile.experience.length > 0 ? (
-                      <div className="mt-4 space-y-3">
-                        {engineerProfile.experience.map((entry) => (
-                          <div
-                            key={entry.id}
-                            className="rounded-xl border border-white/10 bg-void/40 p-4"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-white">
-                                  {entry.title || "Untitled role"}
-                                </p>
-                                <p className="text-xs text-white/60">
-                                  {entry.organization || "Organization"}
-                                </p>
-                                <p className="mt-1 text-xs text-white/45">
-                                  {entry.startYear ?? "-"} -{" "}
-                                  {entry.endYear ?? "Present"}
-                                </p>
+                      {engineerProfile.experience.length > 0 ? (
+                        <div className="mt-4 space-y-3">
+                          {engineerProfile.experience.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="rounded-xl border border-white/10 bg-void/40 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    {entry.title || "Untitled role"}
+                                  </p>
+                                  <p className="text-xs text-white/60">
+                                    {entry.organization || "Organization"}
+                                  </p>
+                                  <p className="mt-1 text-xs text-white/45">
+                                    {entry.startYear ?? "-"} -{" "}
+                                    {entry.endYear ?? "Present"}
+                                  </p>
+                                </div>
+                                {isSelf ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void removeExperienceEntry(entry.id)
+                                    }
+                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
                               </div>
-                              {isSelf ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void removeExperienceEntry(entry.id)
-                                  }
-                                  className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
-                                >
-                                  Remove
-                                </button>
+                              {entry.description ? (
+                                <p className="mt-3 text-xs leading-5 text-white/65">
+                                  {entry.description}
+                                </p>
                               ) : null}
                             </div>
-                            {entry.description ? (
-                              <p className="mt-3 text-xs leading-5 text-white/65">
-                                {entry.description}
-                              </p>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {isSelf && isAddingExperience ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <input
-                          value={experienceTitleDraft}
-                          onChange={(event) =>
-                            setExperienceTitleDraft(event.target.value)
-                          }
-                          placeholder="Title"
-                          className="form-input"
-                        />
-                        <input
-                          value={experienceOrganizationDraft}
-                          onChange={(event) =>
-                            setExperienceOrganizationDraft(event.target.value)
-                          }
-                          placeholder="Organization"
-                          className="form-input"
-                        />
-                        <input
-                          value={experienceStartYearDraft}
-                          onChange={(event) =>
-                            setExperienceStartYearDraft(event.target.value)
-                          }
-                          type="number"
-                          placeholder="Start year"
-                          className="form-input"
-                        />
-                        <input
-                          value={experienceEndYearDraft}
-                          onChange={(event) =>
-                            setExperienceEndYearDraft(event.target.value)
-                          }
-                          type="number"
-                          placeholder="End year (blank for present)"
-                          className="form-input"
-                        />
-                        <textarea
-                          value={experienceDescriptionDraft}
-                          onChange={(event) =>
-                            setExperienceDescriptionDraft(event.target.value)
-                          }
-                          placeholder="Description"
-                          rows={3}
-                          className="form-input sm:col-span-2"
-                        />
-                        <div className="sm:col-span-2 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void addExperienceEntry()}
-                            disabled={isSavingExperience}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-                          >
-                            {isSavingExperience
-                              ? "Saving..."
-                              : "Save experience"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsAddingExperience(false);
-                              setExperienceError("");
-                            }}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                          >
-                            Cancel
-                          </button>
+                          ))}
                         </div>
-                        {experienceError ? (
-                          <p
-                            className="sm:col-span-2 text-xs text-red-300"
-                            role="alert"
+                      ) : null}
+
+                      {isSelf && isAddingExperience ? (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <input
+                            value={experienceTitleDraft}
+                            onChange={(event) =>
+                              setExperienceTitleDraft(event.target.value)
+                            }
+                            placeholder="Title"
+                            className="form-input"
+                          />
+                          <input
+                            value={experienceOrganizationDraft}
+                            onChange={(event) =>
+                              setExperienceOrganizationDraft(event.target.value)
+                            }
+                            placeholder="Organization"
+                            className="form-input"
+                          />
+                          <input
+                            value={experienceStartYearDraft}
+                            onChange={(event) =>
+                              setExperienceStartYearDraft(event.target.value)
+                            }
+                            type="number"
+                            placeholder="Start year"
+                            className="form-input"
+                          />
+                          <input
+                            value={experienceEndYearDraft}
+                            onChange={(event) =>
+                              setExperienceEndYearDraft(event.target.value)
+                            }
+                            type="number"
+                            placeholder="End year (blank for present)"
+                            className="form-input"
+                          />
+                          <textarea
+                            value={experienceDescriptionDraft}
+                            onChange={(event) =>
+                              setExperienceDescriptionDraft(event.target.value)
+                            }
+                            placeholder="Description"
+                            rows={3}
+                            className="form-input sm:col-span-2"
+                          />
+                          <div className="sm:col-span-2 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void addExperienceEntry()}
+                              disabled={isSavingExperience}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                            >
+                              {isSavingExperience
+                                ? "Saving..."
+                                : "Save experience"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingExperience(false);
+                                setExperienceError("");
+                              }}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {experienceError ? (
+                            <p
+                              className="sm:col-span-2 text-xs text-red-300"
+                              role="alert"
+                            >
+                              {experienceError}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  ) : null}
+
+                  {hasEducationSection ? (
+                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          Education
+                        </h2>
+                        {isSelf && !isAddingEducation ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingEducation(true)}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
                           >
-                            {experienceError}
-                          </p>
+                            + Add
+                          </button>
                         ) : null}
                       </div>
-                    ) : null}
-                  </article>
-                ) : null}
 
-                {hasEducationSection ? (
-                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        Education
-                      </h2>
-                      {isSelf && !isAddingEducation ? (
+                      {engineerProfile.education.length === 0 &&
+                      isSelf &&
+                      !isAddingEducation ? (
                         <button
                           type="button"
                           onClick={() => setIsAddingEducation(true)}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
                         >
-                          + Add
+                          + Add education
                         </button>
                       ) : null}
-                    </div>
 
-                    {engineerProfile.education.length === 0 &&
-                    isSelf &&
-                    !isAddingEducation ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingEducation(true)}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add education
-                      </button>
-                    ) : null}
-
-                    {engineerProfile.education.length > 0 ? (
-                      <div className="mt-4 space-y-3">
-                        {engineerProfile.education.map((entry) => (
-                          <div
-                            key={entry.id}
-                            className="rounded-xl border border-white/10 bg-void/40 p-4"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-white">
-                                  {entry.institution || "Institution"}
-                                </p>
-                                <p className="text-xs text-white/60">
-                                  {entry.degree || "Degree"}
-                                  {entry.fieldOfStudy
-                                    ? `, ${entry.fieldOfStudy}`
-                                    : ""}
-                                </p>
-                                <p className="mt-1 text-xs text-white/45">
-                                  {entry.graduationYear ?? "Year not set"}
-                                </p>
+                      {engineerProfile.education.length > 0 ? (
+                        <div className="mt-4 space-y-3">
+                          {engineerProfile.education.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="rounded-xl border border-white/10 bg-void/40 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    {entry.institution || "Institution"}
+                                  </p>
+                                  <p className="text-xs text-white/60">
+                                    {entry.degree || "Degree"}
+                                    {entry.fieldOfStudy
+                                      ? `, ${entry.fieldOfStudy}`
+                                      : ""}
+                                  </p>
+                                  <p className="mt-1 text-xs text-white/45">
+                                    {entry.graduationYear ?? "Year not set"}
+                                  </p>
+                                </div>
+                                {isSelf ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void removeEducationEntry(entry.id)
+                                    }
+                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
                               </div>
-                              {isSelf ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void removeEducationEntry(entry.id)
-                                  }
-                                  className="text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
-                                >
-                                  Remove
-                                </button>
-                              ) : null}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {isSelf && isAddingEducation ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <input
-                          value={educationInstitutionDraft}
-                          onChange={(event) =>
-                            setEducationInstitutionDraft(event.target.value)
-                          }
-                          placeholder="Institution"
-                          className="form-input"
-                        />
-                        <input
-                          value={educationDegreeDraft}
-                          onChange={(event) =>
-                            setEducationDegreeDraft(event.target.value)
-                          }
-                          placeholder="Degree"
-                          className="form-input"
-                        />
-                        <input
-                          value={educationFieldDraft}
-                          onChange={(event) =>
-                            setEducationFieldDraft(event.target.value)
-                          }
-                          placeholder="Field of study"
-                          className="form-input"
-                        />
-                        <input
-                          value={educationYearDraft}
-                          onChange={(event) =>
-                            setEducationYearDraft(event.target.value)
-                          }
-                          type="number"
-                          placeholder="Graduation year"
-                          className="form-input"
-                        />
-                        <div className="sm:col-span-2 flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void addEducationEntry()}
-                            disabled={isSavingEducation}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-                          >
-                            {isSavingEducation ? "Saving..." : "Save education"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsAddingEducation(false);
-                              setEducationError("");
-                            }}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                          >
-                            Cancel
-                          </button>
+                          ))}
                         </div>
-                        {educationError ? (
-                          <p
-                            className="sm:col-span-2 text-xs text-red-300"
-                            role="alert"
+                      ) : null}
+
+                      {isSelf && isAddingEducation ? (
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <input
+                            value={educationInstitutionDraft}
+                            onChange={(event) =>
+                              setEducationInstitutionDraft(event.target.value)
+                            }
+                            placeholder="Institution"
+                            className="form-input"
+                          />
+                          <input
+                            value={educationDegreeDraft}
+                            onChange={(event) =>
+                              setEducationDegreeDraft(event.target.value)
+                            }
+                            placeholder="Degree"
+                            className="form-input"
+                          />
+                          <input
+                            value={educationFieldDraft}
+                            onChange={(event) =>
+                              setEducationFieldDraft(event.target.value)
+                            }
+                            placeholder="Field of study"
+                            className="form-input"
+                          />
+                          <input
+                            value={educationYearDraft}
+                            onChange={(event) =>
+                              setEducationYearDraft(event.target.value)
+                            }
+                            type="number"
+                            placeholder="Graduation year"
+                            className="form-input"
+                          />
+                          <div className="sm:col-span-2 flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => void addEducationEntry()}
+                              disabled={isSavingEducation}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                            >
+                              {isSavingEducation ? "Saving..." : "Save education"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingEducation(false);
+                                setEducationError("");
+                              }}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {educationError ? (
+                            <p
+                              className="sm:col-span-2 text-xs text-red-300"
+                              role="alert"
+                            >
+                              {educationError}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  ) : null}
+
+                  {engineerPortfolioItems.length > 0 || isSelf ? (
+                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          Portfolio
+                        </h2>
+                        {isSelf && !isAddingPortfolio ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingPortfolio(true)}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
                           >
-                            {educationError}
-                          </p>
+                            + Add
+                          </button>
                         ) : null}
                       </div>
-                    ) : null}
-                  </article>
-                ) : null}
 
-                {engineerPortfolioItems.length > 0 || isSelf ? (
-                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        Portfolio
-                      </h2>
-                      {isSelf && !isAddingPortfolio ? (
+                      {engineerPortfolioItems.length === 0 &&
+                      isSelf &&
+                      !isAddingPortfolio ? (
                         <button
                           type="button"
                           onClick={() => setIsAddingPortfolio(true)}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
                         >
-                          + Add
+                          + Add portfolio
                         </button>
                       ) : null}
-                    </div>
 
-                    {engineerPortfolioItems.length === 0 &&
-                    isSelf &&
-                    !isAddingPortfolio ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingPortfolio(true)}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add portfolio
-                      </button>
-                    ) : null}
+                      {engineerPortfolioItems.length > 0 ? (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                          {engineerPortfolioItems.map((item, index) => {
+                            const key =
+                              "_id" in item ? item._id : `${item.title}-${index}`;
+                            return (
+                              <div
+                                key={key}
+                                className="rounded-xl border border-white/10 bg-void/40 p-4"
+                              >
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.title}
+                                  className="h-36 w-full rounded-lg object-cover"
+                                />
+                                <div className="mt-3 flex items-start justify-between gap-2">
+                                  <h3 className="text-sm font-semibold text-white">
+                                    {item.title}
+                                  </h3>
+                                  {isSelf && "_id" in item ? (
+                                    <button
+                                      type="button"
+                                      disabled={deletingItemId === item._id}
+                                      onClick={() =>
+                                        void deleteOwnItem("portfolio", item._id)
+                                      }
+                                      className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
+                                    >
+                                      {deletingItemId === item._id
+                                        ? "Removing..."
+                                        : "Delete"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                                <p className="mt-2 text-xs leading-5 text-white/60">
+                                  {item.description}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
 
-                    {engineerPortfolioItems.length > 0 ? (
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        {engineerPortfolioItems.map((item, index) => {
-                          const key =
-                            "_id" in item ? item._id : `${item.title}-${index}`;
-                          return (
-                            <div
-                              key={key}
-                              className="rounded-xl border border-white/10 bg-void/40 p-4"
+                      {isSelf && isAddingPortfolio ? (
+                        <form
+                          onSubmit={(event) => void uploadPortfolio(event)}
+                          className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                        >
+                          <input
+                            value={portfolioTitle}
+                            onChange={(event) =>
+                              setPortfolioTitle(event.target.value)
+                            }
+                            placeholder="Project title"
+                            className="form-input"
+                          />
+                          <textarea
+                            value={portfolioDescription}
+                            onChange={(event) =>
+                              setPortfolioDescription(event.target.value)
+                            }
+                            placeholder="Describe your contribution"
+                            rows={3}
+                            className="form-input"
+                          />
+                          <input
+                            ref={portfolioFileInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                          />
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="submit"
+                              disabled={isUploadingPortfolio}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
-                              <img
-                                src={item.imageUrl}
-                                alt={item.title}
-                                className="h-36 w-full rounded-lg object-cover"
-                              />
-                              <div className="mt-3 flex items-start justify-between gap-2">
-                                <h3 className="text-sm font-semibold text-white">
-                                  {item.title}
-                                </h3>
-                                {isSelf && "_id" in item ? (
+                              {isUploadingPortfolio
+                                ? "Uploading..."
+                                : "Save portfolio"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsAddingPortfolio(false)}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {portfolioError ? (
+                            <p className="text-xs text-red-300" role="alert">
+                              {portfolioError}
+                            </p>
+                          ) : null}
+                        </form>
+                      ) : null}
+                    </article>
+                  ) : null}
+
+                  {engineerCertificateItems.length > 0 || isSelf ? (
+                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <h2 className="font-heading text-2xl font-bold text-white">
+                          Certificates
+                        </h2>
+                        {isSelf && !isAddingCertificate ? (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingCertificate(true)}
+                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                          >
+                            + Add
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {engineerCertificateItems.length === 0 &&
+                      isSelf &&
+                      !isAddingCertificate ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingCertificate(true)}
+                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
+                        >
+                          + Add certificate
+                        </button>
+                      ) : null}
+
+                      {engineerCertificateItems.length > 0 ? (
+                        <div className="mt-4 space-y-3">
+                          {engineerCertificateItems.map((certificate, index) => {
+                            const key =
+                              "_id" in certificate
+                                ? certificate._id
+                                : `${certificate.title}-${index}`;
+                            const href =
+                              "fileUrl" in certificate
+                                ? certificate.fileUrl
+                                : null;
+                            return (
+                              <article
+                                key={key}
+                                className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                              >
+                                <div>
+                                  {href ? (
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-sm font-semibold text-primary transition-colors hover:text-glow"
+                                    >
+                                      {certificate.title}
+                                    </a>
+                                  ) : (
+                                    <p className="text-sm font-semibold text-white">
+                                      {certificate.title}
+                                    </p>
+                                  )}
+                                  <p className="mt-1 text-xs text-white/45">
+                                    Uploaded {formatDate(certificate.uploadedAt)}
+                                  </p>
+                                </div>
+                                {isSelf && "_id" in certificate ? (
                                   <button
                                     type="button"
-                                    disabled={deletingItemId === item._id}
+                                    disabled={deletingItemId === certificate._id}
                                     onClick={() =>
-                                      void deleteOwnItem("portfolio", item._id)
+                                      void deleteOwnItem(
+                                        "certificates",
+                                        certificate._id,
+                                      )
                                     }
                                     className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
                                   >
-                                    {deletingItemId === item._id
+                                    {deletingItemId === certificate._id
                                       ? "Removing..."
                                       : "Delete"}
                                   </button>
                                 ) : null}
-                              </div>
-                              <p className="mt-2 text-xs leading-5 text-white/60">
-                                {item.description}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {isSelf && isAddingPortfolio ? (
-                      <form
-                        onSubmit={(event) => void uploadPortfolio(event)}
-                        className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
-                      >
-                        <input
-                          value={portfolioTitle}
-                          onChange={(event) =>
-                            setPortfolioTitle(event.target.value)
-                          }
-                          placeholder="Project title"
-                          className="form-input"
-                        />
-                        <textarea
-                          value={portfolioDescription}
-                          onChange={(event) =>
-                            setPortfolioDescription(event.target.value)
-                          }
-                          placeholder="Describe your contribution"
-                          rows={3}
-                          className="form-input"
-                        />
-                        <input
-                          ref={portfolioFileInputRef}
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
-                        />
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="submit"
-                            disabled={isUploadingPortfolio}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-                          >
-                            {isUploadingPortfolio
-                              ? "Uploading..."
-                              : "Save portfolio"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingPortfolio(false)}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                          >
-                            Cancel
-                          </button>
+                              </article>
+                            );
+                          })}
                         </div>
-                        {portfolioError ? (
-                          <p className="text-xs text-red-300" role="alert">
-                            {portfolioError}
-                          </p>
-                        ) : null}
-                      </form>
-                    ) : null}
-                  </article>
-                ) : null}
+                      ) : null}
 
-                {engineerCertificateItems.length > 0 || isSelf ? (
-                  <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <h2 className="font-heading text-2xl font-bold text-white">
-                        Certificates
-                      </h2>
-                      {isSelf && !isAddingCertificate ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingCertificate(true)}
-                          className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                      {isSelf && isAddingCertificate ? (
+                        <form
+                          onSubmit={(event) => void uploadCertificate(event)}
+                          className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
                         >
-                          + Add
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {engineerCertificateItems.length === 0 &&
-                    isSelf &&
-                    !isAddingCertificate ? (
-                      <button
-                        type="button"
-                        onClick={() => setIsAddingCertificate(true)}
-                        className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                      >
-                        + Add certificate
-                      </button>
-                    ) : null}
-
-                    {engineerCertificateItems.length > 0 ? (
-                      <div className="mt-4 space-y-3">
-                        {engineerCertificateItems.map((certificate, index) => {
-                          const key =
-                            "_id" in certificate
-                              ? certificate._id
-                              : `${certificate.title}-${index}`;
-                          const href =
-                            "fileUrl" in certificate
-                              ? certificate.fileUrl
-                              : null;
-                          return (
-                            <article
-                              key={key}
-                              className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"
+                          <input
+                            value={certificateTitle}
+                            onChange={(event) =>
+                              setCertificateTitle(event.target.value)
+                            }
+                            placeholder="Certificate title"
+                            className="form-input"
+                          />
+                          <input
+                            ref={certificateFileInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,application/pdf"
+                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
+                          />
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="submit"
+                              disabled={isUploadingCertificate}
+                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                             >
-                              <div>
-                                {href ? (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm font-semibold text-primary transition-colors hover:text-glow"
-                                  >
-                                    {certificate.title}
-                                  </a>
-                                ) : (
-                                  <p className="text-sm font-semibold text-white">
-                                    {certificate.title}
-                                  </p>
-                                )}
-                                <p className="mt-1 text-xs text-white/45">
-                                  Uploaded {formatDate(certificate.uploadedAt)}
-                                </p>
-                              </div>
-                              {isSelf && "_id" in certificate ? (
-                                <button
-                                  type="button"
-                                  disabled={deletingItemId === certificate._id}
-                                  onClick={() =>
-                                    void deleteOwnItem(
-                                      "certificates",
-                                      certificate._id,
-                                    )
-                                  }
-                                  className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-red-300"
-                                >
-                                  {deletingItemId === certificate._id
-                                    ? "Removing..."
-                                    : "Delete"}
-                                </button>
-                              ) : null}
-                            </article>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-
-                    {isSelf && isAddingCertificate ? (
-                      <form
-                        onSubmit={(event) => void uploadCertificate(event)}
-                        className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
-                      >
-                        <input
-                          value={certificateTitle}
-                          onChange={(event) =>
-                            setCertificateTitle(event.target.value)
-                          }
-                          placeholder="Certificate title"
-                          className="form-input"
-                        />
-                        <input
-                          ref={certificateFileInputRef}
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,application/pdf"
-                          className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-white"
-                        />
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="submit"
-                            disabled={isUploadingCertificate}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
-                          >
-                            {isUploadingCertificate
-                              ? "Uploading..."
-                              : "Save certificate"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingCertificate(false)}
-                            className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        {certificateError ? (
-                          <p className="text-xs text-red-300" role="alert">
-                            {certificateError}
-                          </p>
-                        ) : null}
-                      </form>
-                    ) : null}
-                  </article>
-                ) : null}
-
-                {(reviews?.reviews.length ?? 0) > 0 || isSelf ? (
-                  <article
-                    id="engineer-reviews"
-                    className="rounded-2xl border border-white/10 bg-surface p-6"
-                  >
-                    <div className="flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                          Client perspectives
-                        </p>
-                        <h2 className="mt-1 font-heading text-2xl font-bold text-white">
-                          Reviews
-                        </h2>
-                      </div>
-                      {reviews && reviews.totalReviews > 0 ? (
-                        <span className="text-sm font-semibold text-amber-300">
-                          {reviews.averageRating.toFixed(1)} ★
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {reviewsError ? (
-                      <p className="mt-4 text-sm text-red-200">
-                        {reviewsError}
-                      </p>
-                    ) : !reviews ? (
-                      <p className="mt-4 text-sm text-white/50">
-                        Loading reviews...
-                      </p>
-                    ) : reviews.reviews.length === 0 ? (
-                      <p className="mt-4 text-sm text-white/55">
-                        No reviews yet.
-                      </p>
-                    ) : (
-                      <div className="mt-5 space-y-4">
-                        <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                          <p className="text-xs font-semibold text-white/60">
-                            Rating breakdown
-                          </p>
-                          <div className="mt-3 space-y-2">
-                            {reviewBreakdown.map((row) => (
-                              <div
-                                key={row.stars}
-                                className="grid grid-cols-[30px_1fr_38px] items-center gap-2"
-                              >
-                                <span className="text-xs text-white/65">
-                                  {row.stars}★
-                                </span>
-                                <div className="h-2 rounded-full bg-white/10">
-                                  <div
-                                    className="h-2 rounded-full bg-primary"
-                                    style={{ width: `${row.percent}%` }}
-                                  />
-                                </div>
-                                <span className="text-right text-xs text-white/60">
-                                  {row.count}
-                                </span>
-                              </div>
-                            ))}
+                              {isUploadingCertificate
+                                ? "Uploading..."
+                                : "Save certificate"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsAddingCertificate(false)}
+                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                            >
+                              Cancel
+                            </button>
                           </div>
-                        </div>
-
-                        {reviews.reviews.map((review) => (
-                          <div
-                            key={review.id}
-                            className="rounded-xl border border-white/10 bg-void/40 p-4"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-center gap-3">
-                                <Avatar
-                                  name={review.client.name}
-                                  photoUrl={review.client.profilePhotoUrl}
-                                  size="sm"
-                                />
-                                <div>
-                                  <p className="text-sm font-semibold text-white">
-                                    {review.client.name}
-                                  </p>
-                                  <p className="text-xs text-white/40">
-                                    Client
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-sm tracking-wide text-amber-300">
-                                {Array.from({ length: 5 }, (_, index) =>
-                                  index < review.rating ? "★" : "☆",
-                                ).join("")}
-                              </span>
-                            </div>
-                            <p className="mt-4 text-sm leading-6 text-white/75">
-                              {review.reviewText}
+                          {certificateError ? (
+                            <p className="text-xs text-red-300" role="alert">
+                              {certificateError}
                             </p>
-                            {review.engineerReply ? (
-                              <div className="mt-4 border-l-2 border-primary/50 pl-4">
-                                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                                  Engineer reply
-                                </p>
-                                <p className="mt-1 text-sm leading-6 text-white/65">
-                                  {review.engineerReply}
-                                </p>
-                              </div>
-                            ) : isSelf && currentUser?.role === "engineer" ? (
-                              <div className="mt-4">
-                                {replyingReviewId === review.id ? (
-                                  <>
-                                    <textarea
-                                      value={replyText}
-                                      onChange={(event) =>
-                                        setReplyText(
-                                          event.target.value.slice(0, 500),
-                                        )
-                                      }
-                                      maxLength={500}
-                                      rows={3}
-                                      placeholder="Write a thoughtful reply..."
-                                      className="w-full rounded-lg border border-white/15 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/35 outline-none focus:border-primary/60"
-                                    />
-                                    <div className="mt-2 flex justify-end gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setReplyingReviewId(null)
-                                        }
-                                        className="rounded-lg px-3 py-2 text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                                      >
-                                        Cancel
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void submitReply(review.id)
-                                        }
-                                        disabled={isSubmittingReply}
-                                        className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                                      >
-                                        {isSubmittingReply
-                                          ? "Sending..."
-                                          : "Send reply"}
-                                      </button>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setReplyingReviewId(review.id)
-                                    }
-                                    className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                                  >
-                                    Reply
-                                  </button>
-                                )}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </article>
-                ) : null}
+                          ) : null}
+                        </form>
+                      ) : null}
+                    </article>
+                  ) : null}
 
-                <div
-                  className={entrance(3).className}
-                  style={entrance(3).style}
-                >
-                  {renderPostsSection(
-                    isSelf && currentUser?.role === "engineer",
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className={entrance(2).className} style={entrance(2).style}>
-                {renderPostsSection(false)}
-              </div>
-            )}
+                  {(reviews?.reviews.length ?? 0) > 0 || isSelf ? (
+                    <article
+                      id="engineer-reviews"
+                      className="rounded-2xl border border-white/10 bg-surface p-6"
+                    >
+                      <div className="flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                            Client perspectives
+                          </p>
+                          <h2 className="mt-1 font-heading text-2xl font-bold text-white">
+                            Reviews
+                          </h2>
+                        </div>
+                        {reviews && reviews.totalReviews > 0 ? (
+                          <span className="text-sm font-semibold text-amber-300">
+                            {reviews.averageRating.toFixed(1)} ★
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {reviewsError ? (
+                        <p className="mt-4 text-sm text-red-200">
+                          {reviewsError}
+                        </p>
+                      ) : !reviews ? (
+                        <p className="mt-4 text-sm text-white/50">
+                          Loading reviews...
+                        </p>
+                      ) : reviews.reviews.length === 0 ? (
+                        <p className="mt-4 text-sm text-white/55">
+                          No reviews yet.
+                        </p>
+                      ) : (
+                        <div className="mt-5 space-y-4">
+                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
+                            <p className="text-xs font-semibold text-white/60">
+                              Rating breakdown
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              {reviewBreakdown.map((row) => (
+                                <div
+                                  key={row.stars}
+                                  className="grid grid-cols-[30px_1fr_38px] items-center gap-2"
+                                >
+                                  <span className="text-xs text-white/65">
+                                    {row.stars}★
+                                  </span>
+                                  <div className="h-2 rounded-full bg-white/10">
+                                    <div
+                                      className="h-2 rounded-full bg-primary"
+                                      style={{ width: `${row.percent}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-right text-xs text-white/60">
+                                    {row.count}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {reviews.reviews.map((review) => (
+                            <div
+                              key={review.id}
+                              className="rounded-xl border border-white/10 bg-void/40 p-4"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <Avatar
+                                    name={review.client.name}
+                                    photoUrl={review.client.profilePhotoUrl}
+                                    size="sm"
+                                  />
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">
+                                      {review.client.name}
+                                    </p>
+                                    <p className="text-xs text-white/40">
+                                      Client
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-sm tracking-wide text-amber-300">
+                                  {Array.from({ length: 5 }, (_, index) =>
+                                    index < review.rating ? "★" : "☆",
+                                  ).join("")}
+                                </span>
+                              </div>
+                              <p className="mt-4 text-sm leading-6 text-white/75">
+                                {review.reviewText}
+                              </p>
+                              {review.engineerReply ? (
+                                <div className="mt-4 border-l-2 border-primary/50 pl-4">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+                                    Engineer reply
+                                  </p>
+                                  <p className="mt-1 text-sm leading-6 text-white/65">
+                                    {review.engineerReply}
+                                  </p>
+                                </div>
+                              ) : isSelf && currentUser?.role === "engineer" ? (
+                                <div className="mt-4">
+                                  {replyingReviewId === review.id ? (
+                                    <>
+                                      <textarea
+                                        value={replyText}
+                                        onChange={(event) =>
+                                          setReplyText(
+                                            event.target.value.slice(0, 500),
+                                          )
+                                        }
+                                        maxLength={500}
+                                        rows={3}
+                                        placeholder="Write a thoughtful reply..."
+                                        className="w-full rounded-lg border border-white/15 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/35 outline-none focus:border-primary/60"
+                                      />
+                                      <div className="mt-2 flex justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setReplyingReviewId(null)
+                                          }
+                                          className="rounded-lg px-3 py-2 text-xs font-semibold text-white/60 transition-colors hover:text-white"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            void submitReply(review.id)
+                                          }
+                                          disabled={isSubmittingReply}
+                                          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                                        >
+                                          {isSubmittingReply
+                                            ? "Sending..."
+                                            : "Send reply"}
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setReplyingReviewId(review.id)
+                                      }
+                                      className="text-xs font-semibold text-primary transition-colors hover:text-white"
+                                    >
+                                      Reply
+                                    </button>
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ) : null}
+
+                  <div
+                    className={entrance(3).className}
+                    style={entrance(3).style}
+                  >
+                    {renderPostsSection(
+                      isSelf && currentUser?.role === "engineer",
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {lightboxImageUrl ? (

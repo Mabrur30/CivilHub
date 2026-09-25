@@ -22,6 +22,9 @@ import {
   type EquipmentBookingConditionPhoto,
   type EquipmentMyBooking,
 } from "./equipment.api";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { formatCurrency } from "../lib/format";
+import { moneyValue } from "../lib/money";
 
 type TimelineState = "complete" | "current" | "upcoming";
 
@@ -44,12 +47,6 @@ interface DepositDraft {
   claimAmount: string;
 }
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(value);
 
 const formatDateTime = (value: string | null): string => {
   if (!value) return "Not recorded yet";
@@ -472,7 +469,7 @@ export function BookingDetailPage(): ReactElement {
         claimNotes: depositDraft.claimNotes,
         claimAmount:
           depositDraft.resolution === "claimed"
-            ? Number.parseFloat(depositDraft.claimAmount)
+            ? (moneyValue(depositDraft.claimAmount) ?? Number.NaN)
             : undefined,
       });
       await loadBooking();
@@ -841,20 +838,24 @@ export function BookingDetailPage(): ReactElement {
                     placeholder="Claim reason"
                     className="w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
                   />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={depositDraft.claimAmount}
-                    onChange={(event) =>
-                      setDepositDraft((current) => ({
-                        ...current,
-                        claimAmount: event.target.value,
-                      }))
-                    }
-                    placeholder="Claim amount"
-                    className="w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
-                  />
+                  <div className="grid gap-1.5">
+                    <label
+                      htmlFor="deposit-claim-amount"
+                      className="text-sm font-semibold text-white/80"
+                    >
+                      Amount to claim
+                    </label>
+                    <MoneyInput
+                      id="deposit-claim-amount"
+                      value={depositDraft.claimAmount}
+                      onChange={(value) =>
+                        setDepositDraft((current) => ({
+                          ...current,
+                          claimAmount: value,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               ) : null}
 

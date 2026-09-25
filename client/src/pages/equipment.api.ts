@@ -1,3 +1,5 @@
+import { toPlainAmount } from "../lib/money";
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
@@ -223,8 +225,8 @@ export const createEquipmentListing = async (
   formData.append("title", payload.title.trim());
   formData.append("description", payload.description.trim());
   formData.append("category", payload.category);
-  formData.append("dailyRate", payload.dailyRate.trim());
-  formData.append("securityDeposit", payload.securityDeposit.trim());
+  formData.append("dailyRate", toPlainAmount(payload.dailyRate));
+  formData.append("securityDeposit", toPlainAmount(payload.securityDeposit));
   formData.append("location", payload.location.trim());
   payload.photos.forEach((file) => formData.append("photos", file));
 
@@ -262,7 +264,15 @@ export const updateEquipmentListing = async (
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      ...payload,
+      ...(payload.dailyRate !== undefined
+        ? { dailyRate: toPlainAmount(payload.dailyRate) }
+        : {}),
+      ...(payload.securityDeposit !== undefined
+        ? { securityDeposit: toPlainAmount(payload.securityDeposit) }
+        : {}),
+    }),
   });
   const body = await parseJsonResponse(response);
 

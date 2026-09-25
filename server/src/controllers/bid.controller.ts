@@ -5,6 +5,9 @@ import { Bid, type IBid } from "../models/Bid.model";
 import { Notification } from "../models/Notification.model";
 import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Project, type IProject } from "../models/Project.model";
+import { Review } from "../models/Review.model";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
+import { budgetLabel } from "../utils/money";
 
 export interface SubmitBidRequestBody {
   projectId: string;
@@ -28,11 +31,20 @@ interface ClientBidResponse {
   message: string;
   submittedDate: string;
   status: "pending" | "accepted" | "declined";
+  engineerPhotoUrl: string | null;
+  engineerRating: number | null;
+  engineerReviewCount: number;
+  /** Projects this engineer has delivered on CivilHub. */
+  engineerCompletedProjects: number;
 }
 
 interface ProjectBidsResponse {
   projectId: string;
   projectName: string;
+  projectStatus: IProject["status"];
+  budgetMin: number | null;
+  budgetMax: number | null;
+  budgetRange: string;
   bids: ClientBidResponse[];
 }
 
@@ -168,7 +180,7 @@ export const getBidsForMyProjects = async (
     }
 
     const projects = await Project.find({ client: req.user.userId })
-      .select("_id title name")
+      .select("_id title name status budgetMin budgetMax budgetRange")
       .sort({ createdAt: -1 })
       .exec();
     const projectIds = projects.map((project) => project._id);
@@ -177,19 +189,66 @@ export const getBidsForMyProjects = async (
       .sort({ createdAt: -1 })
       .exec();
 
+    // What a client weighs besides price: who the engineer is, how past
+    // clients rated them, and how much they have delivered here.
+    const engineerIds = [
+      ...new Set(bids.map((bid) => extractUserId(bid.engineer))),
+    ]
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    const [photos, ratingRows, completedRows] = await Promise.all([
+      getProfilePhotoMap(engineerIds),
+      Review.aggregate<{ _id: Types.ObjectId; rating: number; count: number }>([
+        {
+          $match: {
+            engineer: { $in: engineerIds },
+            project: { $exists: true, $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: "$engineer",
+            rating: { $avg: "$rating" },
+            count: { $sum: 1 },
+          },
+        },
+      ]).exec(),
+      Project.aggregate<{ _id: Types.ObjectId; count: number }>([
+        {
+          $match: {
+            assignedEngineer: { $in: engineerIds },
+            status: "completed",
+          },
+        },
+        { $group: { _id: "$assignedEngineer", count: { $sum: 1 } } },
+      ]).exec(),
+    ]);
+    const ratings = new Map(
+      ratingRows.map((row) => [row._id.toString(), row]),
+    );
+    const completedCounts = new Map(
+      completedRows.map((row) => [row._id.toString(), row.count]),
+    );
+
     const bidsByProject = new Map<string, ClientBidResponse[]>();
     bids.forEach((bid) => {
       const engineer = bid.engineer as unknown as { name?: string };
       const projectId = bid.project.toString();
       const projectBids = bidsByProject.get(projectId) ?? [];
+      const engineerId = extractUserId(bid.engineer);
+      const rating = ratings.get(engineerId);
       projectBids.push({
         id: bid._id.toString(),
-        engineerId: extractUserId(bid.engineer),
+        engineerId,
         engineerName: engineer.name ?? "Unknown engineer",
         amount: bid.amount,
         message: bid.message,
         submittedDate: bid.createdAt.toISOString(),
         status: bid.status,
+        engineerPhotoUrl: photos.get(engineerId) ?? null,
+        engineerRating: rating ? Math.round(rating.rating * 10) / 10 : null,
+        engineerReviewCount: rating?.count ?? 0,
+        engineerCompletedProjects: completedCounts.get(engineerId) ?? 0,
       });
       bidsByProject.set(projectId, projectBids);
     });
@@ -198,6 +257,10 @@ export const getBidsForMyProjects = async (
       .map((project) => ({
         projectId: project._id.toString(),
         projectName: project.title ?? project.name ?? "Untitled project",
+        projectStatus: project.status,
+        budgetMin: typeof project.budgetMin === "number" ? project.budgetMin : null,
+        budgetMax: typeof project.budgetMax === "number" ? project.budgetMax : null,
+        budgetRange: budgetLabel(project),
         bids: bidsByProject.get(project._id.toString()) ?? [],
       }))
       .filter((project) => project.bids.length > 0);

@@ -10,22 +10,27 @@ import {
   useEffect,
   useState,
 } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { formatRelativeTime } from "../components/dashboard/notificationUtils";
 import {
   inputClassName,
   panelClassName,
   primaryButtonBaseClassName,
   primaryButtonClassName,
+  inlineLinkClassName,
   quietLinkClassName,
 } from "../components/dashboard/ui/buttonStyles";
 import { Dialog } from "../components/dashboard/ui/Dialog";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { countOf, formatDate } from "../lib/format";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { moneyValue } from "../lib/money";
 
 interface MarketplaceProject {
   id: string;
   title: string;
+  clientId: string | null;
   clientName: string;
   description: string;
   budgetRange: string;
@@ -50,16 +55,16 @@ interface EngineerBidSummary {
   status: "pending" | "accepted" | "declined";
 }
 
-type BudgetFilter = "any" | "under-250k" | "250k-500k" | "over-500k";
+type BudgetFilter = "any" | "under-10l" | "10l-1cr" | "over-1cr";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const ALL_CATEGORIES = "All categories";
 
 const budgetOptions: { key: BudgetFilter; label: string }[] = [
   { key: "any", label: "Any budget" },
-  { key: "under-250k", label: "Under $250k" },
-  { key: "250k-500k", label: "$250k to $500k" },
-  { key: "over-500k", label: "Over $500k" },
+  { key: "under-10l", label: "Under ৳10 lakh" },
+  { key: "10l-1cr", label: "৳10 lakh to ৳1 crore" },
+  { key: "over-1cr", label: "Over ৳1 crore" },
 ];
 
 const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
@@ -68,6 +73,7 @@ const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
   return (
     typeof project.id === "string" &&
     typeof project.title === "string" &&
+    (typeof project.clientId === "string" || project.clientId === null) &&
     typeof project.clientName === "string" &&
     typeof project.description === "string" &&
     typeof project.budgetRange === "string" &&
@@ -96,26 +102,20 @@ const getErrorMessage = (value: unknown, fallback: string): string => {
   return fallback;
 };
 
-const BUDGET_NUMBER = /([\d][\d,]*(?:\.\d+)?)\s*([kKmM])?/g;
+const TEN_LAKH = 1_000_000;
+const ONE_CRORE = 10_000_000;
 
-// Budgets arrive as display strings ("$250,000 - $500,000", occasionally
-// "$250k"). Pull the numbers out so the budget filter compares real values;
-// a budget with no numbers ("Budget to be discussed") only matches "Any".
+// Budgets arrive as display strings ("৳25,00,000 - ৳50,00,000", older ones
+// "$250,000 - $500,000"). Each side is read with the same parser as the money
+// inputs; a budget with no numbers ("Budget to be discussed") only matches "Any".
 const parseBudgetRange = (
   budgetRange: string,
 ): { min: number; max: number } | null => {
-  const values = [...budgetRange.matchAll(BUDGET_NUMBER)]
-    .map(([, digits, suffix]) => {
-      const base = Number(digits.replace(/,/g, ""));
-      const multiplier =
-        suffix?.toLowerCase() === "m"
-          ? 1_000_000
-          : suffix?.toLowerCase() === "k"
-            ? 1_000
-            : 1;
-      return base * multiplier;
-    })
-    .filter((value) => Number.isFinite(value) && value > 0);
+  const values = budgetRange
+    .replace(/\$/g, "")
+    .split(/\s+-\s+|\s+to\s+/i)
+    .map((part) => moneyValue(part))
+    .filter((value): value is number => value !== null && value > 0);
 
   if (values.length === 0) return null;
   return { min: Math.min(...values), max: Math.max(...values) };
@@ -126,11 +126,11 @@ const matchesBudget = (budgetRange: string, filter: BudgetFilter): boolean => {
   if (filter === "any") return true;
   const range = parseBudgetRange(budgetRange);
   if (!range) return false;
-  if (filter === "under-250k") return range.min < 250_000;
-  if (filter === "250k-500k") {
-    return range.min <= 500_000 && range.max >= 250_000;
+  if (filter === "under-10l") return range.min < TEN_LAKH;
+  if (filter === "10l-1cr") {
+    return range.min <= ONE_CRORE && range.max >= TEN_LAKH;
   }
-  return range.max > 500_000;
+  return range.max > ONE_CRORE;
 };
 
 function BriefListSkeleton(): ReactElement {
@@ -189,7 +189,22 @@ function BriefRow({
         <h2 className="mt-3 font-heading text-2xl font-bold text-white">
           {project.title}
         </h2>
-        <p className="mt-1 text-sm text-white/55">{project.clientName}</p>
+        <p className="mt-1 text-sm text-white/55">
+          {project.clientId ? (
+            <Link
+              to={`/profile/${project.clientId}`}
+              state={{
+                backTo: "/dashboard/engineer/marketplace",
+                backLabel: "Back to Marketplace",
+              }}
+              className={inlineLinkClassName}
+            >
+              {project.clientName}
+            </Link>
+          ) : (
+            project.clientName
+          )}
+        </p>
         <p className="mt-3 line-clamp-3 max-w-[65ch] text-sm leading-6 text-white/60">
           {project.description}
         </p>
@@ -242,6 +257,8 @@ export function EngineerMarketplacePage(): ReactElement {
     new Set(),
   );
   const [successMessage, setSuccessMessage] = useState<string>("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedProjectId = searchParams.get("project");
 
   useEffect(() => {
     const loadProjects = async (): Promise<void> => {
@@ -289,6 +306,35 @@ export function EngineerMarketplacePage(): ReactElement {
     };
     void loadProjects();
   }, [retryKey]);
+
+  // A client profile links here with ?project=<id> so "Submit bid" there opens
+  // the same dialog here. The param is dropped once handled, so closing the
+  // dialog or refreshing does not reopen it.
+  useEffect(() => {
+    if (isLoading || !requestedProjectId) return;
+    const requested = projects.find(
+      (project) => project.id === requestedProjectId,
+    );
+    if (requested && !submittedProjectIds.has(requested.id)) {
+      setSelectedProject(requested);
+      setBid({ amount: "", message: "" });
+      setBidError("");
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("project");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    isLoading,
+    projects,
+    requestedProjectId,
+    setSearchParams,
+    submittedProjectIds,
+  ]);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -340,7 +386,7 @@ export function EngineerMarketplacePage(): ReactElement {
   ): Promise<void> => {
     event.preventDefault();
     if (!selectedProject) return;
-    const amount = Number(bid.amount.replace(/[$,]/g, ""));
+    const amount = moneyValue(bid.amount) ?? Number.NaN;
     if (!Number.isFinite(amount) || amount <= 0) {
       setBidError("Enter a price greater than zero.");
       return;
@@ -551,17 +597,13 @@ export function EngineerMarketplacePage(): ReactElement {
                   htmlFor="bid-amount"
                   className="text-sm font-semibold text-white/80"
                 >
-                  Your price ($)
+                  Your price
                 </label>
-                <input
+                <MoneyInput
                   id="bid-amount"
-                  inputMode="decimal"
                   value={bid.amount}
-                  onChange={(event) =>
-                    setBid({ ...bid, amount: event.target.value })
-                  }
-                  aria-describedby={bidError ? "bid-error" : undefined}
-                  className={inputClassName}
+                  onChange={(value) => setBid({ ...bid, amount: value })}
+                  describedBy={bidError ? "bid-error" : undefined}
                   autoFocus
                 />
               </div>

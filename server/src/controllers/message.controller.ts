@@ -4,7 +4,6 @@ import cloudinary, { uploadBuffer } from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
 import { Conversation } from "../models/Conversation.model";
-import { Engineer } from "../models/Engineer.model";
 import {
   MESSAGE_AUDIO_MAX_SECONDS,
   messageAttachmentTypes,
@@ -13,6 +12,7 @@ import {
 import { type IMessage, Message } from "../models/Message.model";
 import { Notification } from "../models/Notification.model";
 import { User, type UserRole } from "../models/User.model";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
 
 interface MessageError extends Error {
   statusCode: number;
@@ -57,28 +57,8 @@ const getParams = (req: AuthenticatedRequest): ConversationParams =>
 const createPairKey = (firstUserId: string, secondUserId: string): string =>
   [firstUserId, secondUserId].sort().join(":");
 
-const getEngineerPhotoMap = async (
-  users: PopulatedUser[],
-): Promise<Map<string, string>> => {
-  const engineerUserIds = users
-    .filter((user) => user.role === "engineer")
-    .map((user) => user._id);
-
-  if (engineerUserIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const engineers = await Engineer.find({ user: { $in: engineerUserIds } })
-    .select("user profilePhoto")
-    .exec();
-
-  return new Map(
-    engineers.map((engineer) => [
-      engineer.user.toString(),
-      engineer.profilePhoto?.url ?? "",
-    ]),
-  );
-};
+const getPhotoMap = (users: PopulatedUser[]): Promise<Map<string, string>> =>
+  getProfilePhotoMap(users.map((user) => user._id));
 
 const ensureAcceptedConnection = async (
   userId: string,
@@ -405,7 +385,7 @@ export const getMyConversations = async (
         Boolean(participant),
       );
 
-    const photoByUser = await getEngineerPhotoMap(otherUsers);
+    const photoByUser = await getPhotoMap(otherUsers);
 
     const conversationIds = conversations.map(
       (conversation) => conversation._id,
@@ -513,7 +493,7 @@ export const getMessages = async (
           index,
       );
 
-    const photoByUser = await getEngineerPhotoMap(senders);
+    const photoByUser = await getPhotoMap(senders);
 
     await Message.updateMany(
       {
@@ -537,7 +517,7 @@ export const getMessages = async (
     const otherParticipant = typedParticipants.find(
       (participant) => participant._id.toString() !== userId,
     );
-    const participantPhotoMap = await getEngineerPhotoMap(typedParticipants);
+    const participantPhotoMap = await getPhotoMap(typedParticipants);
 
     res.status(200).json({
       conversationId: conversation._id.toString(),
@@ -652,7 +632,7 @@ export const sendMessage = async (
     }
 
     const sender = await User.findById(userId).select("name role").exec();
-    const senderPhotoMap = await getEngineerPhotoMap(
+    const senderPhotoMap = await getPhotoMap(
       sender
         ? [
             {

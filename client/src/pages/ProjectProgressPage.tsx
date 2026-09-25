@@ -1,6 +1,26 @@
+import { PlusIcon } from "@phosphor-icons/react";
 import { type ReactElement, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { BackButton } from "../components/BackButton";
+import {
+  inputClassName,
+  panelClassName,
+  primaryButtonClassName,
+  rowDangerButtonClassName,
+  secondaryButtonClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { FormField } from "../components/dashboard/ui/FormField";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { ProgressBar } from "../components/dashboard/ui/ProgressBar";
+import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import {
+  ChangeRequestNote,
+  type PhaseChangeRequest,
+  PhaseActions,
+} from "../components/project/PhaseActions";
 import { useAuth } from "../context/AuthContext";
+import { countOf, formatCurrency } from "../lib/format";
+import { moneyValue } from "../lib/money";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -20,14 +40,19 @@ type PaymentPlan = "phase_by_phase" | "full_upfront";
 interface ProjectPhase {
   id: string;
   name: string;
-  description?: string;
+  description: string;
   order: number;
   status: ProjectPhaseStatus;
   dueDate: string | null;
   completedAt: string | null;
-  price?: number;
-  paymentStatus?: string;
-  paidAt?: string;
+  price: number;
+  paymentStatus: "paid" | "unpaid";
+  paidAt: string | null;
+  /** What approving this phase costs on the phase-by-phase plan. */
+  amountDue: number;
+  /** What has actually been charged for this phase. */
+  amountPaid: number;
+  changeRequest: PhaseChangeRequest | null;
   updatedAt: string;
 }
 
@@ -39,6 +64,7 @@ interface PhasePlanPhase {
   estimatedDueDate: string;
   order: number;
   paymentStatus: string;
+  amountDue?: number;
 }
 
 interface PhasePlan {
@@ -51,6 +77,10 @@ interface PhasePlan {
   advancePaidAt?: string;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt?: string;
+  /** The advance this plan needs; known before the client approves it. */
+  advanceAmount: number;
+  remainingBalance: number;
+  phasePlanFeedback: { note: string; rejectedAt: string } | null;
   phases: PhasePlanPhase[];
 }
 
@@ -98,16 +128,13 @@ interface ErrorResponse {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
-const statusOptions: Array<{
-  value: ProjectPhaseStatus;
-  label: string;
-}> = [
-  { value: "not_started", label: "Not started" },
-  { value: "in_progress", label: "In progress" },
-  { value: "awaiting_approval", label: "Awaiting approval" },
-  { value: "completed", label: "Completed" },
-  { value: "delayed", label: "Delayed" },
-];
+const statusLabels: Record<ProjectPhaseStatus, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  awaiting_approval: "Awaiting approval",
+  completed: "Completed",
+  delayed: "Delayed",
+};
 
 const statusBadgeClass: Record<ProjectPhaseStatus, string> = {
   not_started: "border-white/20 bg-white/10 text-white/70",
@@ -136,66 +163,6 @@ const formatDate = (value: string | null): string => {
     return value;
   }
   return date.toLocaleDateString();
-};
-
-const formatCurrency = (value: number): string => {
-  return `$${value.toFixed(2)}`;
-};
-
-type SummaryIconName = "phase" | "progress" | "milestone";
-
-const SummaryIcon = ({ name }: { name: SummaryIconName }): ReactElement => {
-  if (name === "progress") {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 19V5M4 19h16" />
-        <path d="m7 15 3-4 3 2 5-7" />
-      </svg>
-    );
-  }
-
-  if (name === "milestone") {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M6 21V4" />
-        <path d="M6 5c4-3 8 3 12 0v9c-4 3-8-3-12 0" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
 };
 
 const StatusIcon = ({
@@ -291,29 +258,6 @@ const StatusIcon = ({
   );
 };
 
-const CheckIcon = (): ReactElement => (
-  <svg
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="m5 12 4 4L19 6" />
-  </svg>
-);
-
-const CardAccentIcon = ({ paid }: { paid: boolean }): ReactElement => (
-  <span
-    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${paid ? "bg-emerald-300/10 text-emerald-300" : "bg-primary/10 text-primary"}`}
-  >
-    {paid ? <CheckIcon /> : <span className="text-lg font-semibold">$</span>}
-  </span>
-);
-
 export function ProjectProgressPage(): ReactElement {
   const { projectId } = useParams<{ projectId: string }>();
   const { currentUser } = useAuth();
@@ -339,6 +283,9 @@ export function ProjectProgressPage(): ReactElement {
     },
   ]);
   const [phasePlanErrors, setPhasePlanErrors] = useState<string[]>([]);
+  // What the engineer typed in each price box ("2.5 lakh"), kept so the box
+  // doesn't jump to digits mid-typing; the parsed number lives in the phase.
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [isSubmittingPhasePlan, setIsSubmittingPhasePlan] =
     useState<boolean>(false);
 
@@ -403,8 +350,18 @@ export function ProjectProgressPage(): ReactElement {
       setProjectProgress(progressData as ProjectProgressResponse);
 
       if (planRes.ok) {
-        const planData: unknown = await planRes.json();
-        setPhasePlan(planData as PhasePlan);
+        const planData = (await planRes.json()) as PhasePlan;
+        setPhasePlan(planData);
+        // Reopening a saved or rejected draft continues from its phases
+        // instead of an empty form.
+        if (planData.phasePlanStatus === "draft" && planData.phases.length > 0) {
+          setPhasePlanFormData(
+            planData.phases.map((phase) => ({
+              ...phase,
+              estimatedDueDate: phase.estimatedDueDate.slice(0, 10),
+            })),
+          );
+        }
       }
 
       if (reviewRes?.ok) {
@@ -519,7 +476,7 @@ export function ProjectProgressPage(): ReactElement {
     const totalAgreedValue = phasePlan?.totalAgreedValue || 0;
     if (Math.abs(totalPrice - totalAgreedValue) > 0.01) {
       errors.push(
-        `Phase total ($${totalPrice.toFixed(2)}) must equal project value ($${totalAgreedValue.toFixed(2)})`,
+        `Phase prices add up to ${formatCurrency(totalPrice)}, but the agreed project value is ${formatCurrency(totalAgreedValue)}.`,
       );
     }
 
@@ -721,34 +678,56 @@ export function ProjectProgressPage(): ReactElement {
     }
   };
 
-  const handlePayForPhase = async (phaseId: string): Promise<void> => {
-    if (!projectId) {
-      return;
-    }
+  // Approving completes the phase, and charges for it on the phase-by-phase
+  // plan (or collects the remaining balance on the final full-upfront phase).
+  const handleApprovePhase = async (phaseId: string): Promise<void> => {
+    if (!projectId) return;
 
-    setIsProcessingPayment(true);
-    setPaymentError("");
+    setUpdatingPhaseId(phaseId);
+    setUpdateError("");
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/projects/${projectId}/phases/${phaseId}/payments`,
+        `${API_BASE_URL}/api/projects/${projectId}/phases/${phaseId}/approve`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!response.ok) {
+        setUpdateError(getErrorMessage(await response.json()));
+        return;
+      }
+      await loadData();
+    } catch {
+      setUpdateError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setUpdatingPhaseId(null);
+    }
+  };
+
+  const handleRequestChanges = async (
+    phaseId: string,
+    note: string,
+  ): Promise<boolean> => {
+    if (!projectId) return false;
+
+    setUpdateError("");
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/projects/${projectId}/phases/${phaseId}/request-changes`,
         {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note }),
         },
       );
-
       if (!response.ok) {
-        const errorBody: unknown = await response.json();
-        setPaymentError(getErrorMessage(errorBody));
-        return;
+        setUpdateError(getErrorMessage(await response.json()));
+        return false;
       }
-
       await loadData();
+      return true;
     } catch {
-      setPaymentError("Unable to process payment. Please try again.");
-    } finally {
-      setIsProcessingPayment(false);
+      setUpdateError("Unable to connect to CivilHub. Please try again.");
+      return false;
     }
   };
 
@@ -832,179 +811,175 @@ export function ProjectProgressPage(): ReactElement {
     projectProgress?.phases.filter((phase) => phase.status === "completed")
       .length ?? 0;
 
+  const isEngineerViewer = currentUser?.role === "engineer";
+  const isClientViewer = currentUser?.role === "client";
+  const totalPhases = projectProgress?.phases.length ?? 0;
+  const phasePaymentsPaid =
+    projectProgress?.phases.reduce((sum, phase) => sum + phase.amountPaid, 0) ??
+    0;
+
+  // One sentence saying where the project stands and whose move it is.
+  const getHeaderSummary = (): string => {
+    if (!phasePlan || !projectProgress) return "";
+    switch (phasePlan.phasePlanStatus) {
+      case "not_created":
+      case "draft":
+        return isEngineerViewer
+          ? "Split the work into phases so the client can approve the plan."
+          : "Your engineer is drafting the phase plan. You'll review it before any work starts.";
+      case "pending_client_approval":
+        return isEngineerViewer
+          ? "Your phase plan is with the client for review."
+          : "The phase plan is ready for your review.";
+      case "approved":
+        if (!phasePlan.advancePaid) {
+          return isEngineerViewer
+            ? "The plan is approved. Work can start once the client pays the advance."
+            : "Pay the advance so work can start.";
+        }
+        return `${completedPhaseCount} of ${totalPhases} phases approved.`;
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <Link
-        to={backPath}
-        className="text-sm font-semibold text-primary hover:text-glow"
-      >
-        &lt;- Back to projects
-      </Link>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <BackButton to={backPath} label="Back to projects" />
 
       {isLoading ? (
-        <section className="animate-pulse rounded-2xl border border-white/10 bg-surface p-8">
-          <div className="h-4 w-1/4 rounded bg-white/10" />
-          <div className="mt-4 h-8 w-2/3 rounded bg-white/10" />
-          <div className="mt-8 h-3 w-full rounded bg-white/10" />
+        <section className={`${panelClassName} animate-pulse p-8`} aria-label="Loading project">
+          <div className="h-9 w-2/3 rounded bg-white/10" />
+          <div className="mt-4 h-4 w-1/3 rounded bg-white/10" />
         </section>
       ) : error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel message={error} onRetry={() => void loadData()} />
       ) : projectProgress && phasePlan ? (
         <>
-          <section className="rounded-2xl border border-white/10 bg-surface p-6 shadow-[0_18px_50px_rgba(0,0,0,0.18)] sm:p-8">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-              Project progress
-            </p>
-            <h1 className="mt-3 font-heading text-4xl font-bold text-white">
+          <header>
+            <h1 className="font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
               {projectProgress.project.name}
             </h1>
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                    Current phase
-                  </p>
-                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
-                    <SummaryIcon name="phase" />
-                  </span>
-                </div>
-                <p className="mt-3 text-sm font-semibold text-white/90">
-                  {projectProgress.project.currentPhaseName}
-                </p>
+            <p className="mt-3 max-w-2xl text-white/60">{getHeaderSummary()}</p>
+          </header>
+
+          <section
+            aria-label="Project summary"
+            className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-3"
+          >
+            <div className="bg-surface p-5 sm:p-6">
+              <p className="text-sm text-white/55">Progress</p>
+              <div className="mt-3">
+                <ProgressBar
+                  value={projectProgress.project.progressPercentage}
+                  label="Project progress"
+                />
               </div>
-              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                    Progress
-                  </p>
-                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
-                    <SummaryIcon name="progress" />
-                  </span>
-                </div>
-                <p className="mt-2 text-2xl font-bold text-white">
-                  {projectProgress.project.progressPercentage}%
-                </p>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
-                    style={{
-                      width: `${projectProgress.project.progressPercentage}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="group rounded-xl border border-white/10 bg-void/45 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/45">
-                    Next milestone
-                  </p>
-                  <span className="text-primary transition-transform duration-200 group-hover:scale-110">
-                    <SummaryIcon name="milestone" />
-                  </span>
-                </div>
-                <p className="mt-3 text-sm font-semibold text-white/90">
-                  {projectProgress.project.nextMilestone}
-                </p>
-                <p className="mt-1 text-xs text-white/55">
-                  Due {formatDate(projectProgress.project.nextMilestoneDueDate)}
-                </p>
-              </div>
+              <p className="mt-2 text-xs text-white/45">
+                {totalPhases > 0
+                  ? `${completedPhaseCount} of ${totalPhases} phases approved`
+                  : "No phases yet"}
+              </p>
+            </div>
+            <div className="bg-surface p-5 sm:p-6">
+              <p className="text-sm text-white/55">Current phase</p>
+              <p className="mt-2 font-semibold text-white">
+                {projectProgress.project.currentPhaseName}
+              </p>
+            </div>
+            <div className="bg-surface p-5 sm:p-6">
+              <p className="text-sm text-white/55">Next milestone</p>
+              <p className="mt-2 font-semibold text-white">
+                {projectProgress.project.nextMilestone}
+              </p>
+              <p className="mt-1 text-xs text-white/45">
+                {projectProgress.project.nextMilestoneDueDate
+                  ? `Due ${formatDate(projectProgress.project.nextMilestoneDueDate)}`
+                  : "No date yet"}
+              </p>
             </div>
           </section>
 
-          {currentUser?.role === "client" && reviewEligibility?.canReview && (
-            <section className="rounded-2xl border border-primary/35 bg-primary/[0.06] p-6 shadow-[0_18px_50px_rgba(227,63,63,0.1)] sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                Project complete
-              </p>
-              <h2 className="mt-2 font-heading text-2xl font-bold text-white">
-                Celebrate the work with a review
+          {isClientViewer && reviewEligibility?.canReview && (
+            <section className={`${panelClassName} border-t-2 border-t-primary p-6 sm:p-8`}>
+              <h2 className="font-heading text-2xl font-bold text-white">
+                How did the project go?
               </h2>
-              <p className="mt-2 text-sm leading-6 text-white/65">
-                Share a thoughtful note about your experience working with the
-                engineer.
+              <p className="mt-2 max-w-[60ch] text-sm leading-6 text-white/60">
+                Your review appears on the engineer's profile and helps other
+                clients choose.
               </p>
-              <div className="mt-5">
-                <p className="text-sm font-semibold text-white">Your rating</p>
-                <div className="mt-2 flex gap-1" aria-label="Choose a rating">
+              <fieldset className="mt-5">
+                <legend className="text-sm font-semibold text-white/80">Rating</legend>
+                <div className="mt-2 flex gap-1">
                   {[1, 2, 3, 4, 5].map((value) => (
                     <button
                       key={value}
                       type="button"
                       aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                      aria-pressed={value === reviewRating}
                       onClick={() => setReviewRating(value)}
-                      className={`text-3xl leading-none transition-all duration-150 hover:scale-110 ${value <= reviewRating ? "text-amber-300" : "text-white/20 hover:text-amber-200/70"}`}
+                      className={`rounded text-3xl leading-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow ${value <= reviewRating ? "text-amber-300" : "text-white/20 hover:text-amber-200/70"}`}
                     >
                       ★
                     </button>
                   ))}
                 </div>
-              </div>
-              <textarea
-                value={reviewText}
-                onChange={(event) =>
-                  setReviewText(event.target.value.slice(0, 1000))
-                }
-                placeholder="What stood out about the delivery?"
-                rows={4}
-                maxLength={1000}
-                className="mt-4 w-full rounded-xl border border-white/15 bg-void/50 px-4 py-3 text-sm text-white placeholder-white/35 outline-none transition-colors focus:border-primary/60"
-              />
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <p className="text-xs text-white/45">
-                  {reviewText.length}/1000
+              </fieldset>
+              <div className="mt-5 grid gap-2">
+                <label htmlFor="review-text" className="text-sm font-semibold text-white/80">
+                  Your review
+                </label>
+                <textarea
+                  id="review-text"
+                  value={reviewText}
+                  onChange={(event) => setReviewText(event.target.value.slice(0, 1000))}
+                  rows={4}
+                  maxLength={1000}
+                  aria-describedby="review-text-hint"
+                  className={`${inputClassName} resize-none`}
+                />
+                <p id="review-text-hint" className="flex justify-between gap-4 text-xs text-white/45">
+                  <span>What went well, and what could have gone better.</span>
+                  <span className="tabular-nums">{reviewText.length}/1000</span>
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void handleSubmitReview()}
-                  disabled={isSubmittingReview}
-                  className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {isSubmittingReview ? "Submitting..." : "Submit Review"}
-                </button>
               </div>
               {reviewError && (
-                <p className="mt-3 text-sm text-red-200" role="alert">
+                <p className="mt-3 text-sm text-red-300" role="alert">
                   {reviewError}
                 </p>
               )}
+              <button
+                type="button"
+                onClick={() => void handleSubmitReview()}
+                disabled={isSubmittingReview}
+                className={`${primaryButtonClassName} mt-5`}
+              >
+                {isSubmittingReview ? "Submitting..." : "Submit review"}
+              </button>
             </section>
           )}
 
-          {currentUser?.role === "client" &&
+          {isClientViewer &&
             reviewEligibility?.alreadyReviewed &&
             reviewEligibility.review && (
-              <section className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.04] p-6 sm:p-8">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-                  {reviewSuccess ? "Review submitted" : "Your review"}
-                </p>
-                <div className="mt-3 flex items-center gap-1 text-amber-300">
+              <section className={`${panelClassName} p-6 sm:p-8`}>
+                <h2 className="font-heading text-2xl font-bold text-white">
+                  {reviewSuccess ? "Thanks for your review" : "Your review"}
+                </h2>
+                <p
+                  className="mt-3 flex gap-0.5 text-lg text-amber-300"
+                  aria-label={`${reviewEligibility.review.rating} out of 5 stars`}
+                >
                   {Array.from({ length: 5 }, (_, index) => (
                     <span
                       key={index}
-                      className={
-                        index < reviewEligibility.review!.rating
-                          ? ""
-                          : "text-white/15"
-                      }
+                      aria-hidden="true"
+                      className={index < reviewEligibility.review!.rating ? "" : "text-white/15"}
                     >
                       ★
                     </span>
                   ))}
-                </div>
-                <p className="mt-3 text-sm leading-6 text-white/75">
+                </p>
+                <p className="mt-3 max-w-[65ch] text-sm leading-6 text-white/75">
                   {reviewEligibility.review.reviewText}
                 </p>
                 <p className="mt-3 text-xs text-white/40">
@@ -1013,126 +988,119 @@ export function ProjectProgressPage(): ReactElement {
               </section>
             )}
 
-          {/* Phase Plan Section - Engineer View */}
-          {currentUser?.role === "engineer" &&
+          {isEngineerViewer &&
             (phasePlan.phasePlanStatus === "not_created" ||
               phasePlan.phasePlanStatus === "draft") && (
-              <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
+              <section className={`${panelClassName} p-6 sm:p-8`}>
                 <h2 className="font-heading text-2xl font-bold text-white">
-                  Build Phase Plan
+                  Build the phase plan
                 </h2>
-                <p className="mt-2 text-sm text-white/70">
-                  Create a detailed phase plan. Total price must equal{" "}
-                  {formatCurrency(totalAgreedValue)}.
+                <p className="mt-2 max-w-[65ch] text-sm leading-6 text-white/60">
+                  Split the work into phases whose prices add up to{" "}
+                  {formatCurrency(totalAgreedValue)}. The client pays a{" "}
+                  {formatCurrency(phasePlan.advanceAmount)} advance before work
+                  starts, then pays for each phase when they approve it.
                 </p>
 
-                {phasePlanErrors.length > 0 && (
-                  <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 p-4">
-                    <ul className="space-y-1 text-sm text-red-200">
-                      {phasePlanErrors.map((err, i) => (
-                        <li key={i}>• {err}</li>
-                      ))}
-                    </ul>
+                {phasePlan.phasePlanFeedback ? (
+                  <div className="mt-5 rounded-xl border border-amber-300/25 bg-amber-300/5 p-4">
+                    <p className="text-sm font-semibold text-amber-100">
+                      The client asked for changes on{" "}
+                      {formatDate(phasePlan.phasePlanFeedback.rejectedAt)}
+                    </p>
+                    <p className="mt-1.5 whitespace-pre-line text-sm leading-6 text-white/75">
+                      {phasePlan.phasePlanFeedback.note}
+                    </p>
                   </div>
+                ) : null}
+
+                {phasePlanErrors.length > 0 && (
+                  <ul
+                    role="alert"
+                    className="mt-5 grid gap-1 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                  >
+                    {phasePlanErrors.map((err) => (
+                      <li key={err}>{err}</li>
+                    ))}
+                  </ul>
                 )}
 
-                <div className="mt-6 space-y-4">
+                <ol className="mt-6 grid gap-4">
                   {phasePlanFormData.map((phase, index) => (
-                    <div
-                      key={phase.id}
-                      className="rounded-lg border border-white/10 bg-void/45 p-4"
-                    >
-                      <div className="mb-3 flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-white">
-                          Phase {index + 1}
-                        </h3>
+                    <li key={phase.id} className="rounded-xl border border-white/10 bg-void/45 p-4 sm:p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-semibold text-white">Phase {index + 1}</h3>
                         {phasePlanFormData.length > 1 && (
                           <button
                             type="button"
                             onClick={() => handleRemovePhase(index)}
-                            className="text-xs text-red-300 hover:text-red-200"
+                            className={rowDangerButtonClassName}
                           >
                             Remove
                           </button>
                         )}
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          type="text"
-                          placeholder="Phase title"
-                          value={phase.title}
-                          onChange={(e) =>
-                            handlePhaseChange(index, "title", e.target.value)
-                          }
-                          className="rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/40 outline-none transition-colors hover:border-white/20 focus:border-primary/50"
-                        />
-                        <input
-                          type="number"
-                          placeholder="Price"
-                          value={phase.price || ""}
-                          onChange={(e) =>
-                            handlePhaseChange(index, "price", e.target.value)
-                          }
-                          className="rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/40 outline-none transition-colors hover:border-white/20 focus:border-primary/50"
-                        />
-                        <textarea
-                          placeholder="Description"
-                          value={phase.description}
-                          onChange={(e) =>
-                            handlePhaseChange(
-                              index,
-                              "description",
-                              e.target.value,
-                            )
-                          }
-                          rows={2}
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/40 outline-none transition-colors hover:border-white/20 focus:border-primary/50"
-                        />
-                        <input
-                          type="date"
-                          value={phase.estimatedDueDate}
-                          onChange={(e) =>
-                            handlePhaseChange(
-                              index,
-                              "estimatedDueDate",
-                              e.target.value,
-                            )
-                          }
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/40 outline-none transition-colors hover:border-white/20 focus:border-primary/50"
-                        />
+                      <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                        <FormField id={`phase-${phase.id}-title`} label="Title">
+                          <input
+                            id={`phase-${phase.id}-title`}
+                            value={phase.title}
+                            onChange={(e) => handlePhaseChange(index, "title", e.target.value)}
+                            className={inputClassName}
+                          />
+                        </FormField>
+                        <FormField id={`phase-${phase.id}-price`} label="Price">
+                          <MoneyInput
+                            id={`phase-${phase.id}-price`}
+                            value={priceDrafts[phase.id] ?? (phase.price ? String(phase.price) : "")}
+                            onChange={(value) => {
+                              setPriceDrafts((current) => ({ ...current, [phase.id]: value }));
+                              handlePhaseChange(index, "price", moneyValue(value) ?? 0);
+                            }}
+                          />
+                        </FormField>
+                        <FormField id={`phase-${phase.id}-due`} label="Due by">
+                          <input
+                            id={`phase-${phase.id}-due`}
+                            type="date"
+                            value={phase.estimatedDueDate}
+                            onChange={(e) => handlePhaseChange(index, "estimatedDueDate", e.target.value)}
+                            className={inputClassName}
+                          />
+                        </FormField>
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                        Total phases price
-                      </p>
-                      <p
-                        className={`mt-1 text-lg font-bold ${
-                          pricesMatch ? "text-emerald-300" : "text-amber-300"
-                        }`}
+                      <FormField
+                        id={`phase-${phase.id}-description`}
+                        label="What's included"
+                        className="mt-4"
                       >
-                        {formatCurrency(totalPhasePrice)}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                        Project value
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-white">
-                        {formatCurrency(totalAgreedValue)}
-                      </p>
-                    </div>
-                  </div>
-                  {!pricesMatch && (
-                    <p className="mt-3 text-xs text-amber-300">
-                      Prices must match exactly to submit for approval
-                    </p>
-                  )}
+                        <textarea
+                          id={`phase-${phase.id}-description`}
+                          value={phase.description}
+                          onChange={(e) => handlePhaseChange(index, "description", e.target.value)}
+                          rows={2}
+                          className={`${inputClassName} resize-y`}
+                        />
+                      </FormField>
+                    </li>
+                  ))}
+                </ol>
+
+                <div className="mt-6 flex flex-col gap-1 rounded-xl border border-white/10 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-white/60">
+                    Phases add up to{" "}
+                    <span className="font-semibold tabular-nums text-white">
+                      {formatCurrency(totalPhasePrice)}
+                    </span>{" "}
+                    of {formatCurrency(totalAgreedValue)}
+                  </p>
+                  <p className={`text-sm font-semibold ${pricesMatch ? "text-emerald-200" : "text-amber-200"}`}>
+                    {pricesMatch
+                      ? "Matches the agreed price"
+                      : totalPhasePrice > totalAgreedValue
+                        ? `${formatCurrency(totalPhasePrice - totalAgreedValue)} over`
+                        : `${formatCurrency(totalAgreedValue - totalPhasePrice)} still to assign`}
+                  </p>
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -1140,307 +1108,274 @@ export function ProjectProgressPage(): ReactElement {
                     type="button"
                     onClick={handleAddPhase}
                     disabled={isSubmittingPhasePlan}
-                    className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+                    className={secondaryButtonClassName}
                   >
-                    + Add Phase
+                    <PlusIcon className="h-4 w-4" aria-hidden="true" />
+                    Add phase
                   </button>
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => void handleSaveDraft()}
                       disabled={isSubmittingPhasePlan}
-                      className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-50"
+                      className={secondaryButtonClassName}
                     >
-                      {isSubmittingPhasePlan ? "Saving..." : "Save Draft"}
+                      {isSubmittingPhasePlan ? "Saving..." : "Save draft"}
                     </button>
                     <button
                       type="button"
                       onClick={() => void handleSubmitForApproval()}
                       disabled={isSubmittingPhasePlan || !pricesMatch}
-                      className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      className={primaryButtonClassName}
                     >
-                      {isSubmittingPhasePlan
-                        ? "Submitting..."
-                        : "Submit for Approval"}
+                      {isSubmittingPhasePlan ? "Sending..." : "Send to client"}
                     </button>
                   </div>
                 </div>
               </section>
             )}
 
-          {/* Phase Plan Approval Section - Client View */}
-          {currentUser?.role === "client" &&
+          {isClientViewer &&
             phasePlan.phasePlanStatus === "pending_client_approval" && (
-              <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
+              <section className={`${panelClassName} border-t-2 border-t-primary p-6 sm:p-8`}>
                 <h2 className="font-heading text-2xl font-bold text-white">
-                  Approve Phase Plan
+                  Review the phase plan
                 </h2>
-                <p className="mt-2 text-sm text-white/70">
-                  The engineer has submitted a phase plan for your review.
-                  Please select a payment plan and approve.
+                <p className="mt-2 max-w-[65ch] text-sm leading-6 text-white/60">
+                  {countOf(phasePlan.phases.length, "phase", "phases")} adding up
+                  to {formatCurrency(totalAgreedValue)}. Choose how you want to
+                  pay, then approve the plan or send it back with changes.
                 </p>
 
                 {phasePlanErrors.length > 0 && (
-                  <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 p-4">
-                    <ul className="space-y-1 text-sm text-red-200">
-                      {phasePlanErrors.map((err, i) => (
-                        <li key={i}>• {err}</li>
-                      ))}
-                    </ul>
-                  </div>
+                  <ul
+                    role="alert"
+                    className="mt-5 grid gap-1 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                  >
+                    {phasePlanErrors.map((err) => (
+                      <li key={err}>{err}</li>
+                    ))}
+                  </ul>
                 )}
 
-                {/* Phase List */}
-                <div className="mt-6 space-y-3">
-                  {phasePlan.phases.map((phase) => (
-                    <div
-                      key={phase.id}
-                      className="rounded-lg border border-white/10 bg-void/45 p-4"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-semibold text-white">
-                            {phase.title}
-                          </h3>
-                          <p className="mt-1 text-xs text-white/60">
-                            {phase.description}
-                          </p>
-                          <p className="mt-2 text-xs text-white/50">
-                            Due {formatDate(phase.estimatedDueDate)}
-                          </p>
-                        </div>
-                        <div className="ml-4 text-right">
-                          <p className="text-sm font-bold text-primary">
-                            {formatCurrency(phase.price)}
-                          </p>
-                        </div>
+                <ol className="mt-6 divide-y divide-white/10 rounded-xl border border-white/10">
+                  {phasePlan.phases.map((phase, index) => (
+                    <li key={phase.id} className="flex items-start justify-between gap-4 px-4 py-4 sm:px-5">
+                      <div className="min-w-0">
+                        <p className="text-xs text-white/45">Phase {index + 1}</p>
+                        <h3 className="mt-0.5 font-semibold text-white">{phase.title}</h3>
+                        {phase.description ? (
+                          <p className="mt-1 text-sm leading-6 text-white/60">{phase.description}</p>
+                        ) : null}
+                        <p className="mt-1 text-xs text-white/45">
+                          Due {formatDate(phase.estimatedDueDate)}
+                        </p>
                       </div>
-                    </div>
+                      <div className="shrink-0 text-right">
+                        <p className="font-semibold tabular-nums text-white">
+                          {formatCurrency(phase.price)}
+                        </p>
+                        {selectedPaymentPlan === "phase_by_phase" &&
+                        typeof phase.amountDue === "number" ? (
+                          <p className="mt-1 text-xs text-white/50">
+                            {formatCurrency(phase.amountDue)} when you approve it
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
 
-                {/* Payment Plan Selection */}
-                <div className="mt-6">
-                  <p className="text-sm font-semibold text-white">
-                    Payment Plan
-                  </p>
+                <fieldset className="mt-6">
+                  <legend className="text-sm font-semibold text-white/80">
+                    How do you want to pay?
+                  </legend>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPaymentPlan("phase_by_phase")}
-                      className={`rounded-lg border-2 p-4 text-left transition-all ${
-                        selectedPaymentPlan === "phase_by_phase"
-                          ? "border-primary bg-primary/10"
-                          : "border-white/10 bg-void/45 hover:border-white/20"
-                      }`}
-                    >
-                      <p className="font-semibold text-white">
-                        Pay Phase by Phase
-                      </p>
-                      <p className="mt-1 text-xs text-white/60">
-                        Pay for each phase as it completes
-                      </p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPaymentPlan("full_upfront")}
-                      className={`rounded-lg border-2 p-4 text-left transition-all ${
-                        selectedPaymentPlan === "full_upfront"
-                          ? "border-primary bg-primary/10"
-                          : "border-white/10 bg-void/45 hover:border-white/20"
-                      }`}
-                    >
-                      <p className="font-semibold text-white">Full Upfront</p>
-                      <p className="mt-1 text-xs text-white/60">
-                        Pay full amount (20% advance + 80% later)
-                      </p>
-                    </button>
+                    {(
+                      [
+                        {
+                          key: "phase_by_phase",
+                          title: "Phase by phase",
+                          body: `${formatCurrency(phasePlan.advanceAmount)} advance now, then the rest of each phase's price when you approve it.`,
+                        },
+                        {
+                          key: "full_upfront",
+                          title: "Full upfront",
+                          body: `${formatCurrency(phasePlan.advanceAmount)} advance now, then ${formatCurrency(phasePlan.remainingBalance)} any time before you approve the final phase.`,
+                        },
+                      ] as const
+                    ).map((option) => (
+                      <label
+                        key={option.key}
+                        className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/15 bg-void p-4 transition-colors hover:border-white/35 has-checked:border-primary has-checked:bg-primary/10 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-glow"
+                      >
+                        <input
+                          type="radio"
+                          name="payment-plan"
+                          value={option.key}
+                          checked={selectedPaymentPlan === option.key}
+                          onChange={() => setSelectedPaymentPlan(option.key)}
+                          className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                        />
+                        <span>
+                          <span className="block font-semibold text-white">{option.title}</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/60">
+                            {option.body}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
                   </div>
-                </div>
+                </fieldset>
 
-                {/* Rejection Feedback */}
-                <div className="mt-6">
-                  <label className="block text-sm font-semibold text-white">
-                    Or request changes
+                <button
+                  type="button"
+                  onClick={() => void handleApprovePlan()}
+                  disabled={isSubmittingPhasePlan}
+                  className={`${primaryButtonClassName} mt-6`}
+                >
+                  {isSubmittingPhasePlan ? "Approving..." : "Approve plan"}
+                </button>
+
+                <div className="mt-8 grid gap-2 border-t border-white/10 pt-6">
+                  <label htmlFor="plan-feedback" className="text-sm font-semibold text-white/80">
+                    Or ask for changes
                   </label>
                   <textarea
+                    id="plan-feedback"
                     value={rejectFeedback}
                     onChange={(e) => setRejectFeedback(e.target.value)}
-                    placeholder="Describe what needs to change..."
                     rows={3}
-                    className="mt-2 w-full rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/40 outline-none transition-colors hover:border-white/20 focus:border-primary/50"
+                    maxLength={1000}
+                    aria-describedby="plan-feedback-hint"
+                    className={`${inputClassName} resize-y`}
                   />
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <p id="plan-feedback-hint" className="text-xs text-white/45">
+                    The engineer sees this note while revising the plan.
+                  </p>
                   <button
                     type="button"
                     onClick={() => void handleRejectPlan()}
-                    disabled={
-                      isRejectingPlan ||
-                      isSubmittingPhasePlan ||
-                      !rejectFeedback.trim()
-                    }
-                    className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+                    disabled={isRejectingPlan || isSubmittingPhasePlan || !rejectFeedback.trim()}
+                    className={`${secondaryButtonClassName} mt-2`}
                   >
-                    {isRejectingPlan ? "Sending..." : "Request Changes"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleApprovePlan()}
-                    disabled={isSubmittingPhasePlan}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {isSubmittingPhasePlan ? "Approving..." : "Approve Plan"}
+                    {isRejectingPlan ? "Sending..." : "Send back with changes"}
                   </button>
                 </div>
               </section>
             )}
 
-          {/* Payment Section - When Plan is Approved */}
           {phasePlan.phasePlanStatus === "approved" && (
-            <section className="rounded-2xl border border-white/10 bg-surface p-6 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:p-8">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <span className="text-xl font-semibold">$</span>
-                </span>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                    Financial checkpoints
-                  </p>
-                  <h2 className="mt-1 font-heading text-2xl font-bold text-white">
-                    Payments
-                  </h2>
-                </div>
+            <section className={`${panelClassName} p-6 sm:p-8`} aria-labelledby="payments-heading">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h2 id="payments-heading" className="font-heading text-2xl font-bold text-white">
+                  Payments
+                </h2>
+                <p className="text-sm text-white/50">
+                  {phasePlan.paymentPlan === "full_upfront" ? "Full upfront" : "Phase by phase"}
+                </p>
               </div>
 
               {paymentError && (
-                <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 p-4">
-                  <p className="text-sm text-red-200">{paymentError}</p>
-                </div>
+                <p
+                  role="alert"
+                  className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 p-4 text-sm text-red-200"
+                >
+                  {paymentError}
+                </p>
               )}
 
-              {phasePlan.paymentPlan === "full_upfront" &&
-              phasePlan.fullPaymentPaid ? (
-                <div className="mt-6 rounded-xl border border-emerald-300/30 bg-emerald-300/[0.045] p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-emerald-100/75">
-                        Payment Status
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-white">
-                        Paid in full
-                      </p>
-                    </div>
-                    <CardAccentIcon paid={true} />
-                  </div>
-                  <p className="mt-3 text-2xl font-bold text-white">
-                    {formatCurrency(phasePlan.totalAgreedValue || 0)}
-                  </p>
-                  <div className="mt-3 space-y-1 text-xs text-emerald-100/80">
-                    <p>
-                      Advance paid:{" "}
-                      {phasePlan.advancePaidAt
-                        ? formatDate(phasePlan.advancePaidAt)
-                        : "Recorded"}
-                    </p>
-                    <p>
-                      Remaining paid:{" "}
-                      {phasePlan.fullPaymentPaidAt
-                        ? formatDate(phasePlan.fullPaymentPaidAt)
-                        : "Recorded"}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {/* Advance Payment */}
-                  <div
-                    className={`rounded-xl border p-5 transition-all duration-200 ${phasePlan.advancePaid ? "border-emerald-300/25 bg-emerald-300/[0.04]" : "border-primary/35 bg-primary/[0.045] shadow-[inset_3px_0_0_rgba(227,63,63,0.85)]"}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                        Advance Payment
-                      </p>
-                      <CardAccentIcon paid={phasePlan.advancePaid} />
-                    </div>
-                    <p className="mt-2 text-xl font-bold text-white">
-                      {formatCurrency(phasePlan.advanceRequiredAmount || 0)}
-                    </p>
-                    <p
-                      className={`mt-2 flex items-center gap-1.5 text-xs ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}
-                    >
-                      {phasePlan.advancePaid && <CheckIcon />}
+              <dl className="mt-5 divide-y divide-white/10 rounded-xl border border-white/10">
+                <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-6 sm:px-5">
+                  <div>
+                    <dt className="font-semibold text-white">Advance</dt>
+                    <dd className={`mt-0.5 text-sm ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}>
                       {phasePlan.advancePaid
-                        ? "Paid"
-                        : "Required before work begins"}
-                    </p>
-                    {!phasePlan.advancePaid &&
-                      currentUser?.role === "client" && (
-                        <button
-                          type="button"
-                          onClick={() => void handlePayAdvance()}
-                          disabled={isProcessingPayment}
-                          className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
-                        >
-                          {isProcessingPayment
-                            ? "Processing..."
-                            : "Pay Advance (Mock)"}
-                        </button>
-                      )}
+                        ? `Paid${phasePlan.advancePaidAt ? ` on ${formatDate(phasePlan.advancePaidAt)}` : ""}`
+                        : "Due before work starts"}
+                    </dd>
                   </div>
-
-                  {/* Remaining Payment */}
-                  {phasePlan.paymentPlan === "full_upfront" && (
-                    <div className="rounded-xl border border-primary/25 bg-primary/[0.035] p-5 transition-all duration-200 hover:border-primary/40">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.14em] text-white/60">
-                          Remaining Balance
-                        </p>
-                        <CardAccentIcon paid={false} />
-                      </div>
-                      <p className="mt-2 text-xl font-bold text-white">
-                        {formatCurrency(
-                          (phasePlan.totalAgreedValue || 0) -
-                            (phasePlan.advanceRequiredAmount || 0),
-                        )}
-                      </p>
-                      <p className="mt-1 text-xs text-white/50">
-                        {phasePlan.advancePaid
-                          ? "Due before final phase completion"
-                          : "Pay after advance"}
-                      </p>
-                      {phasePlan.advancePaid &&
-                        !phasePlan.fullPaymentPaid &&
-                        currentUser?.role === "client" && (
-                          <button
-                            type="button"
-                            onClick={() => void handlePayFullRemaining()}
-                            disabled={isProcessingPayment}
-                            className="mt-4 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(227,63,63,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-[0_12px_24px_rgba(227,63,63,0.3)] active:translate-y-0 disabled:opacity-50"
-                          >
-                            {isProcessingPayment
-                              ? "Processing..."
-                              : "Pay Remaining (Mock)"}
-                          </button>
-                        )}
-                    </div>
+                  <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
+                    {formatCurrency(phasePlan.advanceRequiredAmount || phasePlan.advanceAmount)}
+                  </dd>
+                  {!phasePlan.advancePaid && isClientViewer ? (
+                    <dd>
+                      <button
+                        type="button"
+                        onClick={() => void handlePayAdvance()}
+                        disabled={isProcessingPayment}
+                        className={primaryButtonClassName}
+                      >
+                        {isProcessingPayment ? "Paying..." : "Pay advance"}
+                      </button>
+                    </dd>
+                  ) : (
+                    <dd className="hidden sm:block" />
                   )}
                 </div>
-              )}
 
-              {currentUser?.role === "client" && (
-                <div className="mt-4 flex items-start gap-3 rounded-xl border border-sky-300/20 bg-sky-300/[0.045] p-4">
-                  <span className="mt-0.5 text-sky-200">
-                    <span className="text-base">i</span>
-                  </span>
-                  <p className="text-xs leading-relaxed text-sky-100/75">
-                    <strong className="text-sky-100">Mock Payment Note:</strong>{" "}
-                    This is a simulated payment for testing purposes. Real
-                    payment gateway integration coming soon.
-                  </p>
+                {phasePlan.paymentPlan === "full_upfront" ? (
+                  <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-6 sm:px-5">
+                    <div>
+                      <dt className="font-semibold text-white">Remaining balance</dt>
+                      <dd className={`mt-0.5 text-sm ${phasePlan.fullPaymentPaid ? "text-emerald-200" : "text-white/55"}`}>
+                        {phasePlan.fullPaymentPaid
+                          ? `Paid${phasePlan.fullPaymentPaidAt ? ` on ${formatDate(phasePlan.fullPaymentPaidAt)}` : ""}`
+                          : phasePlan.advancePaid
+                            ? "Pay now, or when you approve the final phase"
+                            : "Due after the advance"}
+                      </dd>
+                    </div>
+                    <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
+                      {formatCurrency(phasePlan.remainingBalance)}
+                    </dd>
+                    {phasePlan.advancePaid && !phasePlan.fullPaymentPaid && isClientViewer ? (
+                      <dd>
+                        <button
+                          type="button"
+                          onClick={() => void handlePayFullRemaining()}
+                          disabled={isProcessingPayment}
+                          className={secondaryButtonClassName}
+                        >
+                          {isProcessingPayment ? "Paying..." : "Pay remaining"}
+                        </button>
+                      </dd>
+                    ) : (
+                      <dd className="hidden sm:block" />
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-6 sm:px-5">
+                    <div>
+                      <dt className="font-semibold text-white">Phase payments</dt>
+                      <dd className="mt-0.5 text-sm text-white/55">
+                        Paid as {isClientViewer ? "you approve" : "the client approves"} each phase
+                      </dd>
+                    </div>
+                    <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
+                      {formatCurrency(phasePaymentsPaid)}
+                      <span className="text-sm font-normal text-white/45">
+                        {" "}
+                        of {formatCurrency(phasePlan.remainingBalance)}
+                      </span>
+                    </dd>
+                    <dd className="hidden sm:block" />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-4 px-4 py-3.5 sm:px-5">
+                  <dt className="text-sm text-white/55">Agreed total</dt>
+                  <dd className="font-semibold tabular-nums text-white/85">
+                    {formatCurrency(totalAgreedValue)}
+                  </dd>
                 </div>
-              )}
+              </dl>
+
+              {isClientViewer ? (
+                <p className="mt-3 text-xs text-white/45">
+                  Payments are simulated while the payment gateway is being set up.
+                </p>
+              ) : null}
             </section>
           )}
 
@@ -1452,15 +1387,13 @@ export function ProjectProgressPage(): ReactElement {
                   <h2 className="font-heading text-2xl font-bold text-white">
                     Phase Progress
                   </h2>
-                  {projectProgress.canUpdate ? (
-                    <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                      Editable by you
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white/60">
-                      Read-only view
-                    </span>
-                  )}
+                  <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white/60">
+                    {projectProgress.canUpdate
+                      ? "You submit each phase"
+                      : currentUser?.role === "client"
+                        ? "You approve each phase"
+                        : "View only"}
+                  </span>
                 </div>
 
                 {updateError && (
@@ -1477,32 +1410,31 @@ export function ProjectProgressPage(): ReactElement {
                       height: `${projectProgress.phases.length > 1 ? (completedPhaseCount / (projectProgress.phases.length - 1)) * 100 : completedPhaseCount > 0 ? 100 : 0}%`,
                     }}
                   />
-                  {projectProgress.phases.map((phase) => {
+                  {projectProgress.phases.map((phase, index) => {
                     const isUpdating = updatingPhaseId === phase.id;
-                    const phasePlanPhase = phasePlan.phases.find(
-                      (planPhase) => planPhase.id === phase.id,
-                    );
-                    const phasePrice =
-                      phase.price ?? phasePlanPhase?.price ?? 0;
-                    const paymentStatus =
-                      phase.paymentStatus ?? phasePlanPhase?.paymentStatus;
-                    const isAdvancePaid = phasePlan.advancePaid;
+                    const isPhaseByPhase =
+                      phasePlan.paymentPlan === "phase_by_phase";
                     const isLocked =
-                      !isAdvancePaid && phase.status === "not_started";
+                      !phasePlan.advancePaid && phase.status === "not_started";
+                    const viewer = projectProgress.canUpdate
+                      ? "engineer"
+                      : currentUser?.role === "client"
+                        ? "client"
+                        : "other";
 
                     return (
                       <article
                         key={phase.id}
-                        className={`relative rounded-xl border p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(0,0,0,0.2)] ${isLocked ? "border-white/10 bg-void/60 opacity-65" : "border-white/10 bg-void/45 hover:border-primary/25"}`}
+                        className={`relative rounded-xl border p-4 transition-colors duration-200 ${isLocked ? "border-white/10 bg-void/60 opacity-65" : phase.status === "awaiting_approval" ? "border-amber-300/30 bg-void/45" : "border-white/10 bg-void/45"}`}
                       >
                         <span
                           className={`absolute -left-[2.05rem] top-6 flex h-5 w-5 items-center justify-center rounded-full border-2 bg-surface sm:-left-[2.35rem] ${phase.status === "completed" ? "border-primary text-primary" : isLocked ? "border-white/20 text-white/40" : "border-white/30 text-white/70"}`}
                         >
                           <StatusIcon status={phase.status} />
                         </span>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex-1">
-                            <p className="text-xs uppercase tracking-[0.14em] text-white/45">
+                            <p className="text-xs text-white/45">
                               Phase {phase.order + 1}
                             </p>
                             <h3 className="mt-1 text-sm font-semibold text-white">
@@ -1513,84 +1445,72 @@ export function ProjectProgressPage(): ReactElement {
                                 {phase.description}
                               </p>
                             )}
-                            <div className="mt-2 flex items-center gap-4 text-xs">
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                               <span className="text-white/50">
                                 Due {formatDate(phase.dueDate)}
                               </span>
-                              {phasePrice > 0 && (
-                                <span className="font-semibold text-primary">
-                                  {formatCurrency(phasePrice)}
-                                </span>
-                              )}
-                              {paymentStatus === "paid" && (
+                              <span className="font-semibold text-white/80">
+                                {formatCurrency(phase.price)}
+                              </span>
+                              {isPhaseByPhase &&
+                              phase.paymentStatus === "paid" ? (
                                 <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 text-emerald-200">
-                                  Paid
+                                  Paid {formatCurrency(phase.amountPaid)}
                                 </span>
-                              )}
+                              ) : isPhaseByPhase ? (
+                                <span
+                                  className="text-white/50"
+                                  title={`The advance already covers ${formatCurrency(Math.max(0, phase.price - phase.amountDue))} of this phase.`}
+                                >
+                                  {formatCurrency(phase.amountDue)} due when
+                                  approved
+                                </span>
+                              ) : null}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
-                                statusBadgeClass[phase.status]
-                              }`}
-                            >
-                              <StatusIcon status={phase.status} />
-                              {phase.status.replace(/_/g, " ")}
-                            </span>
-                            {projectProgress.canUpdate && (
-                              <select
-                                value={phase.status}
-                                onChange={(e) =>
-                                  handleUpdatePhase(
-                                    phase.id,
-                                    e.target.value as ProjectPhaseStatus,
-                                  )
-                                }
-                                disabled={
-                                  isUpdating ||
-                                  (!isAdvancePaid &&
-                                    phase.status === "not_started")
-                                }
-                                title={
-                                  !isAdvancePaid &&
-                                  phase.status === "not_started"
-                                    ? "Advance payment required"
-                                    : ""
-                                }
-                                className="rounded-lg border border-white/10 bg-void/60 px-2 py-1 text-xs text-white outline-none transition-colors hover:border-white/20 focus:border-primary/50 disabled:opacity-50"
-                              >
-                                {statusOptions.map((option) => (
-                                  <option
-                                    key={option.value}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
+                          <span
+                            className={`inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
+                              statusBadgeClass[phase.status]
+                            }`}
+                          >
+                            <StatusIcon status={phase.status} />
+                            {statusLabels[phase.status]}
+                          </span>
                         </div>
 
-                        {/* Phase Payment for phase_by_phase */}
-                        {phasePlan.paymentPlan === "phase_by_phase" &&
-                          (phase.status === "awaiting_approval" ||
-                            phase.status === "completed") &&
-                          paymentStatus === "unpaid" &&
-                          currentUser?.role === "client" && (
-                            <button
-                              type="button"
-                              onClick={() => void handlePayForPhase(phase.id)}
-                              disabled={isProcessingPayment}
-                              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/20 active:translate-y-0 disabled:opacity-50"
-                            >
-                              <span className="text-sm font-bold">$</span>
-                              {isProcessingPayment
-                                ? "Processing..."
-                                : `Pay for this phase (${formatCurrency(phasePrice)}) - Mock`}
-                            </button>
-                          )}
+                        {phase.changeRequest &&
+                        phase.status !== "completed" ? (
+                          <ChangeRequestNote
+                            changeRequest={phase.changeRequest}
+                          />
+                        ) : null}
+
+                        <div className="mt-4 empty:hidden">
+                          <PhaseActions
+                            phase={phase}
+                            previousPhase={
+                              index > 0
+                                ? projectProgress.phases[index - 1]
+                                : null
+                            }
+                            isFinalPhase={
+                              index === projectProgress.phases.length - 1
+                            }
+                            viewer={viewer}
+                            paymentPlan={phasePlan.paymentPlan}
+                            advancePaid={phasePlan.advancePaid}
+                            fullPaymentPaid={phasePlan.fullPaymentPaid}
+                            remainingBalance={phasePlan.remainingBalance}
+                            isBusy={isUpdating}
+                            onSetStatus={(status) =>
+                              void handleUpdatePhase(phase.id, status)
+                            }
+                            onApprove={() => void handleApprovePhase(phase.id)}
+                            onRequestChanges={(note) =>
+                              handleRequestChanges(phase.id, note)
+                            }
+                          />
+                        </div>
                       </article>
                     );
                   })}

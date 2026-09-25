@@ -2,10 +2,10 @@ import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Connection } from "../models/Connection.model";
-import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
 
 export type ConnectionViewStatus =
   | "not_connected"
@@ -34,29 +34,8 @@ interface PopulatedUser {
   role: UserRole;
 }
 
-const getEngineerPhotoMap = async (
-  users: PopulatedUser[],
-): Promise<Map<string, string>> => {
-  const engineerUserIds = users
-    .filter((user) => user.role === "engineer")
-    .map((user) => user._id);
-  if (engineerUserIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const engineers = await Engineer.find({
-    user: { $in: engineerUserIds },
-  })
-    .select("user profilePhoto")
-    .exec();
-
-  return new Map(
-    engineers.map((engineer) => [
-      engineer.user.toString(),
-      engineer.profilePhoto?.url ?? "",
-    ]),
-  );
-};
+const getPhotoMap = (users: PopulatedUser[]): Promise<Map<string, string>> =>
+  getProfilePhotoMap(users.map((user) => user._id));
 
 const getEngineerRatingMap = async (
   users: PopulatedUser[],
@@ -170,7 +149,7 @@ export const getIncomingRequests = async (
     const requesters = requests.map(
       (request) => request.requester as unknown as PopulatedUser,
     );
-    const photoByUser = await getEngineerPhotoMap(requesters);
+    const photoByUser = await getPhotoMap(requesters);
     res.status(200).json(
       requests.map((request) => {
         const requester = request.requester as unknown as PopulatedUser;
@@ -207,7 +186,7 @@ export const getSentRequests = async (
     const recipients = requests.map(
       (request) => request.recipient as unknown as PopulatedUser,
     );
-    const photoByUser = await getEngineerPhotoMap(recipients);
+    const photoByUser = await getPhotoMap(recipients);
     res.status(200).json(
       requests.map((request) => {
         const recipient = request.recipient as unknown as PopulatedUser;
@@ -320,7 +299,7 @@ export const getMyConnections = async (
       connection.recipient,
     ]) as unknown as PopulatedUser[];
     const otherUsers = users.filter((user) => user._id.toString() !== userId);
-    const photoByUser = await getEngineerPhotoMap(otherUsers);
+    const photoByUser = await getPhotoMap(otherUsers);
     const ratingByUser = await getEngineerRatingMap(otherUsers);
     res
       .status(200)

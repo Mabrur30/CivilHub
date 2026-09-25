@@ -13,13 +13,8 @@ import {
   type EquipmentReviewsResponse,
   type EquipmentListing,
 } from "./equipment.api";
+import { formatCurrency } from "../lib/format";
 
-const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
 
 const LocationPin = (): ReactElement => (
   <svg

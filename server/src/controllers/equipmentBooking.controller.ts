@@ -14,6 +14,7 @@ import {
 import { Notification } from "../models/Notification.model";
 import { Payment } from "../models/Payment.model";
 import { Review } from "../models/Review.model";
+import { formatTaka } from "../utils/money";
 
 interface BookingError extends Error {
   statusCode: number;
@@ -1023,7 +1024,7 @@ export const payForBooking = async (
     await Notification.create({
       recipient: booking.owner,
       type: "equipment_booking_payment_received",
-      message: `Mock payment of $${totalDue.toFixed(2)} received for ${normalizeBookingEquipmentTitle(booking)}.`,
+      message: `Mock payment of ${formatTaka(totalDue)} received for ${normalizeBookingEquipmentTitle(booking)}.`,
       ...(equipmentId ? { equipment: equipmentId } : {}),
       equipmentBooking: booking._id,
     });
@@ -1219,7 +1220,7 @@ export const resolveDeposit = async (
           : "equipment_deposit_released",
       message:
         booking.depositResolution === "claimed"
-          ? `Deposit claimed for ${normalizeBookingEquipmentTitle(booking)}: $${(booking.depositClaimAmount ?? 0).toFixed(2)}.`
+          ? `Deposit claimed for ${normalizeBookingEquipmentTitle(booking)}: ${formatTaka(booking.depositClaimAmount ?? 0)}.`
           : `Deposit released for ${normalizeBookingEquipmentTitle(booking)}.`,
       ...(equipmentId ? { equipment: equipmentId } : {}),
       equipmentBooking: booking._id,

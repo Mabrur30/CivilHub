@@ -5,6 +5,7 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
 import { User, type IUser, type UserRole } from "../models/User.model";
+import { getProfilePhotoUrl } from "../utils/profilePhotos";
 
 export interface SignupRequestBody {
   name: string;
@@ -64,14 +65,7 @@ const setAuthCookie = (res: Response, user: IUser): void => {
 };
 
 const toPublicUser = async (user: IUser) => {
-  let profilePhotoUrl: string | null = null;
-
-  if (user.role === "engineer") {
-    const engineerProfile = await Engineer.findOne({ user: user._id })
-      .select("profilePhoto")
-      .exec();
-    profilePhotoUrl = engineerProfile?.profilePhoto?.url ?? null;
-  }
+  const profilePhotoUrl = await getProfilePhotoUrl(user._id);
 
   return {
     id: user._id.toString(),

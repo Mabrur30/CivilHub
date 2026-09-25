@@ -13,6 +13,8 @@ import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
+import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { moneyValue } from "../lib/money";
 
 interface EngineerBid {
   id: string;
@@ -257,17 +259,13 @@ function InvitationRow({
               htmlFor={amountId}
               className="text-sm font-semibold text-white/80"
             >
-              Your price ($)
+              Your price
             </label>
-            <input
+            <MoneyInput
               id={amountId}
-              type="number"
-              inputMode="decimal"
-              min={1}
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              aria-describedby={error ? errorId : undefined}
-              className={inputClassName}
+              onChange={setAmount}
+              describedBy={error ? errorId : undefined}
               autoFocus
             />
           </div>
@@ -490,7 +488,7 @@ export function EngineerBidsPage(): ReactElement {
     amount: string,
     message: string,
   ): Promise<void> => {
-    const amountValue = Number(amount);
+    const amountValue = moneyValue(amount) ?? Number.NaN;
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       setInvitationError({
         id: invitationId,

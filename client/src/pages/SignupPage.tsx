@@ -5,7 +5,11 @@ import {
   useEffect,
   useState,
 } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { EnvelopeIcon, LockIcon, UserIcon } from "@phosphor-icons/react";
+import { AuthShell } from "../components/auth/AuthShell";
+import { GlassField } from "../components/auth/GlassField";
+import { GlassSubmitButton } from "../components/auth/GlassSubmitButton";
 import { useAuth } from "../context/AuthContext";
 
 interface SignupPageProps {
@@ -109,126 +113,74 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
   }
 
   return (
-    <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl text-center">
-        <div className="rounded-[32px] border border-white/10 bg-surface p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35)] sm:p-10">
-          <div className="text-center">
-            <Link
-              to="/"
-              aria-label="Back to home"
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-lg font-bold text-primary transition-all duration-300 hover:-translate-y-0.5 hover:border-primary hover:bg-primary/15"
-            >
-              C
-            </Link>
-            <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-              Join CivilHub
-            </p>
-            <h1 className="mt-3 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
-              Create your account
-            </h1>
-            <div className="mt-5 inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
-              Signing up as: {roleLabelMap[role]}
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left">
-            <div>
-              <label
-                htmlFor="fullName"
-                className="mb-2 block text-sm font-semibold text-white/80"
-              >
-                Full name
-              </label>
-              <input
-                id="fullName"
-                name="fullName"
-                type="text"
-                value={form.fullName}
-                onChange={handleChange}
-                className="w-full rounded-2xl border border-white/10 bg-void px-4 py-3 text-base text-white placeholder:text-white/35 focus:border-primary focus:outline-none"
-                placeholder="Your name"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-semibold text-white/80"
-              >
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={form.email}
-                onChange={handleChange}
-                className="w-full rounded-2xl border border-white/10 bg-void px-4 py-3 text-base text-white placeholder:text-white/35 focus:border-primary focus:outline-none"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-semibold text-white/80"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                value={form.password}
-                onChange={handleChange}
-                className="w-full rounded-2xl border border-white/10 bg-void px-4 py-3 text-base text-white placeholder:text-white/35 focus:border-primary focus:outline-none"
-                placeholder="Create a secure password"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="mb-2 block text-sm font-semibold text-white/80"
-              >
-                Confirm password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                value={form.confirmPassword}
-                onChange={handleChange}
-                className="w-full rounded-2xl border border-white/10 bg-void px-4 py-3 text-base text-white placeholder:text-white/35 focus:border-primary focus:outline-none"
-                placeholder="Repeat your password"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full rounded-full bg-primary px-5 py-3.5 text-base font-semibold text-white shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:bg-glow"
-            >
-              {isSubmitting
-                ? "Creating account..."
-                : `Continue as ${roleLabelMap[role]}`}
-            </button>
-            {error ? (
-              <p role="alert" className="text-center text-sm text-red-300">
-                {error}
-              </p>
-            ) : null}
-          </form>
-        </div>
-        <Link
-          to="/"
-          className="mt-5 inline-flex items-center gap-2 text-sm text-white/55 transition-colors duration-300 hover:text-primary"
-        >
-          <span aria-hidden="true">&larr;</span>
-          <span>Back to home</span>
-        </Link>
+    <AuthShell widthClassName="max-w-xl">
+      <p className="mt-5 text-sm font-semibold uppercase tracking-[0.24em] text-primary">
+        Join CivilHub
+      </p>
+      <h1 className="mt-3 font-heading text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+        Create your account
+      </h1>
+      <div className="mt-5 inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
+        Signing up as: {roleLabelMap[role]}
       </div>
-    </main>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left">
+        <GlassField
+          id="fullName"
+          name="fullName"
+          label="Full name"
+          icon={UserIcon}
+          type="text"
+          value={form.fullName}
+          onChange={handleChange}
+          placeholder="Your name"
+        />
+
+        <GlassField
+          id="email"
+          name="email"
+          label="Email address"
+          icon={EnvelopeIcon}
+          type="email"
+          value={form.email}
+          onChange={handleChange}
+          placeholder="you@example.com"
+        />
+
+        <GlassField
+          id="password"
+          name="password"
+          label="Password"
+          icon={LockIcon}
+          type="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder="Create a secure password"
+        />
+
+        <GlassField
+          id="confirmPassword"
+          name="confirmPassword"
+          label="Confirm password"
+          icon={LockIcon}
+          type="password"
+          value={form.confirmPassword}
+          onChange={handleChange}
+          placeholder="Repeat your password"
+        />
+
+        <GlassSubmitButton disabled={isSubmitting}>
+          {isSubmitting
+            ? "Creating account..."
+            : `Continue as ${roleLabelMap[role]}`}
+        </GlassSubmitButton>
+        {error ? (
+          <p role="alert" className="text-center text-sm text-red-300">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </AuthShell>
   );
 }
 

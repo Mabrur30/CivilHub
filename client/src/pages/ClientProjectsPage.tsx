@@ -1,241 +1,319 @@
-import { type ReactElement, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import {
+  type ClientProject,
+  describeProjectState,
+  getProjectStage,
+  type ProjectStage,
+  projectHref,
+  stageLabels,
+} from "../components/dashboard/client/clientData";
+import { useClientProjects } from "../components/dashboard/client/useClientProjects";
+import {
+  panelClassName,
+  primaryButtonClassName,
+  quietLinkClassName,
+} from "../components/dashboard/ui/buttonStyles";
+import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { ProgressBar } from "../components/dashboard/ui/ProgressBar";
+import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
+import { countOf, formatDate } from "../lib/format";
+import { dueToneClassName, getDueLabel } from "../lib/projectProgress";
 
-interface ClientProject {
-  id: string;
-  projectName: string;
-  assignedEngineer: string | null;
-  assignedEngineerUserId: string | null;
-  currentPhaseName: string;
-  progressPercentage: number;
-  nextMilestone: string;
-  nextMilestoneDueDate: string;
-}
+type StageFilter = "all" | ProjectStage;
 
-interface ErrorResponse {
-  message?: string;
-}
+const stageOrder: ProjectStage[] = [
+  "taking_bids",
+  "planning",
+  "in_delivery",
+  "cancelled",
+];
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-
-const isClientProject = (value: unknown): value is ClientProject => {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const project = value as Record<string, unknown>;
-
-  return (
-    typeof project.id === "string" &&
-    typeof project.projectName === "string" &&
-    (typeof project.assignedEngineer === "string" ||
-      project.assignedEngineer === null) &&
-    (typeof project.assignedEngineerUserId === "string" ||
-      project.assignedEngineerUserId === null) &&
-    typeof project.currentPhaseName === "string" &&
-    typeof project.progressPercentage === "number" &&
-    typeof project.nextMilestone === "string" &&
-    typeof project.nextMilestoneDueDate === "string"
-  );
+const stagePhrase: Record<Exclude<ProjectStage, "cancelled">, (count: number) => string> = {
+  taking_bids: (count) => countOf(count, "brief taking bids", "briefs taking bids"),
+  planning: (count) => `${count} in planning`,
+  in_delivery: (count) => `${count} in delivery`,
 };
 
-const getErrorMessage = (value: unknown): string => {
-  if (typeof value === "object" && value !== null) {
-    const response = value as ErrorResponse;
-    if (typeof response.message === "string") {
-      return response.message;
-    }
-  }
-
-  return "Unable to load your posted projects.";
+const getSummary = (projects: ClientProject[]): string => {
+  if (projects.length === 0) return "Everything you have posted, by stage.";
+  const parts = (["taking_bids", "planning", "in_delivery"] as const)
+    .map((stage) => ({
+      stage,
+      count: projects.filter((project) => getProjectStage(project) === stage)
+        .length,
+    }))
+    .filter((entry) => entry.count > 0)
+    .map((entry) => stagePhrase[entry.stage](entry.count));
+  const needYou = projects.filter(
+    (project) => describeProjectState(project).needsYou,
+  ).length;
+  const decisions =
+    needYou > 0
+      ? `${countOf(needYou, "project needs", "projects need")} your decision.`
+      : "Nothing is waiting on you.";
+  if (parts.length === 0) return decisions;
+  const listed = parts.join(", ");
+  return `${listed.charAt(0).toUpperCase()}${listed.slice(1)}. ${decisions}`;
 };
 
-const ProjectSkeleton = (): ReactElement => (
-  <div
-    className="animate-pulse rounded-2xl border border-white/10 bg-surface p-6"
-    aria-label="Loading project"
-  >
-    <div className="h-3 w-1/3 rounded bg-white/10" />
-    <div className="mt-4 h-7 w-2/3 rounded bg-white/10" />
-    <div className="mt-8 h-2 rounded-full bg-white/10" />
-    <div className="mt-8 h-12 rounded bg-white/10" />
-  </div>
-);
-
-export function ClientProjectsPage(): ReactElement {
-  const navigate = useNavigate();
-  const [projects, setProjects] = useState<ClientProject[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>("");
-  const [retryKey, setRetryKey] = useState<number>(0);
-
-  useEffect(() => {
-    const loadProjects = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
-
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/projects/my-posted-projects`,
-          {
-            credentials: "include",
-          },
-        );
-        const body: unknown = await response.json();
-
-        if (!response.ok) {
-          setError(getErrorMessage(body));
-          return;
-        }
-
-        if (!Array.isArray(body) || !body.every(isClientProject)) {
-          setError("The project data returned by CivilHub is invalid.");
-          return;
-        }
-
-        setProjects(body);
-      } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    void loadProjects();
-  }, [retryKey]);
-
-  return (
-    <div className="space-y-10">
+function StageDetail({ project }: { project: ClientProject }): ReactElement {
+  const stage = getProjectStage(project);
+  if (stage === "in_delivery") {
+    return (
       <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-          Your delivery portfolio
-        </p>
-        <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-white sm:text-5xl">
-          My Projects
-        </h1>
-        <p className="mt-3 max-w-2xl text-white/60">
-          See where every project stands, from partner selection to final
-          delivery.
+        <ProgressBar
+          value={project.progressPercentage}
+          label={`${project.projectName} progress`}
+        />
+        <p className="mt-1.5 truncate text-sm text-white/55">
+          {project.currentPhaseName}
         </p>
       </div>
+    );
+  }
+  if (stage === "taking_bids") {
+    return (
+      <p className="text-sm text-white/60">
+        <span className="font-semibold text-white/85">
+          {countOf(project.bidCount, "bid", "bids")}
+        </span>
+        <span className="text-white/45"> on a {project.budgetRange} budget</span>
+      </p>
+    );
+  }
+  return (
+    <p className="text-sm text-white/60">
+      {project.assignedEngineer
+        ? `Hired ${project.assignedEngineer}`
+        : "No engineer hired"}
+    </p>
+  );
+}
+
+function StateColumn({ project }: { project: ClientProject }): ReactElement {
+  const state = describeProjectState(project);
+  if (state.needsYou) {
+    return (
+      <p className="text-sm font-semibold text-amber-200">{state.text}</p>
+    );
+  }
+
+  const due =
+    getProjectStage(project) === "in_delivery" && project.nextMilestoneDueDate
+      ? getDueLabel({
+          id: project.id,
+          projectName: project.projectName,
+          clientName: "",
+          currentPhaseName: project.currentPhaseName,
+          progressPercentage: project.progressPercentage,
+          nextMilestone: project.nextMilestone,
+          nextMilestoneDueDate: project.nextMilestoneDueDate,
+        })
+      : null;
+
+  return (
+    <>
+      <p className="truncate text-sm text-white/70">
+        {getProjectStage(project) === "in_delivery"
+          ? project.nextMilestone
+          : getProjectStage(project) === "planning"
+            ? "Drafting the phase plan"
+            : state.text}
+      </p>
+      {due ? (
+        <p
+          className={`mt-1 text-sm font-semibold ${dueToneClassName[due.tone]}`}
+          title={due.fullDate}
+        >
+          {due.text}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function ProjectRow({
+  project,
+  isHighlighted,
+}: {
+  project: ClientProject;
+  isHighlighted: boolean;
+}): ReactElement {
+  return (
+    <li>
+      <Link
+        to={projectHref(project)}
+        className={`grid gap-4 px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6 ${
+          isHighlighted ? "bg-primary/6" : ""
+        }`}
+      >
+        <div className="min-w-0 lg:col-span-5">
+          <p className="truncate font-heading text-xl font-bold text-white">
+            {project.projectName}
+          </p>
+          <p className="mt-1 truncate text-sm text-white/50">
+            {project.category}, posted {formatDate(project.postedDate)}
+          </p>
+        </div>
+        <div className="min-w-0 lg:col-span-4">
+          <StageDetail project={project} />
+        </div>
+        <div className="min-w-0 lg:col-span-3 lg:text-right">
+          <StateColumn project={project} />
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+function StagePanel({
+  stage,
+  projects,
+  highlightId,
+}: {
+  stage: ProjectStage;
+  projects: ClientProject[];
+  highlightId: string | null;
+}): ReactElement {
+  const headingId = `stage-${stage}`;
+  return (
+    <section className={panelClassName} aria-labelledby={headingId}>
+      <div className="flex items-baseline justify-between gap-4 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
+        <h2 id={headingId} className="font-heading text-2xl font-bold text-white">
+          {stageLabels[stage]}
+        </h2>
+        <span className="text-sm text-white/45">
+          {countOf(projects.length, "project", "projects")}
+        </span>
+      </div>
+      <ul className="divide-y divide-white/10 border-t border-white/10">
+        {projects.map((project) => (
+          <ProjectRow
+            key={project.id}
+            project={project}
+            isHighlighted={project.id === highlightId}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function ClientProjectsPage(): ReactElement {
+  const { projects, isLoading, error, reload } = useClientProjects();
+  const [filter, setFilter] = useState<StageFilter>("all");
+  const location = useLocation();
+  const justPosted =
+    (location.state as { justPosted?: string } | null)?.justPosted ?? null;
+  const [notice, setNotice] = useState<string>(
+    justPosted ? "Brief posted. Engineers can bid on it now." : "",
+  );
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(""), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  const byStage = useMemo(() => {
+    const groups = new Map<ProjectStage, ClientProject[]>();
+    for (const project of projects) {
+      const stage = getProjectStage(project);
+      groups.set(stage, [...(groups.get(stage) ?? []), project]);
+    }
+    return groups;
+  }, [projects]);
+
+  const filterOptions: { key: StageFilter; label: string; count?: number }[] = [
+    { key: "all", label: "All", count: projects.length },
+    ...stageOrder
+      .filter((stage) => stage !== "cancelled" || byStage.has("cancelled"))
+      .map((stage) => ({
+        key: stage,
+        label: stageLabels[stage],
+        count: byStage.get(stage)?.length ?? 0,
+      })),
+  ];
+
+  const visibleStages = stageOrder.filter(
+    (stage) =>
+      (filter === "all" || filter === stage) &&
+      (byStage.get(stage)?.length ?? 0) > 0,
+  );
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        title="My projects"
+        summary={isLoading ? "Everything you have posted, by stage." : getSummary(projects)}
+      />
+
+      {notice ? (
+        <p
+          role="status"
+          className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-5 py-3.5 text-sm font-semibold text-emerald-200"
+        >
+          {notice}
+        </p>
+      ) : null}
 
       {isLoading ? (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Loading projects"
-        >
-          <ProjectSkeleton />
-          <ProjectSkeleton />
+        <section className={panelClassName} aria-label="Loading projects">
+          <ul className="divide-y divide-white/10">
+            {[0, 1, 2].map((row) => (
+              <li key={row} className="animate-pulse px-6 py-6">
+                <div className="h-5 w-1/3 rounded bg-white/10" />
+                <div className="mt-3 h-3 w-1/4 rounded bg-white/10" />
+              </li>
+            ))}
+          </ul>
         </section>
       ) : error ? (
-        <section
-          className="rounded-2xl border border-red-400/20 bg-red-400/5 p-8 text-center"
-          role="alert"
-        >
-          <p className="text-sm text-red-200">{error}</p>
-          <button
-            type="button"
-            onClick={() => setRetryKey((key) => key + 1)}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-          >
-            Try again
-          </button>
-        </section>
+        <ErrorPanel message={error} onRetry={reload} />
       ) : projects.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-white/15 bg-surface/50 p-12 text-center">
-          <h2 className="font-heading text-3xl font-bold text-white">
-            You haven&apos;t posted any projects yet
-          </h2>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/55">
-            Post your first brief to start receiving qualified engineering bids.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate("/dashboard/client/post-project")}
-            className="mt-6 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-glow"
-          >
-            Post a project
-          </button>
-        </section>
+        <EmptyPanel
+          title="No projects yet"
+          body="Post a brief with your budget and timeline, and engineers can start bidding on it."
+          action={
+            <Link to="/dashboard/client/post-project" className={primaryButtonClassName}>
+              Post a project
+            </Link>
+          }
+        />
       ) : (
-        <section
-          className="grid gap-5 lg:grid-cols-2"
-          aria-label="Client projects"
-        >
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              onClick={() =>
-                navigate(
-                  project.assignedEngineer
-                    ? `/dashboard/client/projects/${project.id}`
-                    : "/dashboard/client/bids",
-                )
-              }
-              className="group rounded-2xl border border-white/10 bg-surface p-6 text-left transition-all duration-300 hover:-translate-y-1 hover:border-primary/50"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                    {project.assignedEngineer ?? "Partner search open"}
-                  </p>
-                  {project.assignedEngineerUserId ? (
-                    <Link
-                      to={`/users/${project.assignedEngineerUserId}`}
-                      onClick={(event) => event.stopPropagation()}
-                      className="mt-2 inline-flex text-xs font-semibold text-primary hover:text-glow"
-                    >
-                      View profile
-                    </Link>
-                  ) : null}
-                  <h2 className="mt-2 font-heading text-2xl font-bold text-white">
-                    {project.projectName}
-                  </h2>
-                </div>
-                <span className="text-sm font-semibold text-white/60">
-                  {project.progressPercentage}%
-                </span>
-              </div>
-              <div className="mt-6">
-                <div className="mb-2 flex items-center justify-between text-xs text-white/45">
-                  <span>Overall progress</span>
-                  <span>{project.currentPhaseName}</span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${project.progressPercentage}%` }}
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex items-end justify-between gap-4 border-t border-white/10 pt-5">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Next milestone
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/85">
-                    {project.nextMilestone}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/40">
-                    Due
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-white/85">
-                    {project.nextMilestoneDueDate}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-5 text-xs font-semibold text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                {project.assignedEngineer
-                  ? "Open project progress ->"
-                  : "Review bids ->"}
-              </p>
-            </button>
-          ))}
-        </section>
+        <>
+          <FilterTabs
+            options={filterOptions}
+            value={filter}
+            onChange={setFilter}
+            label="Filter projects by stage"
+          />
+          {visibleStages.length === 0 ? (
+            <p className={`${panelClassName} px-6 py-8 text-sm text-white/55`}>
+              No projects at this stage.
+            </p>
+          ) : (
+            visibleStages.map((stage) => (
+              <StagePanel
+                key={stage}
+                stage={stage}
+                projects={byStage.get(stage) ?? []}
+                highlightId={justPosted}
+              />
+            ))
+          )}
+        </>
       )}
+
+      <p className="text-sm text-white/50">
+        Finished projects move to{" "}
+        <Link to="/dashboard/client/history" className={quietLinkClassName}>
+          History
+        </Link>
+        .
+      </p>
     </div>
   );
 }

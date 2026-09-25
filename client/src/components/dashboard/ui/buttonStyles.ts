@@ -18,6 +18,10 @@ export const rowDangerButtonClassName = `inline-flex shrink-0 items-center gap-1
 
 export const retryButtonClassName = `w-fit shrink-0 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white active:scale-[0.98] ${focusRing}`;
 
+// Red outline: an action that matters but isn't the page's one primary step,
+// e.g. a row of "Hire" buttons where only the confirmation is solid red.
+export const outlineButtonClassName = retryButtonClassName;
+
 export const quietLinkClassName = `rounded-full text-sm font-semibold text-white/60 transition-colors hover:text-white ${focusRing}`;
 
 // Names inside a sentence (a client, an engineer) stay quiet so the red accent

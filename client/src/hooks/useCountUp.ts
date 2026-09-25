@@ -36,7 +36,7 @@ export function useCountUp(displayValue: string, active: boolean): string {
       : 0;
 
     const format = (value: number): string =>
-      `${prefix}${value.toLocaleString("en-US", {
+      `${prefix}${value.toLocaleString("en-IN", {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals,
       })}${suffix}`;

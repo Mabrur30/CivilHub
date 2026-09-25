@@ -5,7 +5,7 @@ import { useCountUp } from "../../../hooks/useCountUp";
 export interface BandStat {
   label: string;
   value: number;
-  /** Formatted value to show instead of the bare number, e.g. "$12,400". */
+  /** Formatted value to show instead of the bare number, e.g. "৳12,400". */
   display?: string;
   detail: string;
   route?: string;

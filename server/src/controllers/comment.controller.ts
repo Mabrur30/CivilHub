@@ -1,12 +1,12 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
-import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Comment, type IComment } from "../models/Comment.model";
 import { Post } from "../models/Post.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
+import { getProfilePhotoUrl } from "../utils/profilePhotos";
 
 interface CommentError extends Error {
   statusCode: number;
@@ -58,12 +58,8 @@ const getUserId = (req: AuthenticatedRequest): string => {
 const getParams = (req: AuthenticatedRequest): CommentParams =>
   req.params as unknown as CommentParams;
 
-const photoForAuthor = async (authorId: string): Promise<string | null> => {
-  const engineer = await Engineer.findOne({ user: authorId })
-    .select("profilePhoto")
-    .exec();
-  return engineer?.profilePhoto?.url ?? null;
-};
+const photoForAuthor = (authorId: string): Promise<string | null> =>
+  getProfilePhotoUrl(authorId);
 
 const ratingForAuthor = async (
   authorId: string,
