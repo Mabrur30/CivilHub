@@ -16,6 +16,13 @@ import {
 import { ProjectPhase, type IProjectPhase } from "../models/ProjectPhase.model";
 import { User } from "../models/User.model";
 import {
+  Payment,
+  type IPayment,
+  type PaymentType,
+} from "../models/Payment.model";
+import { getPaymentConfig } from "../config/payments";
+import { describePaymentMethod } from "../services/payments";
+import {
   getAdvanceAmount,
   getPhaseAmountsDue,
   getRemainingBalance,
@@ -77,6 +84,12 @@ export interface OpenProjectResponse {
   clientName: string;
   description: string;
   budgetRange: string;
+  // Numbers and dates let the marketplace card show the same short budget
+  // and timeline as the client's preview; budgetRange stays for old briefs.
+  budgetMin: number | null;
+  budgetMax: number | null;
+  targetStartDate: string | null;
+  targetCompletionDate: string | null;
   location: string;
   postedDate: string;
   category: string;
@@ -174,6 +187,10 @@ const toOpenProjectResponse = (project: IProject): OpenProjectResponse => ({
   clientName: project.clientName ?? "Client",
   description: project.description ?? "Project brief available on request.",
   budgetRange: budgetLabel(project),
+  budgetMin: typeof project.budgetMin === "number" ? project.budgetMin : null,
+  budgetMax: typeof project.budgetMax === "number" ? project.budgetMax : null,
+  targetStartDate: project.targetStartDate?.toISOString() ?? null,
+  targetCompletionDate: project.targetCompletionDate?.toISOString() ?? null,
   location: project.location ?? "Location to be confirmed",
   postedDate: (project.postedDate ?? project.createdAt).toISOString(),
   category: project.category ?? "Civil engineering",
@@ -593,6 +610,31 @@ export interface PhasePlanResponse {
   phases: PhasePlanPhaseResponse[];
 }
 
+/** A settled project payment, as both sides see it on the project page. */
+interface ProjectPaymentResponse {
+  tranId: string | null;
+  type: PaymentType;
+  phaseId: string | null;
+  amount: number;
+  platformFee: number;
+  payeeAmount: number;
+  /** e.g. "bKash"; null for payments made before the gateway. */
+  method: string | null;
+  paidAt: string | null;
+}
+
+const toProjectPaymentResponse = (payment: IPayment): ProjectPaymentResponse => ({
+  tranId: payment.tranId ?? null,
+  type: payment.type,
+  phaseId: payment.phase ? payment.phase.toString() : null,
+  amount: payment.amount,
+  platformFee: payment.platformFee,
+  payeeAmount: payment.payeeAmount,
+  method:
+    payment.method === "sslcommerz" ? describePaymentMethod(payment.cardType) : null,
+  paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
+});
+
 const toPhasePlanResponse = (
   project: IProject,
   phases: IProjectPhase[],
@@ -840,9 +882,18 @@ export const getPhasePlan = async (
       .sort({ order: 1 })
       .exec();
 
-    const response = toPhasePlanResponse(project, phases);
+    const payments = await Payment.find({
+      project: project._id,
+      status: "paid",
+    })
+      .sort({ paidAt: 1 })
+      .exec();
 
-    res.status(200).json(response);
+    res.status(200).json({
+      ...toPhasePlanResponse(project, phases),
+      commissionRate: getPaymentConfig().commissionRate,
+      payments: payments.map(toProjectPaymentResponse),
+    });
   } catch (error: unknown) {
     next(error);
   }

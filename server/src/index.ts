@@ -21,7 +21,9 @@ import commentsRouter from "./routes/comments.routes";
 import costEstimatorRouter from "./routes/costEstimator.routes";
 import equipmentRouter from "./routes/equipment.routes";
 import equipmentBookingRouter from "./routes/equipmentBooking.routes";
+import paymentsRouter from "./routes/payments.routes";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
+import { Payment } from "./models/Payment.model";
 
 dotenv.config();
 
@@ -68,10 +70,16 @@ app.use("/api/comments", commentsRouter);
 app.use("/api/cost-estimator", costEstimatorRouter);
 app.use("/api/equipment", equipmentRouter);
 app.use("/api", equipmentBookingRouter);
+app.use("/api/payments", paymentsRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {
   await connectDB();
+  // Payments recorded before the gateway had no status; they were all paid.
+  await Payment.updateMany(
+    { status: { $exists: false } },
+    { $set: { status: "paid" } },
+  ).exec();
   await backfillCompletedProjectStatuses();
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);

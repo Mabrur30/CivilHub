@@ -123,6 +123,8 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   full_payment_received: "projects",
   review_received: "projects",
   review_reply: "projects",
+  // Refunds can be for a project or a booking; projects is the usual case.
+  payment_refund_due: "projects",
 
   equipment_booking_request: "bookings",
   equipment_booking_approved: "bookings",

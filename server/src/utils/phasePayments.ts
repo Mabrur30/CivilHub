@@ -59,7 +59,14 @@ export const getAmountsPaidByPhase = async (
   projectId: Types.ObjectId,
 ): Promise<Map<string, number>> => {
   const rows = await Payment.aggregate<{ _id: Types.ObjectId; total: number }>([
-    { $match: { project: projectId, type: "phase", phase: { $ne: null } } },
+    {
+      $match: {
+        project: projectId,
+        type: "phase",
+        phase: { $ne: null },
+        status: "paid",
+      },
+    },
     { $group: { _id: "$phase", total: { $sum: "$amount" } } },
   ]).exec();
   return new Map(rows.map((row) => [row._id.toString(), row.total]));

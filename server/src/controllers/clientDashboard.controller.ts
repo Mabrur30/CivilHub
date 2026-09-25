@@ -214,7 +214,7 @@ export const getClientOverview = async (
           )
           .exec(),
         Payment.aggregate<{ total: number }>([
-          { $match: { paidBy: clientId } },
+          { $match: { paidBy: clientId, status: "paid" } },
           { $group: { _id: null, total: { $sum: "$amount" } } },
         ]).exec(),
         getTotalUnreadMessageCount(req.user.userId),

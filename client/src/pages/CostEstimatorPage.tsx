@@ -5,6 +5,7 @@ import {
   useState,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { BrandLogo } from "../components/BrandLogo";
 import { useAuth } from "../context/AuthContext";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
@@ -390,13 +391,8 @@ Generated via CivilHub AI & BNBC Construction Model`;
       {/* Standalone Top Bar if accessed without dashboard layout */}
       {isStandalone ? (
         <header className="flex items-center justify-between border-b border-white/10 pb-6">
-          <Link to="/" className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
-              C
-            </span>
-            <span className="font-heading text-2xl font-bold text-white">
-              CivilHub
-            </span>
+          <Link to="/" className="flex items-center">
+            <BrandLogo height={38} />
           </Link>
           <div className="flex items-center gap-3">
             {currentUser ? (

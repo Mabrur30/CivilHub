@@ -12,10 +12,10 @@ import {
   createBookingRequest,
   getBookingByIdForUser,
   getEquipmentAvailability,
+  getEquipmentQuote,
   getIncomingBookingRequests,
   getMyBookings,
   getOwnerBookings,
-  payForBooking,
   resolveDeposit,
   respondToBookingRequest,
   type ConfirmConditionBody,
@@ -39,6 +39,12 @@ equipmentBookingRouter.get(
   protect,
   (req, res, next) =>
     getEquipmentAvailability(req as AuthenticatedRequest, res, next),
+);
+
+equipmentBookingRouter.get(
+  "/equipment/:equipmentId/quote",
+  protect,
+  (req, res, next) => getEquipmentQuote(req as AuthenticatedRequest, res, next),
 );
 
 equipmentBookingRouter.post("/equipment-bookings", protect, (req, res, next) =>
@@ -97,12 +103,6 @@ equipmentBookingRouter.patch(
   protect,
   (req, res, next) =>
     cancelBookingRequest(req as AuthenticatedRequest, res, next),
-);
-
-equipmentBookingRouter.post(
-  "/equipment-bookings/:bookingId/pay",
-  protect,
-  (req, res, next) => payForBooking(req as AuthenticatedRequest, res, next),
 );
 
 equipmentBookingRouter.post(

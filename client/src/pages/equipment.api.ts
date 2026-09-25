@@ -17,6 +17,26 @@ export const EQUIPMENT_CATEGORIES = [
 
 export type EquipmentCategory = (typeof EQUIPMENT_CATEGORIES)[number];
 export type EquipmentStatus = "active" | "paused";
+/** none: bare machine. included: operator is in the daily rate. optional: renter may add one. */
+export type EquipmentOperatorOption = "none" | "included" | "optional";
+/** Who moves it: renter collects, owner delivers for a flat fee, or either. */
+export type EquipmentTransportOption = "pickup" | "delivery" | "both";
+export type EquipmentFulfilment = "pickup" | "delivery";
+
+export const EQUIPMENT_MAX_UNITS = 50;
+
+export interface EquipmentRentalTerms {
+  weeklyRate: number | null;
+  monthlyRate: number | null;
+  minRentalDays: number;
+  /** Identical units that can be out at the same time. */
+  quantity: number;
+  operator: EquipmentOperatorOption;
+  operatorDailyRate: number | null;
+  transport: EquipmentTransportOption;
+  /** Flat fee covering drop-off and collection. */
+  deliveryFee: number | null;
+}
 
 export interface EquipmentPhoto {
   url: string;
@@ -31,7 +51,7 @@ export interface EquipmentOwner {
   reviewCount: number;
 }
 
-export interface EquipmentListing {
+export interface EquipmentListing extends EquipmentRentalTerms {
   id: string;
   owner: EquipmentOwner;
   equipmentRating: number | null;
@@ -108,6 +128,30 @@ export const isEquipmentListing = (
   );
 };
 
+const numberOr = <T>(value: unknown, fallback: T): number | T =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+const withListingDefaults = (listing: EquipmentListing): EquipmentListing => {
+  const raw = listing as unknown as Record<string, unknown>;
+  return {
+    ...listing,
+    weeklyRate: numberOr(raw.weeklyRate, null),
+    monthlyRate: numberOr(raw.monthlyRate, null),
+    minRentalDays: numberOr(raw.minRentalDays, 1),
+    quantity: numberOr(raw.quantity, 1),
+    operator:
+      raw.operator === "included" || raw.operator === "optional"
+        ? raw.operator
+        : "none",
+    operatorDailyRate: numberOr(raw.operatorDailyRate, null),
+    transport:
+      raw.transport === "delivery" || raw.transport === "both"
+        ? raw.transport
+        : "pickup",
+    deliveryFee: numberOr(raw.deliveryFee, null),
+  };
+};
+
 export const isEquipmentBrowseResponse = (
   value: unknown,
 ): value is EquipmentBrowseResponse => {
@@ -149,7 +193,7 @@ export const fetchMyEquipmentListings = async (): Promise<
     );
   }
 
-  return body;
+  return body.map(withListingDefaults);
 };
 
 export interface BrowseFilters {
@@ -188,7 +232,7 @@ export const fetchBrowseEquipmentListings = async (
     );
   }
 
-  return body;
+  return { ...body, items: body.items.map(withListingDefaults) };
 };
 
 export const fetchEquipmentById = async (
@@ -205,10 +249,45 @@ export const fetchEquipmentById = async (
     );
   }
 
-  return body;
+  return withListingDefaults(body);
 };
 
-export interface CreateEquipmentPayload {
+/** Rental terms as typed in the listing form. Blank money fields mean "not offered". */
+export interface EquipmentTermsInput {
+  weeklyRate: string;
+  monthlyRate: string;
+  minRentalDays: string;
+  quantity: string;
+  operator: EquipmentOperatorOption;
+  operatorDailyRate: string;
+  transport: EquipmentTransportOption;
+  deliveryFee: string;
+}
+
+const termsToPlain = (
+  terms: Partial<EquipmentTermsInput>,
+): Record<string, string> => {
+  const plain: Record<string, string> = {};
+  const money = [
+    "weeklyRate",
+    "monthlyRate",
+    "operatorDailyRate",
+    "deliveryFee",
+  ] as const;
+  money.forEach((key) => {
+    const value = terms[key];
+    if (value !== undefined) plain[key] = toPlainAmount(value);
+  });
+  (["minRentalDays", "quantity", "operator", "transport"] as const).forEach(
+    (key) => {
+      const value = terms[key];
+      if (value !== undefined) plain[key] = value.trim();
+    },
+  );
+  return plain;
+};
+
+export interface CreateEquipmentPayload extends EquipmentTermsInput {
   title: string;
   description: string;
   category: EquipmentCategory;
@@ -228,6 +307,9 @@ export const createEquipmentListing = async (
   formData.append("dailyRate", toPlainAmount(payload.dailyRate));
   formData.append("securityDeposit", toPlainAmount(payload.securityDeposit));
   formData.append("location", payload.location.trim());
+  Object.entries(termsToPlain(payload)).forEach(([key, value]) =>
+    formData.append(key, value),
+  );
   payload.photos.forEach((file) => formData.append("photos", file));
 
   const response = await fetch(`${API_BASE_URL}/api/equipment`, {
@@ -243,10 +325,10 @@ export const createEquipmentListing = async (
     );
   }
 
-  return body;
+  return withListingDefaults(body);
 };
 
-export interface UpdateEquipmentPayload {
+export interface UpdateEquipmentPayload extends Partial<EquipmentTermsInput> {
   title?: string;
   description?: string;
   category?: EquipmentCategory;
@@ -266,6 +348,7 @@ export const updateEquipmentListing = async (
     credentials: "include",
     body: JSON.stringify({
       ...payload,
+      ...termsToPlain(payload),
       ...(payload.dailyRate !== undefined
         ? { dailyRate: toPlainAmount(payload.dailyRate) }
         : {}),
@@ -282,7 +365,7 @@ export const updateEquipmentListing = async (
     );
   }
 
-  return body;
+  return withListingDefaults(body);
 };
 
 export const deleteEquipmentListing = async (
@@ -301,15 +384,43 @@ export const deleteEquipmentListing = async (
   }
 };
 
-export interface EquipmentAvailabilityRange {
-  startDate: string;
-  endDate: string;
+export interface EquipmentAvailability {
+  quantity: number;
+  /** Units out on each day, keyed "YYYY-MM-DD"; days not listed are free. */
+  unitsBookedByDate: Map<string, number>;
 }
 
 export interface CreateBookingRequestPayload {
   equipmentId: string;
   startDate: string;
   endDate: string;
+  units: number;
+  withOperator: boolean;
+  fulfilment: EquipmentFulfilment;
+  deliveryAddress?: string;
+}
+
+export interface EquipmentQuoteRequest {
+  startDate: string;
+  endDate: string;
+  units: number;
+  withOperator: boolean;
+  fulfilment: EquipmentFulfilment;
+}
+
+export interface EquipmentQuote {
+  rentalDays: number;
+  units: number;
+  unitRentalFee: number;
+  rentalFee: number;
+  operatorFee: number;
+  deliveryFee: number;
+  securityDeposit: number;
+  totalRentalFee: number;
+  totalDue: number;
+  appliedRates: Array<"daily" | "weekly" | "monthly">;
+  /** Whether that many units are free on every chosen day. */
+  fits: boolean;
 }
 
 export type EquipmentBookingStatus =
@@ -347,6 +458,14 @@ export interface EquipmentBookingBase {
   owner: EquipmentBookingParty;
   startDate: string;
   endDate: string;
+  units: number;
+  rentalDays: number;
+  rentalFee: number;
+  operatorFee: number;
+  deliveryFee: number;
+  withOperator: boolean;
+  fulfilment: EquipmentFulfilment;
+  deliveryAddress: string | null;
   totalRentalFee: number;
   securityDeposit: number;
   status: EquipmentBookingStatus;
@@ -362,6 +481,22 @@ export interface EquipmentBookingBase {
   depositClaimNotes: string | null;
   depositClaimAmount: number | null;
   createdAt: string;
+  /** The settled payment; only sent on the single-booking view. */
+  payment: EquipmentBookingPayment | null;
+}
+
+export interface EquipmentBookingPayment {
+  tranId: string | null;
+  amount: number;
+  /** CivilHub's commission, taken from the owner's share. */
+  platformFee: number;
+  /** What the owner is paid for the rental. */
+  payeeAmount: number;
+  /** Held by CivilHub until the deposit is resolved. */
+  depositAmount: number;
+  /** e.g. "bKash"; null for payments made before the gateway. */
+  method: string | null;
+  paidAt: string | null;
 }
 
 export interface EquipmentIncomingBooking extends EquipmentBookingBase {
@@ -369,10 +504,7 @@ export interface EquipmentIncomingBooking extends EquipmentBookingBase {
 }
 
 export type EquipmentBookingBucket =
-  | "pending"
-  | "upcoming"
-  | "active"
-  | "history";
+  "pending" | "upcoming" | "active" | "history";
 
 export interface EquipmentMyBooking extends EquipmentBookingBase {
   bucket: EquipmentBookingBucket;
@@ -414,14 +546,103 @@ export interface EquipmentReviewsResponse {
   totalReviews: number;
 }
 
-const isAvailabilityRange = (
-  value: unknown,
-): value is EquipmentAvailabilityRange => {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.startDate === "string" && typeof value.endDate === "string"
-  );
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const withBookingDefaults = <T extends EquipmentBookingBase>(booking: T): T => {
+  const raw = booking as unknown as Record<string, unknown>;
+  const days =
+    Math.round(
+      (new Date(booking.endDate).getTime() -
+        new Date(booking.startDate).getTime()) /
+        DAY_MS,
+    ) + 1;
+  return {
+    ...booking,
+    units: numberOr(raw.units, 1),
+    rentalDays: numberOr(raw.rentalDays, Math.max(1, days)),
+    rentalFee: numberOr(raw.rentalFee, booking.totalRentalFee),
+    operatorFee: numberOr(raw.operatorFee, 0),
+    deliveryFee: numberOr(raw.deliveryFee, 0),
+    withOperator: raw.withOperator === true,
+    fulfilment: raw.fulfilment === "delivery" ? "delivery" : "pickup",
+    deliveryAddress:
+      typeof raw.deliveryAddress === "string" ? raw.deliveryAddress : null,
+    payment: toBookingPayment(raw.payment),
+  };
 };
+
+const toBookingPayment = (value: unknown): EquipmentBookingPayment | null => {
+  if (!isRecord(value) || typeof value.amount !== "number") return null;
+  const text = (key: string): string | null =>
+    typeof value[key] === "string" ? (value[key] as string) : null;
+  return {
+    tranId: text("tranId"),
+    amount: value.amount,
+    platformFee: numberOr(value.platformFee, 0),
+    payeeAmount: numberOr(value.payeeAmount, 0),
+    depositAmount: numberOr(value.depositAmount, 0),
+    method: text("method"),
+    paidAt: text("paidAt"),
+  };
+};
+
+// The server used to send approved date ranges for a single unit; read both.
+const toAvailability = (value: unknown): EquipmentAvailability | null => {
+  const unitsBookedByDate = new Map<string, number>();
+  if (Array.isArray(value)) {
+    for (const range of value) {
+      if (
+        !isRecord(range) ||
+        typeof range.startDate !== "string" ||
+        typeof range.endDate !== "string"
+      ) {
+        return null;
+      }
+      for (
+        let time = new Date(range.startDate).getTime();
+        time <= new Date(range.endDate).getTime();
+        time += DAY_MS
+      ) {
+        unitsBookedByDate.set(new Date(time).toISOString().slice(0, 10), 1);
+      }
+    }
+    return { quantity: 1, unitsBookedByDate };
+  }
+  if (
+    !isRecord(value) ||
+    typeof value.quantity !== "number" ||
+    !Array.isArray(value.days)
+  ) {
+    return null;
+  }
+  for (const day of value.days) {
+    if (
+      !isRecord(day) ||
+      typeof day.date !== "string" ||
+      typeof day.unitsBooked !== "number"
+    ) {
+      return null;
+    }
+    unitsBookedByDate.set(day.date, day.unitsBooked);
+  }
+  return { quantity: value.quantity, unitsBookedByDate };
+};
+
+const isQuote = (value: unknown): value is EquipmentQuote =>
+  isRecord(value) &&
+  [
+    "rentalDays",
+    "units",
+    "unitRentalFee",
+    "rentalFee",
+    "operatorFee",
+    "deliveryFee",
+    "securityDeposit",
+    "totalRentalFee",
+    "totalDue",
+  ].every((key) => typeof value[key] === "number") &&
+  Array.isArray(value.appliedRates) &&
+  typeof value.fits === "boolean";
 
 const isBookingStatus = (value: unknown): value is EquipmentBookingStatus =>
   value === "pending" ||
@@ -580,7 +801,7 @@ export const fetchEquipmentAvailability = async (
   equipmentId: string,
   month: number,
   year: number,
-): Promise<EquipmentAvailabilityRange[]> => {
+): Promise<EquipmentAvailability> => {
   const params = new URLSearchParams();
   params.set("month", String(month));
   params.set("year", String(year));
@@ -593,16 +814,37 @@ export const fetchEquipmentAvailability = async (
   );
   const body = await parseJsonResponse(response);
 
-  if (
-    !response.ok ||
-    !Array.isArray(body) ||
-    !body.every(isAvailabilityRange)
-  ) {
+  const availability = response.ok ? toAvailability(body) : null;
+  if (!availability) {
     throw new Error(
       getErrorMessage(body, "Unable to load equipment availability."),
     );
   }
 
+  return availability;
+};
+
+export const fetchEquipmentQuote = async (
+  equipmentId: string,
+  request: EquipmentQuoteRequest,
+  signal?: AbortSignal,
+): Promise<EquipmentQuote> => {
+  const params = new URLSearchParams({
+    startDate: request.startDate,
+    endDate: request.endDate,
+    units: String(request.units),
+    withOperator: String(request.withOperator),
+    fulfilment: request.fulfilment,
+  });
+  const response = await fetch(
+    `${API_BASE_URL}/api/equipment/${equipmentId}/quote?${params.toString()}`,
+    { credentials: "include", signal },
+  );
+  const body = await parseJsonResponse(response);
+
+  if (!response.ok || !isQuote(body)) {
+    throw new Error(getErrorMessage(body, "Unable to price these dates."));
+  }
   return body;
 };
 
@@ -639,7 +881,7 @@ export const fetchIncomingEquipmentBookings = async (): Promise<
     );
   }
 
-  return body;
+  return body.map(withBookingDefaults);
 };
 
 export const fetchMyEquipmentBookings = async (): Promise<
@@ -654,7 +896,7 @@ export const fetchMyEquipmentBookings = async (): Promise<
     throw new Error(getErrorMessage(body, "Unable to load your bookings."));
   }
 
-  return body;
+  return body.map(withBookingDefaults);
 };
 
 export const fetchOwnerEquipmentBookings = async (): Promise<
@@ -669,7 +911,7 @@ export const fetchOwnerEquipmentBookings = async (): Promise<
     throw new Error(getErrorMessage(body, "Unable to load owner bookings."));
   }
 
-  return body;
+  return body.map(withBookingDefaults);
 };
 
 export const fetchEquipmentBookingById = async (
@@ -687,7 +929,7 @@ export const fetchEquipmentBookingById = async (
     throw new Error(getErrorMessage(body, "Unable to load booking details."));
   }
 
-  return body;
+  return withBookingDefaults(body);
 };
 
 export const fetchBookingReviewEligibility = async (
@@ -770,21 +1012,6 @@ export const replyToEquipmentReview = async (
   }
 
   return review;
-};
-
-export const payEquipmentBooking = async (bookingId: string): Promise<void> => {
-  const response = await fetch(
-    `${API_BASE_URL}/api/equipment-bookings/${bookingId}/pay`,
-    {
-      method: "POST",
-      credentials: "include",
-    },
-  );
-  const body = await parseJsonResponse(response);
-
-  if (!response.ok) {
-    throw new Error(getErrorMessage(body, "Unable to process mock payment."));
-  }
 };
 
 export const confirmEquipmentPickup = async (

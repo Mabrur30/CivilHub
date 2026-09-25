@@ -26,7 +26,8 @@ export type NotificationType =
   | "review_received"
   | "review_reply"
   | "comment_received"
-  | "post_reposted";
+  | "post_reposted"
+  | "payment_refund_due";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -81,6 +82,7 @@ const notificationSchema = new Schema<INotification>(
         "review_reply",
         "comment_received",
         "post_reposted",
+        "payment_refund_due",
       ],
       required: true,
     },

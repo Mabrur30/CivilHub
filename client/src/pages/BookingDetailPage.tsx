@@ -16,7 +16,6 @@ import {
   confirmEquipmentReturn,
   fetchBookingReviewEligibility,
   fetchEquipmentBookingById,
-  payEquipmentBooking,
   resolveEquipmentDeposit,
   type BookingReviewEligibilityResponse,
   type EquipmentBookingConditionPhoto,
@@ -25,6 +24,9 @@ import {
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
+import { startCheckout } from "../lib/payments";
+import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
+import { bookingTotalDue } from "../components/dashboard/equipment/bookingTerms";
 
 type TimelineState = "complete" | "current" | "upcoming";
 
@@ -46,7 +48,6 @@ interface DepositDraft {
   claimNotes: string;
   claimAmount: string;
 }
-
 
 const formatDateTime = (value: string | null): string => {
   if (!value) return "Not recorded yet";
@@ -102,6 +103,7 @@ const CheckIcon = (): ReactElement => (
 );
 
 export function BookingDetailPage(): ReactElement {
+  const paths = useEquipmentPaths();
   const navigate = useNavigate();
   const { bookingId } = useParams<{ bookingId: string }>();
   const { currentUser } = useAuth();
@@ -157,7 +159,7 @@ export function BookingDetailPage(): ReactElement {
         message.toLowerCase().includes("not authorized") ||
         message.toLowerCase().includes("forbidden")
       ) {
-        navigate("/dashboard/engineer/equipment/bookings", { replace: true });
+        navigate(paths.bookings, { replace: true });
         return;
       }
 
@@ -202,9 +204,9 @@ export function BookingDetailPage(): ReactElement {
 
   useEffect(() => {
     if (!isLoading && booking && viewerRole === null) {
-      navigate("/dashboard/engineer/equipment/bookings", { replace: true });
+      navigate(paths.bookings, { replace: true });
     }
-  }, [isLoading, booking, viewerRole, navigate]);
+  }, [isLoading, booking, viewerRole, navigate, paths.bookings]);
 
   if (isLoading) {
     return (
@@ -218,10 +220,7 @@ export function BookingDetailPage(): ReactElement {
   if (!booking || error || !viewerRole) {
     return (
       <div className="space-y-4">
-        <BackButton
-          to="/dashboard/engineer/equipment/bookings"
-          label="Back to My Bookings"
-        />
+        <BackButton to={paths.bookings} label="Back to My Bookings" />
         <section
           className="rounded-2xl border border-rose-400/20 bg-rose-400/5 p-6"
           role="alert"
@@ -235,7 +234,7 @@ export function BookingDetailPage(): ReactElement {
   }
 
   const otherParty = viewerRole === "owner" ? booking.renter : booking.owner;
-  const total = booking.totalRentalFee + booking.securityDeposit;
+  const total = bookingTotalDue(booking);
 
   const renderTimelinePhotos = (
     photos: EquipmentBookingConditionPhoto[],
@@ -401,19 +400,16 @@ export function BookingDetailPage(): ReactElement {
     booking.status === "completed" &&
     booking.depositResolution === "pending";
 
+  // Opens SSLCommerz; the page only stays here if the checkout couldn't open.
   const submitPay = async (): Promise<void> => {
     setIsPaying(true);
     setError("");
-    try {
-      await payEquipmentBooking(booking.id);
-      await loadBooking();
-    } catch (actionError: unknown) {
-      setError(
-        actionError instanceof Error
-          ? actionError.message
-          : "Unable to process payment.",
-      );
-    } finally {
+    const checkoutError = await startCheckout({
+      purpose: "equipment_booking",
+      bookingId: booking.id,
+    });
+    if (checkoutError) {
+      setError(checkoutError);
       setIsPaying(false);
     }
   };
@@ -523,10 +519,7 @@ export function BookingDetailPage(): ReactElement {
 
   return (
     <div className="space-y-6">
-      <BackButton
-        to="/dashboard/engineer/equipment/bookings"
-        label="Back to My Bookings"
-      />
+      <BackButton to={paths.bookings} label="Back to My Bookings" />
 
       <div className="rounded-2xl border border-white/10 bg-surface p-5">
         <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
@@ -541,7 +534,7 @@ export function BookingDetailPage(): ReactElement {
             />
             <div className="min-w-0">
               <Link
-                to={`/dashboard/engineer/equipment/${booking.equipment.id}`}
+                to={paths.listing(booking.equipment.id)}
                 className="line-clamp-2 text-xl font-bold text-white transition-colors hover:text-primary"
               >
                 {booking.equipment.title}
@@ -662,18 +655,97 @@ export function BookingDetailPage(): ReactElement {
               Price Summary
             </h2>
             <div className="mt-4 space-y-2 text-sm text-white/80">
-              <p className="flex items-center justify-between">
-                <span>Rental fee</span>
-                <span>{formatCurrency(booking.totalRentalFee)}</span>
+              <p className="flex items-start justify-between gap-3">
+                <span>
+                  Rental
+                  <span className="block text-xs text-white/50">
+                    {booking.rentalDays} day
+                    {booking.rentalDays === 1 ? "" : "s"}
+                    {booking.units > 1 ? ` · ${booking.units} units` : ""}
+                  </span>
+                </span>
+                <span className="tabular-nums">
+                  {formatCurrency(booking.rentalFee)}
+                </span>
               </p>
+              {booking.operatorFee > 0 ? (
+                <p className="flex items-center justify-between">
+                  <span>Operator</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(booking.operatorFee)}
+                  </span>
+                </p>
+              ) : null}
+              {booking.fulfilment === "delivery" ? (
+                <p className="flex items-start justify-between gap-3">
+                  <span>
+                    Delivery
+                    {booking.deliveryAddress ? (
+                      <span className="block text-xs text-white/50">
+                        To {booking.deliveryAddress}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="tabular-nums">
+                    {booking.deliveryFee > 0
+                      ? formatCurrency(booking.deliveryFee)
+                      : "Free"}
+                  </span>
+                </p>
+              ) : (
+                <p className="flex items-center justify-between">
+                  <span>Collection</span>
+                  <span className="text-white/60">Renter collects</span>
+                </p>
+              )}
               <p className="flex items-center justify-between">
-                <span>Security deposit</span>
-                <span>{formatCurrency(booking.securityDeposit)}</span>
+                <span>
+                  Security deposit
+                  <span className="block text-xs text-white/50">
+                    Refundable
+                  </span>
+                </span>
+                <span className="tabular-nums">
+                  {formatCurrency(booking.securityDeposit)}
+                </span>
               </p>
               <p className="flex items-center justify-between border-t border-white/15 pt-2 text-base font-bold text-white">
                 <span>Total</span>
                 <span>{formatCurrency(total)}</span>
               </p>
+              {booking.payment ? (
+                <p className="text-xs text-emerald-200">
+                  Paid
+                  {booking.payment.paidAt
+                    ? ` on ${formatDateTime(booking.payment.paidAt)}`
+                    : ""}
+                  {booking.payment.method
+                    ? ` via ${booking.payment.method}`
+                    : ""}
+                </p>
+              ) : null}
+              {viewerRole === "owner" &&
+              booking.payment &&
+              booking.payment.platformFee > 0 ? (
+                <div className="mt-2 space-y-1.5 rounded-xl border border-white/10 bg-void/45 p-3 text-xs text-white/65">
+                  <p className="flex items-center justify-between">
+                    <span>CivilHub fee</span>
+                    <span className="tabular-nums">
+                      −{formatCurrency(booking.payment.platformFee)}
+                    </span>
+                  </p>
+                  <p className="flex items-center justify-between font-semibold text-white">
+                    <span>You receive</span>
+                    <span className="tabular-nums">
+                      {formatCurrency(booking.payment.payeeAmount)}
+                    </span>
+                  </p>
+                  <p className="text-white/45">
+                    The {formatCurrency(booking.payment.depositAmount)} deposit
+                    is held by CivilHub until you resolve it after the return.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </section>
 
@@ -683,7 +755,8 @@ export function BookingDetailPage(): ReactElement {
                 Action Required
               </h2>
               <p className="mt-2 text-sm text-white/75">
-                Complete mock payment to unlock pickup confirmation.
+                Pay the rental and deposit to unlock pickup. You'll pay on
+                SSLCommerz with bKash, Nagad, a card or internet banking.
               </p>
               <button
                 type="button"
@@ -691,7 +764,9 @@ export function BookingDetailPage(): ReactElement {
                 disabled={isPaying}
                 className="mt-4 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
-                {isPaying ? "Processing..." : "Pay Now (Mock)"}
+                {isPaying
+                  ? "Opening payment..."
+                  : `Pay ${formatCurrency(total)} securely`}
               </button>
             </section>
           ) : null}

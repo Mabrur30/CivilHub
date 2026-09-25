@@ -14,6 +14,12 @@ export const EQUIPMENT_CATEGORIES = [
 
 export type EquipmentCategory = (typeof EQUIPMENT_CATEGORIES)[number];
 export type EquipmentStatus = "active" | "paused";
+/** none: bare machine. included: operator is part of the daily rate. optional: renter may add one at operatorDailyRate. */
+export type EquipmentOperatorOption = "none" | "included" | "optional";
+/** Who moves the machine: the renter collects it, the owner delivers it for a flat fee, or either. */
+export type EquipmentTransportOption = "pickup" | "delivery" | "both";
+
+export const EQUIPMENT_MAX_UNITS = 50;
 
 export interface EquipmentPhoto {
   url: string;
@@ -26,7 +32,18 @@ export interface IEquipment extends Document {
   description: string;
   category: EquipmentCategory;
   dailyRate: number;
+  weeklyRate: number | null;
+  monthlyRate: number | null;
+  minRentalDays: number;
+  /** Security deposit per unit. */
   securityDeposit: number;
+  /** Identical units the owner can rent out at the same time. */
+  quantity: number;
+  operator: EquipmentOperatorOption;
+  operatorDailyRate: number | null;
+  transport: EquipmentTransportOption;
+  /** Flat fee covering drop-off and collection. */
+  deliveryFee: number | null;
   location: string;
   photos: EquipmentPhoto[];
   status: EquipmentStatus;
@@ -71,11 +88,27 @@ const equipmentSchema = new Schema<IEquipment>(
       required: true,
       min: 0,
     },
+    weeklyRate: { type: Number, min: 0, default: null },
+    monthlyRate: { type: Number, min: 0, default: null },
+    minRentalDays: { type: Number, min: 1, default: 1 },
     securityDeposit: {
       type: Number,
       required: true,
       min: 0,
     },
+    quantity: { type: Number, min: 1, max: EQUIPMENT_MAX_UNITS, default: 1 },
+    operator: {
+      type: String,
+      enum: ["none", "included", "optional"],
+      default: "none",
+    },
+    operatorDailyRate: { type: Number, min: 0, default: null },
+    transport: {
+      type: String,
+      enum: ["pickup", "delivery", "both"],
+      default: "pickup",
+    },
+    deliveryFee: { type: Number, min: 0, default: null },
     location: {
       type: String,
       required: true,

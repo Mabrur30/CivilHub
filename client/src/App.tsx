@@ -20,6 +20,7 @@ import { PublicProfilePage } from "./pages/PublicProfilePage";
 import { ProjectProgressPage } from "./pages/ProjectProgressPage";
 import { PostProjectPage } from "./pages/PostProjectPage";
 import { InboxPage } from "./pages/InboxPage";
+import { PaymentResultPage } from "./pages/PaymentResultPage";
 import { RoleDashboardLayout } from "./components/dashboard/RoleDashboardLayout";
 import { SearchEngineersPage } from "./pages/SearchEngineersPage";
 import { FeedPage } from "./pages/FeedPage";
@@ -119,6 +120,24 @@ function App(): ReactElement {
         <Route path="cost-estimator" element={<CostEstimatorPage />} />
         <Route path="bids" element={<ClientBidsPage />} />
         <Route path="network" element={<ClientBrowseEngineersPage />} />
+        {/* Homeowners rent equipment too; listing it stays with engineers. */}
+        <Route
+          path="equipment"
+          element={<Navigate to="/dashboard/client/equipment/browse" replace />}
+        />
+        <Route path="equipment/browse" element={<BrowseEquipmentPage />} />
+        <Route
+          path="equipment/bookings"
+          element={<MyEquipmentBookingsPage />}
+        />
+        <Route
+          path="equipment/bookings/:bookingId"
+          element={<BookingDetailPage />}
+        />
+        <Route
+          path="equipment/:equipmentId"
+          element={<EquipmentDetailPage />}
+        />
       </Route>
       <Route path="/cost-estimator" element={<CostEstimatorRedirect />} />
       <Route
@@ -162,6 +181,8 @@ function App(): ReactElement {
       >
         <Route path="/messages" element={<InboxPage />} />
         <Route path="/messages/:targetId" element={<InboxPage />} />
+        {/* SSLCommerz sends payers back here after checkout. */}
+        <Route path="/payments/result" element={<PaymentResultPage />} />
       </Route>
       <Route
         path="/notifications"

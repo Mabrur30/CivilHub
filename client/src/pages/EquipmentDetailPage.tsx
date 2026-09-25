@@ -1,12 +1,17 @@
 import { type ReactElement, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
-import { EquipmentCalendar } from "../components/EquipmentCalendar";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
+import { BookingPanel } from "../components/dashboard/equipment/BookingPanel";
+import { ListingTermChips } from "../components/dashboard/equipment/ListingTermChips";
+import {
+  operatorLabel,
+  transportLabel,
+} from "../components/dashboard/equipment/termLabels";
+import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 import {
-  createEquipmentBookingRequest,
   fetchEquipmentById,
   fetchEquipmentReviews,
   replyToEquipmentReview,
@@ -14,7 +19,6 @@ import {
   type EquipmentListing,
 } from "./equipment.api";
 import { formatCurrency } from "../lib/format";
-
 
 const LocationPin = (): ReactElement => (
   <svg
@@ -36,21 +40,13 @@ const LocationPin = (): ReactElement => (
 
 export function EquipmentDetailPage(): ReactElement {
   const { currentUser } = useAuth();
+  const paths = useEquipmentPaths();
   const { equipmentId } = useParams<{ equipmentId: string }>();
   const [item, setItem] = useState<EquipmentListing | null>(null);
   const [mainPhotoIndex, setMainPhotoIndex] = useState<number>(0);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
-  const [selectedRange, setSelectedRange] = useState<{
-    start: Date;
-    end: Date;
-  } | null>(null);
-  const [calendarResetKey, setCalendarResetKey] = useState<number>(0);
-  const [bookingMessage, setBookingMessage] = useState<string>("");
-  const [bookingError, setBookingError] = useState<string>("");
-  const [isSubmittingBooking, setIsSubmittingBooking] =
-    useState<boolean>(false);
   const [reviews, setReviews] = useState<EquipmentReviewsResponse | null>(null);
   const [isLoadingReviews, setIsLoadingReviews] = useState<boolean>(false);
   const [reviewsError, setReviewsError] = useState<string>("");
@@ -135,22 +131,6 @@ export function EquipmentDetailPage(): ReactElement {
 
   const mainPhoto = item.photos[mainPhotoIndex] ?? item.photos[0];
 
-  const durationDays = selectedRange
-    ? Math.floor(
-        (selectedRange.end.getTime() - selectedRange.start.getTime()) /
-          (24 * 60 * 60 * 1000),
-      )
-    : 0;
-  const rentalFee = durationDays * item.dailyRate;
-  const totalDue = rentalFee + item.securityDeposit;
-
-  const formatDate = (value: Date): string =>
-    value.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-
   const formatReviewDate = (value: string): string => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
@@ -185,39 +165,6 @@ export function EquipmentDetailPage(): ReactElement {
       );
     } finally {
       setIsSubmittingReply(false);
-    }
-  };
-
-  const submitBookingRequest = async (): Promise<void> => {
-    if (!equipmentId || !selectedRange) {
-      return;
-    }
-
-    setIsSubmittingBooking(true);
-    setBookingError("");
-    setBookingMessage("");
-
-    try {
-      await createEquipmentBookingRequest({
-        equipmentId,
-        startDate: selectedRange.start.toISOString(),
-        endDate: selectedRange.end.toISOString(),
-      });
-
-      setBookingMessage("Request sent - waiting for owner approval.");
-      setSelectedRange(null);
-      setCalendarResetKey((current) => current + 1);
-    } catch (submitError: unknown) {
-      const message =
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to submit booking request.";
-      setBookingError(message);
-      if (message.includes("no longer available")) {
-        setCalendarResetKey((current) => current + 1);
-      }
-    } finally {
-      setIsSubmittingBooking(false);
     }
   };
 
@@ -284,6 +231,7 @@ export function EquipmentDetailPage(): ReactElement {
               <LocationPin />
               {item.location}
             </p>
+            <ListingTermChips terms={item} className="mt-4" />
             <p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-white/75">
               {item.description}
             </p>
@@ -415,14 +363,50 @@ export function EquipmentDetailPage(): ReactElement {
 
         <aside className="h-fit rounded-2xl border border-white/10 bg-surface/90 p-5 lg:sticky lg:top-6">
           <p className="text-white">
-            <span className="text-4xl font-extrabold tracking-tight">
+            <span className="font-heading text-4xl font-bold tabular-nums">
               {formatCurrency(item.dailyRate)}
             </span>
-            <span className="ml-1 text-sm text-white/55">/day</span>
+            <span className="ml-1 text-sm text-white/55">
+              /day{item.quantity > 1 ? " per unit" : ""}
+            </span>
           </p>
-          <p className="mt-2 text-sm text-white/65">
-            Security deposit: {formatCurrency(item.securityDeposit)}
-          </p>
+          <dl className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
+            {[
+              item.weeklyRate !== null
+                ? ["Weekly rate", formatCurrency(item.weeklyRate)]
+                : null,
+              item.monthlyRate !== null
+                ? ["Monthly rate", formatCurrency(item.monthlyRate)]
+                : null,
+              item.minRentalDays > 1
+                ? ["Minimum rental", `${item.minRentalDays} days`]
+                : null,
+              ["Units", String(item.quantity)],
+              [
+                "Operator",
+                item.operator === "optional" && item.operatorDailyRate
+                  ? `Optional, ${formatCurrency(item.operatorDailyRate)}/day`
+                  : (operatorLabel(item) ?? "Not included"),
+              ],
+              ["Transport", transportLabel(item)],
+              [
+                item.quantity > 1 ? "Deposit per unit" : "Security deposit",
+                formatCurrency(item.securityDeposit),
+              ],
+            ]
+              .filter((row): row is string[] => row !== null)
+              .map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-baseline justify-between gap-4"
+                >
+                  <dt className="shrink-0 text-white/55">{label}</dt>
+                  <dd className="text-right font-semibold tabular-nums text-white/90">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+          </dl>
 
           <div className="mt-5 rounded-xl border border-white/10 bg-void/60 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.13em] text-white/45">
@@ -459,75 +443,19 @@ export function EquipmentDetailPage(): ReactElement {
             </p>
             {isOwnerViewing ? (
               <p className="mt-2 text-sm leading-6 text-white/55">
-                This is your listing. Booking requests from other engineers will
-                appear in your Incoming Requests panel.
+                This is your listing. Booking requests appear under{" "}
+                <Link
+                  to={paths.mine}
+                  className="font-semibold text-primary hover:text-glow"
+                >
+                  My listings
+                </Link>
+                .
               </p>
             ) : (
-              <>
-                <div className="mt-3">
-                  <EquipmentCalendar
-                    key={`${equipmentId}-${calendarResetKey}`}
-                    equipmentId={equipmentId ?? ""}
-                    onRangeSelect={(start, end) => {
-                      setSelectedRange({ start, end });
-                      setBookingError("");
-                      setBookingMessage("");
-                    }}
-                  />
-                </div>
-
-                {selectedRange ? (
-                  <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/70">
-                      Booking summary
-                    </p>
-                    <p className="mt-2 text-sm text-white/85">
-                      {formatDate(selectedRange.start)} to{" "}
-                      {formatDate(selectedRange.end)}
-                    </p>
-                    <p className="mt-1 text-xs text-white/60">
-                      {durationDays} day{durationDays === 1 ? "" : "s"} x{" "}
-                      {formatCurrency(item.dailyRate)}
-                    </p>
-                    <div className="mt-3 space-y-1 text-sm text-white/80">
-                      <p className="flex items-center justify-between">
-                        <span>Rental fee</span>
-                        <span>{formatCurrency(rentalFee)}</span>
-                      </p>
-                      <p className="flex items-center justify-between">
-                        <span>Security deposit</span>
-                        <span>{formatCurrency(item.securityDeposit)}</span>
-                      </p>
-                      <p className="mt-1 flex items-center justify-between border-t border-white/15 pt-1.5 text-base font-bold text-white">
-                        <span>Total due</span>
-                        <span>{formatCurrency(totalDue)}</span>
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void submitBookingRequest()}
-                      disabled={isSubmittingBooking}
-                      className="mt-3 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
-                    >
-                      {isSubmittingBooking
-                        ? "Sending request..."
-                        : "Request to Book"}
-                    </button>
-                  </div>
-                ) : null}
-
-                {bookingMessage ? (
-                  <p role="status" className="mt-3 text-sm text-emerald-300">
-                    {bookingMessage}
-                  </p>
-                ) : null}
-
-                {bookingError ? (
-                  <p role="alert" className="mt-3 text-sm text-rose-300">
-                    {bookingError}
-                  </p>
-                ) : null}
-              </>
+              <div className="mt-3">
+                <BookingPanel item={item} />
+              </div>
             )}
           </div>
         </aside>
@@ -538,7 +466,7 @@ export function EquipmentDetailPage(): ReactElement {
           <button
             type="button"
             onClick={() => setLightboxUrl(null)}
-            className="absolute right-5 top-5 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80 transition-colors duration-200 hover:border-primary hover:text-white"
+            className="absolute right-5 top-5 rounded-full border border-snow/30 px-3 py-1.5 text-xs font-semibold text-snow/85 transition-colors duration-200 hover:border-primary hover:text-snow"
           >
             Close
           </button>

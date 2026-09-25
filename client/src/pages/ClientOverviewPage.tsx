@@ -32,6 +32,7 @@ import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency } from "../lib/format";
+import { getGreeting } from "../lib/greeting";
 
 const SNAPSHOT_LIMIT = 5;
 
@@ -42,13 +43,6 @@ const activityFilterTabs: { key: ActivityCategory; label: string }[] = [
   { key: "projects", label: "Projects" },
   { key: "network", label: "Network" },
 ];
-
-const getGreeting = (date: Date): string => {
-  const hour = date.getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-};
 
 const getSummary = (overview: ClientOverview | null): string => {
   if (!overview) return "Here is what your projects need from you today.";

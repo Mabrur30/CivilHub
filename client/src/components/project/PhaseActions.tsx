@@ -277,18 +277,23 @@ export function PhaseActions({
         disabled={isBusy}
         className={primaryButtonClassName}
       >
-        {isBusy ? "Paying..." : `Pay ${formatCurrency(phase.amountDue)}`}
+        {isBusy ? "Opening payment..." : `Pay ${formatCurrency(phase.amountDue)}`}
       </button>
     );
   }
 
   if (phase.status !== "awaiting_approval") return null;
 
-  const approveLabel = isPhaseByPhase
-    ? `Approve and pay ${formatCurrency(phase.amountDue)}`
-    : isFinalPhase && !fullPaymentPaid
-      ? `Approve and pay remaining ${formatCurrency(remainingBalance)}`
-      : "Approve phase";
+  // Paid approvals go through SSLCommerz; the phase completes once it confirms.
+  const needsPayment = isPhaseByPhase
+    ? phase.amountDue > 0
+    : isFinalPhase && !fullPaymentPaid && remainingBalance > 0;
+  const approveLabel = !needsPayment
+    ? "Approve phase"
+    : isPhaseByPhase
+      ? `Approve and pay ${formatCurrency(phase.amountDue)}`
+      : `Approve and pay remaining ${formatCurrency(remainingBalance)}`;
+  const busyLabel = needsPayment ? "Opening payment..." : "Approving...";
 
   return (
     <>
@@ -299,7 +304,7 @@ export function PhaseActions({
           disabled={isBusy}
           className={primaryButtonClassName}
         >
-          {isBusy ? "Approving..." : approveLabel}
+          {isBusy ? busyLabel : approveLabel}
         </button>
         <button
           type="button"

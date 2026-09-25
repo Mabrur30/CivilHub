@@ -24,6 +24,7 @@ import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { countOf } from "../lib/format";
 import { isProjectProgress, type ProjectProgress } from "../lib/projectProgress";
+import { getGreeting } from "../lib/greeting";
 
 interface EngineerOverview {
   activeProjects: number;
@@ -65,13 +66,6 @@ const getErrorMessage = (value: unknown, fallback: string): string => {
     if (typeof response.message === "string") return response.message;
   }
   return fallback;
-};
-
-const getGreeting = (date: Date): string => {
-  const hour = date.getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
 };
 
 const getSummary = (overview: EngineerOverview | null): string => {

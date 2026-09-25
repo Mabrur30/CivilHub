@@ -1,4 +1,3 @@
-import { MapPinIcon } from "@phosphor-icons/react";
 import {
   type ChangeEvent,
   type FormEvent,
@@ -17,8 +16,9 @@ import {
 } from "../components/dashboard/ui/buttonStyles";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { BriefCard } from "../components/project/BriefCard";
 import { useAuth } from "../context/AuthContext";
-import { formatTakaShort, moneyValue, parseMoney } from "../lib/money";
+import { formatBudgetShort, moneyValue, parseMoney } from "../lib/money";
 import { describeTimeline, todayIsoDate } from "../lib/timeline";
 
 interface PostProjectForm {
@@ -99,8 +99,10 @@ const validate = (form: PostProjectForm): FormErrors => {
   const min = parseMoney(form.budgetMin);
   const max = parseMoney(form.budgetMax);
   // The money box already explains what it couldn't read.
-  if (form.budgetMin.trim() && min.value === null) errors.budgetMin = "Check this amount.";
-  if (form.budgetMax.trim() && max.value === null) errors.budgetMax = "Check this amount.";
+  if (form.budgetMin.trim() && min.value === null)
+    errors.budgetMin = "Check this amount.";
+  if (form.budgetMax.trim() && max.value === null)
+    errors.budgetMax = "Check this amount.";
   if (min.value !== null && max.value !== null && max.value <= min.value) {
     errors.budgetMax = "The upper budget has to be more than the lower one.";
   }
@@ -112,7 +114,8 @@ const validate = (form: PostProjectForm): FormErrors => {
     form.targetCompletionDate &&
     form.targetCompletionDate <= form.targetStartDate
   ) {
-    errors.targetCompletionDate = "The finish date has to be after the start date.";
+    errors.targetCompletionDate =
+      "The finish date has to be after the start date.";
   }
   return errors;
 };
@@ -125,54 +128,34 @@ function BriefPreview({
   form: PostProjectForm;
   clientName: string;
 }): ReactElement {
-  const min = moneyValue(form.budgetMin);
-  const max = moneyValue(form.budgetMax);
-  const budget =
-    min !== null && max !== null
-      ? `${formatTakaShort(min)} - ${formatTakaShort(max)}`
-      : "Budget to be added";
-
   return (
-    <aside aria-labelledby="preview-heading" className="grid content-start gap-3">
+    <aside
+      aria-labelledby="preview-heading"
+      className="grid content-start gap-3"
+    >
       <h2 id="preview-heading" className="text-sm font-semibold text-white/60">
         How engineers will see it
       </h2>
-      <div className={`${panelClassName} p-5 sm:p-6`}>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-          <span className="rounded-full bg-white/5 px-2.5 py-1 font-semibold text-white/70">
-            {form.category}
-          </span>
-          <span className="text-white/40">Posted just now</span>
-        </div>
-        <p className="mt-3 font-heading text-2xl font-bold text-white">
-          {form.title.trim() || "Your project title"}
-        </p>
-        <p className="mt-1 text-sm text-white/55">{clientName}</p>
-        <p className="mt-3 line-clamp-4 whitespace-pre-line text-sm leading-6 text-white/60">
-          {form.description.trim() ||
-            "Your description appears here. Engineers decide whether to bid from these few lines."}
-        </p>
-        <dl className="mt-5 grid gap-3 border-t border-white/10 pt-4 text-sm">
-          <div className="flex justify-between gap-4">
-            <dt className="text-white/45">Budget</dt>
-            <dd className="font-semibold tabular-nums text-white/90">{budget}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-white/45">Where</dt>
-            <dd className="flex items-center gap-1.5 text-white/80">
-              <MapPinIcon className="h-4 w-4" aria-hidden="true" />
-              {form.location.trim() || "Location to be added"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-white/45">When</dt>
-            <dd className="text-white/80">
-              {describeTimeline(form.targetStartDate, form.targetCompletionDate) ??
-                "Timeline to be added"}
-            </dd>
-          </div>
-        </dl>
-      </div>
+      <BriefCard
+        category={form.category}
+        posted="Posted just now"
+        title={form.title.trim() || "Your project title"}
+        client={clientName}
+        description={
+          form.description.trim() ||
+          "Your description appears here. Engineers decide whether to bid from these few lines."
+        }
+        budget={formatBudgetShort(
+          moneyValue(form.budgetMin),
+          moneyValue(form.budgetMax),
+          "Budget to be added",
+        )}
+        location={form.location.trim() || "Location to be added"}
+        timeline={
+          describeTimeline(form.targetStartDate, form.targetCompletionDate) ??
+          "Timeline to be added"
+        }
+      />
       <p className="text-xs leading-5 text-white/45">
         Briefs with a clear scope and a realistic budget get more bids. Your
         open briefs also appear on your public profile.
@@ -198,7 +181,9 @@ export function PostProjectPage(): ReactElement {
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const handleChange = (
-    event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    event: ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
   ): void => {
     const name = event.target.name as FieldName;
     setForm((current) => ({ ...current, [name]: event.target.value }));
@@ -209,10 +194,13 @@ export function PostProjectPage(): ReactElement {
 
   const updateField = (name: FieldName, value: string): void => {
     setForm((current) => ({ ...current, [name]: value }));
-    if (errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
+    if (errors[name])
+      setErrors((current) => ({ ...current, [name]: undefined }));
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
     event.preventDefault();
     const next = validate(form);
     setErrors(next);
@@ -242,11 +230,18 @@ export function PostProjectPage(): ReactElement {
       });
       const body: unknown = await response.json();
       if (!response.ok) {
-        setError(getErrorMessage(body, "Unable to post your project right now. Please try again."));
+        setError(
+          getErrorMessage(
+            body,
+            "Unable to post your project right now. Please try again.",
+          ),
+        );
         return;
       }
       const id =
-        typeof body === "object" && body !== null && typeof (body as { id?: unknown }).id === "string"
+        typeof body === "object" &&
+        body !== null &&
+        typeof (body as { id?: unknown }).id === "string"
           ? (body as { id: string }).id
           : null;
       void workspace?.refresh();
@@ -271,7 +266,8 @@ export function PostProjectPage(): ReactElement {
   ): ReactElement => {
     const hintId = hint ? `${name}-hint` : undefined;
     const errorId = errors[name] ? `${name}-error` : undefined;
-    const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+    const describedBy =
+      [hintId, errorId].filter(Boolean).join(" ") || undefined;
     return (
       <div className="grid content-start gap-2">
         <label htmlFor={name} className="text-sm font-semibold text-white/80">
@@ -319,7 +315,10 @@ export function PostProjectPage(): ReactElement {
           className={`${panelClassName} grid gap-6 p-5 sm:p-8`}
         >
           {error ? (
-            <p role="alert" className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">
+            <p
+              role="alert"
+              className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200"
+            >
               {error}
             </p>
           ) : null}
@@ -328,12 +327,23 @@ export function PostProjectPage(): ReactElement {
             {field(
               "title",
               (props) => (
-                <input {...props} value={form.title} onChange={handleChange} maxLength={120} className={inputClass("title")} />
+                <input
+                  {...props}
+                  value={form.title}
+                  onChange={handleChange}
+                  maxLength={120}
+                  className={inputClass("title")}
+                />
               ),
               "Say what and where, e.g. Six-storey residential frame, Uttara",
             )}
             {field("category", (props) => (
-              <select {...props} value={form.category} onChange={handleChange} className={inputClass("category")}>
+              <select
+                {...props}
+                value={form.category}
+                onChange={handleChange}
+                className={inputClass("category")}
+              >
                 {categories.map((category) => (
                   <option key={category}>{category}</option>
                 ))}
@@ -379,7 +389,13 @@ export function PostProjectPage(): ReactElement {
           {field(
             "location",
             (props) => (
-              <input {...props} value={form.location} onChange={handleChange} autoComplete="address-level2" className={inputClass("location")} />
+              <input
+                {...props}
+                value={form.location}
+                onChange={handleChange}
+                autoComplete="address-level2"
+                className={inputClass("location")}
+              />
             ),
             "Area and city, e.g. Mirpur, Dhaka",
           )}
@@ -408,7 +424,11 @@ export function PostProjectPage(): ReactElement {
               Engineers can bid as soon as you post. Nothing is charged until
               you hire someone and approve their plan.
             </p>
-            <button type="submit" disabled={isSubmitting} className={primaryButtonBaseClassName}>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={primaryButtonBaseClassName}
+            >
               {isSubmitting ? "Posting..." : "Post project"}
             </button>
           </div>

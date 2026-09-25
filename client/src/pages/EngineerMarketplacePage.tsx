@@ -1,8 +1,4 @@
-import {
-  CheckIcon,
-  MagnifyingGlassIcon,
-  MapPinIcon,
-} from "@phosphor-icons/react";
+import { CheckIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import {
   type FormEvent,
   type ReactElement,
@@ -25,7 +21,9 @@ import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { countOf, formatDate } from "../lib/format";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
-import { moneyValue } from "../lib/money";
+import { BriefCard } from "../components/project/BriefCard";
+import { formatBudgetShort, moneyValue } from "../lib/money";
+import { describeTimeline } from "../lib/timeline";
 
 interface MarketplaceProject {
   id: string;
@@ -34,6 +32,10 @@ interface MarketplaceProject {
   clientName: string;
   description: string;
   budgetRange: string;
+  budgetMin: number | null;
+  budgetMax: number | null;
+  targetStartDate: string | null;
+  targetCompletionDate: string | null;
   location: string;
   postedDate: string;
   category: string;
@@ -67,10 +69,17 @@ const budgetOptions: { key: BudgetFilter; label: string }[] = [
   { key: "over-1cr", label: "Over ৳1 crore" },
 ];
 
-const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
-  if (typeof value !== "object" || value === null) return false;
+const numberOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+const stringOrNull = (value: unknown): string | null =>
+  typeof value === "string" && value ? value : null;
+
+// The budget numbers and dates are newer fields. A server that does not send
+// them yet still yields a usable brief, shown with its budget text instead.
+const toMarketplaceProject = (value: unknown): MarketplaceProject | null => {
+  if (typeof value !== "object" || value === null) return null;
   const project = value as Record<string, unknown>;
-  return (
+  const isValid =
     typeof project.id === "string" &&
     typeof project.title === "string" &&
     (typeof project.clientId === "string" || project.clientId === null) &&
@@ -79,8 +88,15 @@ const isMarketplaceProject = (value: unknown): value is MarketplaceProject => {
     typeof project.budgetRange === "string" &&
     typeof project.location === "string" &&
     typeof project.postedDate === "string" &&
-    typeof project.category === "string"
-  );
+    typeof project.category === "string";
+  if (!isValid) return null;
+  return {
+    ...(project as unknown as MarketplaceProject),
+    budgetMin: numberOrNull(project.budgetMin),
+    budgetMax: numberOrNull(project.budgetMax),
+    targetStartDate: stringOrNull(project.targetStartDate),
+    targetCompletionDate: stringOrNull(project.targetCompletionDate),
+  };
 };
 
 const isEngineerBidSummary = (value: unknown): value is EngineerBidSummary => {
@@ -121,10 +137,27 @@ const parseBudgetRange = (
   return { min: Math.min(...values), max: Math.max(...values) };
 };
 
+const budgetOf = (project: MarketplaceProject): string =>
+  formatBudgetShort(project.budgetMin, project.budgetMax, project.budgetRange);
+
+const timelineOf = (project: MarketplaceProject): string =>
+  (project.targetStartDate && project.targetCompletionDate
+    ? describeTimeline(
+        project.targetStartDate.slice(0, 10),
+        project.targetCompletionDate.slice(0, 10),
+      )
+    : null) ?? "Timeline to be agreed";
+
 // A brief matches a budget band when its range overlaps the band at all.
-const matchesBudget = (budgetRange: string, filter: BudgetFilter): boolean => {
+const matchesBudget = (
+  project: MarketplaceProject,
+  filter: BudgetFilter,
+): boolean => {
   if (filter === "any") return true;
-  const range = parseBudgetRange(budgetRange);
+  const range =
+    project.budgetMin !== null && project.budgetMax !== null
+      ? { min: project.budgetMin, max: project.budgetMax }
+      : parseBudgetRange(project.budgetRange);
   if (!range) return false;
   if (filter === "under-10l") return range.min < TEN_LAKH;
   if (filter === "10l-1cr") {
@@ -133,32 +166,27 @@ const matchesBudget = (budgetRange: string, filter: BudgetFilter): boolean => {
   return range.max > ONE_CRORE;
 };
 
+const briefGridClassName = "grid gap-5 md:grid-cols-2 xl:grid-cols-3";
+
 function BriefListSkeleton(): ReactElement {
   return (
-    <section className={panelClassName} aria-label="Loading marketplace">
-      <ul className="divide-y divide-white/10">
-        {[1, 2, 3].map((item) => (
-          <li
-            key={item}
-            className="grid animate-pulse gap-5 px-5 py-6 sm:px-6 lg:grid-cols-12 lg:gap-8"
-          >
-            <div className="lg:col-span-8">
-              <div className="h-5 w-40 rounded-full bg-white/10" />
-              <div className="mt-4 h-6 w-2/3 rounded bg-white/10" />
-              <div className="mt-2 h-3.5 w-1/4 rounded bg-white/10" />
-              <div className="mt-4 h-3.5 w-full rounded bg-white/10" />
-              <div className="mt-2 h-3.5 w-4/5 rounded bg-white/10" />
-            </div>
-            <div className="lg:col-span-4">
-              <div className="h-3 w-16 rounded bg-white/10" />
-              <div className="mt-2 h-5 w-40 rounded bg-white/10" />
-              <div className="mt-4 h-3.5 w-28 rounded bg-white/10" />
-              <div className="mt-5 h-11 w-32 rounded-full bg-white/10" />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <ul className={briefGridClassName} aria-label="Loading marketplace">
+      {[1, 2, 3].map((item) => (
+        <li key={item} className={`${panelClassName} animate-pulse p-5 sm:p-6`}>
+          <div className="h-5 w-40 rounded-full bg-white/10" />
+          <div className="mt-4 h-6 w-4/5 rounded bg-white/10" />
+          <div className="mt-2 h-3.5 w-1/3 rounded bg-white/10" />
+          <div className="mt-4 h-3.5 w-full rounded bg-white/10" />
+          <div className="mt-2 h-3.5 w-4/5 rounded bg-white/10" />
+          <div className="mt-6 space-y-3 border-t border-white/10 pt-4">
+            <div className="h-3.5 w-full rounded bg-white/10" />
+            <div className="h-3.5 w-2/3 rounded bg-white/10" />
+            <div className="h-3.5 w-3/4 rounded bg-white/10" />
+          </div>
+          <div className="mt-5 h-11 w-full rounded-full bg-white/10" />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -176,21 +204,14 @@ function BriefRow({
   const posted = formatRelativeTime(project.postedDate);
 
   return (
-    <li className="grid gap-5 px-5 py-6 sm:px-6 lg:grid-cols-12 lg:gap-8">
-      <div className="min-w-0 lg:col-span-8">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-          <span className="rounded-full bg-white/5 px-2.5 py-1 font-semibold text-white/70">
-            {project.category}
-          </span>
-          <span className="text-white/40" title={formatDate(project.postedDate)}>
-            Posted {posted ? posted.toLowerCase() : formatDate(project.postedDate)}
-          </span>
-        </div>
-        <h2 className="mt-3 font-heading text-2xl font-bold text-white">
-          {project.title}
-        </h2>
-        <p className="mt-1 text-sm text-white/55">
-          {project.clientId ? (
+    <li>
+      <BriefCard
+        titleAs="h2"
+        category={project.category}
+        posted={`Posted ${posted ? posted.toLowerCase() : formatDate(project.postedDate)}`}
+        title={project.title}
+        client={
+          project.clientId ? (
             <Link
               to={`/profile/${project.clientId}`}
               state={{
@@ -203,39 +224,29 @@ function BriefRow({
             </Link>
           ) : (
             project.clientName
-          )}
-        </p>
-        <p className="mt-3 line-clamp-3 max-w-[65ch] text-sm leading-6 text-white/60">
-          {project.description}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-4 lg:col-span-4 lg:border-l lg:border-white/10 lg:pl-8">
-        <div>
-          <p className="text-xs font-semibold text-white/40">Budget</p>
-          <p className="mt-1 font-semibold text-white/90">
-            {project.budgetRange}
-          </p>
-        </div>
-        <p className="flex items-center gap-1.5 text-sm text-white/60">
-          <MapPinIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
-          {project.location}
-        </p>
-        {hasSubmittedBid ? (
-          <p className="inline-flex w-fit items-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
-            <CheckIcon className="h-4 w-4" aria-hidden="true" />
-            Bid submitted
-          </p>
-        ) : (
-          <button
-            type="button"
-            onClick={onBid}
-            className={primaryButtonClassName}
-          >
-            Submit bid
-          </button>
-        )}
-      </div>
+          )
+        }
+        description={project.description}
+        budget={budgetOf(project)}
+        location={project.location}
+        timeline={timelineOf(project)}
+        footer={
+          hasSubmittedBid ? (
+            <p className="flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
+              <CheckIcon className="h-4 w-4" aria-hidden="true" />
+              Bid submitted
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onBid}
+              className={`${primaryButtonBaseClassName} w-full`}
+            >
+              Submit bid
+            </button>
+          )
+        }
+      />
     </li>
   );
 }
@@ -273,10 +284,13 @@ export function EngineerMarketplacePage(): ReactElement {
         ]);
         const projectsBody: unknown = await projectsResponse.json();
         const bidsBody: unknown = await bidsResponse.json();
+        const parsedProjects = Array.isArray(projectsBody)
+          ? projectsBody.map(toMarketplaceProject)
+          : null;
         if (
           !projectsResponse.ok ||
-          !Array.isArray(projectsBody) ||
-          !projectsBody.every(isMarketplaceProject)
+          !parsedProjects ||
+          parsedProjects.some((project) => project === null)
         ) {
           setLoadError(
             getErrorMessage(
@@ -296,7 +310,7 @@ export function EngineerMarketplacePage(): ReactElement {
           );
           return;
         }
-        setProjects(projectsBody);
+        setProjects(parsedProjects as MarketplaceProject[]);
         setSubmittedProjectIds(new Set(bidsBody.map((bid) => bid.projectId)));
       } catch {
         setLoadError("Unable to connect to CivilHub. Please try again.");
@@ -355,11 +369,7 @@ export function EngineerMarketplacePage(): ReactElement {
       `${project.title} ${project.clientName} ${project.location}`
         .toLowerCase()
         .includes(searchTerm);
-    return (
-      matchesCategory &&
-      matchesSearch &&
-      matchesBudget(project.budgetRange, budget)
-    );
+    return matchesCategory && matchesSearch && matchesBudget(project, budget);
   });
   const hasActiveFilters =
     searchTerm !== "" || category !== ALL_CATEGORIES || budget !== "any";
@@ -545,9 +555,9 @@ export function EngineerMarketplacePage(): ReactElement {
           }
         />
       ) : (
-        <section className={panelClassName} aria-label="Open briefs">
+        <section className="grid gap-4" aria-label="Open briefs">
           {hasActiveFilters ? (
-            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-3.5 text-sm text-white/50 sm:px-6">
+            <div className="flex items-center justify-between gap-4 px-1 text-sm text-white/50">
               <span>
                 Showing {filteredProjects.length} of {projects.length}
               </span>
@@ -560,7 +570,7 @@ export function EngineerMarketplacePage(): ReactElement {
               </button>
             </div>
           ) : null}
-          <ul className="divide-y divide-white/10">
+          <ul className={briefGridClassName}>
             {filteredProjects.map((project) => (
               <BriefRow
                 key={project.id}
@@ -582,8 +592,9 @@ export function EngineerMarketplacePage(): ReactElement {
                 {selectedProject.title} for {selectedProject.clientName}
               </p>
               <p className="mt-1">
-                {parseBudgetRange(selectedProject.budgetRange)
-                  ? `Client budget: ${selectedProject.budgetRange}`
+                {selectedProject.budgetMin !== null ||
+                parseBudgetRange(selectedProject.budgetRange)
+                  ? `Client budget: ${budgetOf(selectedProject)}`
                   : selectedProject.budgetRange}
               </p>
             </>
@@ -591,58 +602,58 @@ export function EngineerMarketplacePage(): ReactElement {
           onClose={closeBidDialog}
           isBusy={isSubmitting}
         >
-            <form onSubmit={submitBid} className="grid gap-5" noValidate>
-              <div className="grid gap-2">
-                <label
-                  htmlFor="bid-amount"
-                  className="text-sm font-semibold text-white/80"
-                >
-                  Your price
-                </label>
-                <MoneyInput
-                  id="bid-amount"
-                  value={bid.amount}
-                  onChange={(value) => setBid({ ...bid, amount: value })}
-                  describedBy={bidError ? "bid-error" : undefined}
-                  autoFocus
-                />
-              </div>
-              <div className="grid gap-2">
-                <label
-                  htmlFor="bid-message"
-                  className="text-sm font-semibold text-white/80"
-                >
-                  Message to {selectedProject.clientName}
-                </label>
-                <textarea
-                  id="bid-message"
-                  rows={4}
-                  value={bid.message}
-                  onChange={(event) =>
-                    setBid({ ...bid, message: event.target.value })
-                  }
-                  aria-describedby={
-                    bidError ? "bid-message-help bid-error" : "bid-message-help"
-                  }
-                  className={`${inputClassName} resize-none`}
-                />
-                <p id="bid-message-help" className="text-xs text-white/45">
-                  Why your team fits, your approach and a rough timeline.
-                </p>
-              </div>
-              {bidError ? (
-                <p id="bid-error" role="alert" className="text-sm text-rose-300">
-                  {bidError}
-                </p>
-              ) : null}
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className={`${primaryButtonBaseClassName} w-full`}
+          <form onSubmit={submitBid} className="grid gap-5" noValidate>
+            <div className="grid gap-2">
+              <label
+                htmlFor="bid-amount"
+                className="text-sm font-semibold text-white/80"
               >
-                {isSubmitting ? "Submitting..." : "Submit bid"}
-              </button>
-            </form>
+                Your price
+              </label>
+              <MoneyInput
+                id="bid-amount"
+                value={bid.amount}
+                onChange={(value) => setBid({ ...bid, amount: value })}
+                describedBy={bidError ? "bid-error" : undefined}
+                autoFocus
+              />
+            </div>
+            <div className="grid gap-2">
+              <label
+                htmlFor="bid-message"
+                className="text-sm font-semibold text-white/80"
+              >
+                Message to {selectedProject.clientName}
+              </label>
+              <textarea
+                id="bid-message"
+                rows={4}
+                value={bid.message}
+                onChange={(event) =>
+                  setBid({ ...bid, message: event.target.value })
+                }
+                aria-describedby={
+                  bidError ? "bid-message-help bid-error" : "bid-message-help"
+                }
+                className={`${inputClassName} resize-none`}
+              />
+              <p id="bid-message-help" className="text-xs text-white/45">
+                Why your team fits, your approach and a rough timeline.
+              </p>
+            </div>
+            {bidError ? (
+              <p id="bid-error" role="alert" className="text-sm text-rose-300">
+                {bidError}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`${primaryButtonBaseClassName} w-full`}
+            >
+              {isSubmitting ? "Submitting..." : "Submit bid"}
+            </button>
+          </form>
         </Dialog>
       ) : null}
     </div>

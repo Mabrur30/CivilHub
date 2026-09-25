@@ -6,12 +6,21 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import {
   Equipment,
   EQUIPMENT_CATEGORIES,
+  EQUIPMENT_MAX_UNITS,
   type EquipmentCategory,
+  type EquipmentOperatorOption,
   type EquipmentStatus,
+  type EquipmentTransportOption,
   type IEquipment,
 } from "../models/Equipment.model";
+import { EquipmentBooking } from "../models/EquipmentBooking.model";
 import { Engineer } from "../models/Engineer.model";
 import { Review } from "../models/Review.model";
+import {
+  listingPricingOf,
+  type ListingPricing,
+  validateListingPricing,
+} from "../utils/equipmentPricing";
 
 interface EquipmentError extends Error {
   statusCode: number;
@@ -22,7 +31,18 @@ interface EquipmentPhotoResponse {
   publicId: string;
 }
 
-export interface CreateEquipmentBody {
+interface ListingTermsBody {
+  weeklyRate?: number | string | null;
+  monthlyRate?: number | string | null;
+  minRentalDays?: number | string;
+  quantity?: number | string;
+  operator?: string;
+  operatorDailyRate?: number | string | null;
+  transport?: string;
+  deliveryFee?: number | string | null;
+}
+
+export interface CreateEquipmentBody extends ListingTermsBody {
   title?: string;
   description?: string;
   category?: string;
@@ -31,7 +51,7 @@ export interface CreateEquipmentBody {
   location?: string;
 }
 
-export interface UpdateEquipmentBody {
+export interface UpdateEquipmentBody extends ListingTermsBody {
   title?: string;
   description?: string;
   category?: string;
@@ -72,7 +92,15 @@ interface EquipmentListItemResponse {
   description: string;
   category: EquipmentCategory;
   dailyRate: number;
+  weeklyRate: number | null;
+  monthlyRate: number | null;
+  minRentalDays: number;
   securityDeposit: number;
+  quantity: number;
+  operator: EquipmentOperatorOption;
+  operatorDailyRate: number | null;
+  transport: EquipmentTransportOption;
+  deliveryFee: number | null;
   location: string;
   photos: EquipmentPhotoResponse[];
   status: EquipmentStatus;
@@ -122,6 +150,17 @@ const requireEngineerUser = (req: AuthenticatedRequest): string => {
   return req.user.userId;
 };
 
+// Browsing and viewing are open to anyone who can rent: clients and engineers.
+const requireRenterUser = (req: AuthenticatedRequest): string => {
+  if (
+    !req.user?.userId ||
+    (req.user.role !== "engineer" && req.user.role !== "client")
+  ) {
+    throw createEquipmentError("Sign in to browse equipment", 403);
+  }
+  return req.user.userId;
+};
+
 const getParams = (req: AuthenticatedRequest): EquipmentParams =>
   req.params as unknown as EquipmentParams;
 
@@ -168,6 +207,82 @@ const parsePositiveNumber = (value: number | string | undefined): number => {
   return parsed;
 };
 
+const isBlank = (value: unknown): boolean =>
+  value === undefined ||
+  value === null ||
+  (typeof value === "string" && (value.trim() === "" || value === "null"));
+
+/** An optional money field: blank clears it, otherwise it must be a number >= 0. */
+const parseOptionalAmount = (
+  value: number | string | null | undefined,
+  label: string,
+): number | null => {
+  if (isBlank(value)) return null;
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value));
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw createEquipmentError(`${label} must be a number of 0 or more`, 400);
+  }
+  return parsed;
+};
+
+const parseWholeNumber = (
+  value: number | string | undefined,
+  label: string,
+  min: number,
+  max: number,
+): number => {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw createEquipmentError(`${label} must be a whole number from ${min} to ${max}`, 400);
+  }
+  return parsed;
+};
+
+const OPERATOR_OPTIONS: EquipmentOperatorOption[] = ["none", "included", "optional"];
+const TRANSPORT_OPTIONS: EquipmentTransportOption[] = ["pickup", "delivery", "both"];
+
+/** Applies whichever rental terms the body sends onto `target`. */
+const applyListingTerms = (body: ListingTermsBody, target: ListingPricing): void => {
+  if (body.weeklyRate !== undefined) {
+    target.weeklyRate = parseOptionalAmount(body.weeklyRate, "Weekly rate");
+  }
+  if (body.monthlyRate !== undefined) {
+    target.monthlyRate = parseOptionalAmount(body.monthlyRate, "Monthly rate");
+  }
+  if (body.minRentalDays !== undefined) {
+    target.minRentalDays = parseWholeNumber(body.minRentalDays, "Minimum rental", 1, 365);
+  }
+  if (body.quantity !== undefined) {
+    target.quantity = parseWholeNumber(body.quantity, "Number of units", 1, EQUIPMENT_MAX_UNITS);
+  }
+  if (body.operator !== undefined) {
+    if (!OPERATOR_OPTIONS.includes(body.operator as EquipmentOperatorOption)) {
+      throw createEquipmentError("Operator must be none, included or optional", 400);
+    }
+    target.operator = body.operator as EquipmentOperatorOption;
+  }
+  if (body.operatorDailyRate !== undefined) {
+    target.operatorDailyRate = parseOptionalAmount(body.operatorDailyRate, "Operator rate");
+  }
+  if (body.transport !== undefined) {
+    if (!TRANSPORT_OPTIONS.includes(body.transport as EquipmentTransportOption)) {
+      throw createEquipmentError("Transport must be pickup, delivery or both", 400);
+    }
+    target.transport = body.transport as EquipmentTransportOption;
+  }
+  if (body.deliveryFee !== undefined) {
+    target.deliveryFee = parseOptionalAmount(body.deliveryFee, "Delivery fee");
+  }
+  // Rates that no longer apply are cleared so old values can't leak into quotes.
+  if (target.operator !== "optional") target.operatorDailyRate = null;
+  if (target.transport === "pickup") target.deliveryFee = null;
+};
+
+const assertValidTerms = (terms: ListingPricing): void => {
+  const problem = validateListingPricing(terms);
+  if (problem) throw createEquipmentError(problem, 400);
+};
+
 const isEquipmentCategory = (value: string): value is EquipmentCategory =>
   (EQUIPMENT_CATEGORIES as readonly string[]).includes(value);
 
@@ -184,8 +299,7 @@ const toEquipmentResponse = (
   title: equipment.title,
   description: equipment.description,
   category: equipment.category,
-  dailyRate: equipment.dailyRate,
-  securityDeposit: equipment.securityDeposit,
+  ...listingPricingOf(equipment),
   location: equipment.location,
   photos: equipment.photos.map((photo) => ({
     url: photo.url,
@@ -400,6 +514,21 @@ export const createEquipment = async (
       );
     }
 
+    const terms: ListingPricing = {
+      dailyRate,
+      weeklyRate: null,
+      monthlyRate: null,
+      minRentalDays: 1,
+      securityDeposit,
+      quantity: 1,
+      operator: "none",
+      operatorDailyRate: null,
+      transport: "pickup",
+      deliveryFee: null,
+    };
+    applyListingTerms(req.body, terms);
+    assertValidTerms(terms);
+
     const uploads = await Promise.all(
       files.map((file) =>
         uploadBuffer(file.buffer, {
@@ -414,8 +543,7 @@ export const createEquipment = async (
       title,
       description,
       category,
-      dailyRate,
-      securityDeposit,
+      ...terms,
       location,
       photos: uploads.map((item) => ({
         url: item.secure_url,
@@ -542,6 +670,11 @@ export const updateEquipment = async (
       equipment.status = req.body.status;
     }
 
+    const terms = listingPricingOf(equipment);
+    applyListingTerms(req.body, terms);
+    assertValidTerms(terms);
+    Object.assign(equipment, terms);
+
     await equipment.save();
 
     const ownerSummary: OwnerSummary = {
@@ -572,6 +705,17 @@ export const deleteEquipment = async (
 
     const equipment = await requireOwnedEquipment(equipmentId, ownerId);
 
+    const liveBooking = await EquipmentBooking.exists({
+      equipment: equipment._id,
+      status: { $in: ["pending", "approved", "in_progress"] },
+    });
+    if (liveBooking) {
+      throw createEquipmentError(
+        "This listing has open or active bookings. Pause it instead, and delete it once they're finished.",
+        409,
+      );
+    }
+
     await Promise.all(
       equipment.photos.map((photo) => deleteCloudinaryImage(photo.publicId)),
     );
@@ -590,7 +734,7 @@ export const browseEquipment = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireEngineerUser(req);
+    const userId = requireRenterUser(req);
     const query = getQuery(req);
 
     const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
@@ -706,7 +850,7 @@ export const getEquipmentById = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    requireEngineerUser(req);
+    requireRenterUser(req);
     const { equipmentId } = getParams(req);
 
     if (!equipmentId || !Types.ObjectId.isValid(equipmentId)) {

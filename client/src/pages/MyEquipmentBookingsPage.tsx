@@ -9,6 +9,11 @@ import {
   needsPayment,
 } from "../components/dashboard/equipment/bookingStatus";
 import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
+import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
+import {
+  bookingTotalDue,
+  describeBookingExtras,
+} from "../components/dashboard/equipment/bookingTerms";
 import {
   panelClassName,
   primaryButtonClassName,
@@ -21,10 +26,10 @@ import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency, formatDateRange } from "../lib/format";
 import {
   fetchMyEquipmentBookings,
-  payEquipmentBooking,
   type EquipmentBookingBucket,
   type EquipmentMyBooking,
 } from "./equipment.api";
+import { startCheckout } from "../lib/payments";
 
 const BUCKETS: EquipmentBookingBucket[] = [
   "pending",
@@ -67,7 +72,9 @@ const getSummary = (items: EquipmentMyBooking[]): string => {
     );
   }
   if (inUse > 0) {
-    sentences.push(`${countOf(inUse, "rental is", "rentals are")} in progress.`);
+    sentences.push(
+      `${countOf(inUse, "rental is", "rentals are")} in progress.`,
+    );
   }
   return sentences.length
     ? sentences.join(" ")
@@ -87,7 +94,8 @@ function BookingRow({
   payError,
   onPay,
 }: BookingRowProps): ReactElement {
-  const detailPath = `/dashboard/engineer/equipment/bookings/${booking.id}`;
+  const paths = useEquipmentPaths();
+  const detailPath = paths.booking(booking.id);
   const canPay = needsPayment(booking);
 
   return (
@@ -108,6 +116,11 @@ function BookingRow({
           <p className="mt-0.5 text-sm text-white/55">
             {formatDateRange(booking.startDate, booking.endDate)}
           </p>
+          {describeBookingExtras(booking) ? (
+            <p className="mt-0.5 text-xs text-white/50">
+              {describeBookingExtras(booking)}
+            </p>
+          ) : null}
           <div className="mt-1.5 flex min-w-0 items-center gap-2 text-sm text-white/55">
             <Avatar
               name={booking.owner.name}
@@ -149,8 +162,8 @@ function BookingRow({
             className={primaryButtonClassName}
           >
             {isPaying
-              ? "Paying..."
-              : `Pay ${formatCurrency(booking.totalRentalFee)}`}
+              ? "Opening payment..."
+              : `Pay ${formatCurrency(bookingTotalDue(booking))}`}
           </button>
         ) : (
           <Link to={detailPath} className={quietLinkClassName}>
@@ -198,6 +211,7 @@ function BookingListSkeleton(): ReactElement {
 }
 
 export function MyEquipmentBookingsPage(): ReactElement {
+  const paths = useEquipmentPaths();
   const [items, setItems] = useState<EquipmentMyBooking[]>([]);
   // null until the person picks a filter, so the page can open on the group
   // that needs them: wherever a payment is due, else the first non-empty one.
@@ -253,21 +267,16 @@ export function MyEquipmentBookingsPage(): ReactElement {
     "pending";
   const visibleItems = grouped[activeBucket];
 
+  // Opens SSLCommerz; the page only stays here if the checkout couldn't open.
   const handlePay = async (bookingId: string): Promise<void> => {
     setPayingId(bookingId);
     setPayError(null);
-    try {
-      await payEquipmentBooking(bookingId);
-      await loadBookings();
-    } catch (payFailure: unknown) {
-      setPayError({
-        id: bookingId,
-        message:
-          payFailure instanceof Error
-            ? payFailure.message
-            : "Unable to process booking payment.",
-      });
-    } finally {
+    const checkoutError = await startCheckout({
+      purpose: "equipment_booking",
+      bookingId,
+    });
+    if (checkoutError) {
+      setPayError({ id: bookingId, message: checkoutError });
       setPayingId(null);
     }
   };
@@ -294,10 +303,7 @@ export function MyEquipmentBookingsPage(): ReactElement {
           title="No bookings yet"
           body="Find a machine or tool, pick your dates and send a request. It shows up here while the owner decides."
           action={
-            <Link
-              to="/dashboard/engineer/equipment/browse"
-              className={primaryButtonClassName}
-            >
+            <Link to={paths.browse} className={primaryButtonClassName}>
               Browse equipment
             </Link>
           }
@@ -323,9 +329,7 @@ export function MyEquipmentBookingsPage(): ReactElement {
                   key={booking.id}
                   booking={booking}
                   isPaying={payingId === booking.id}
-                  payError={
-                    payError?.id === booking.id ? payError.message : ""
-                  }
+                  payError={payError?.id === booking.id ? payError.message : ""}
                   onPay={() => void handlePay(booking.id)}
                 />
               ))}

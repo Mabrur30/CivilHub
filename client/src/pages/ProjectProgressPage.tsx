@@ -21,6 +21,11 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
+import {
+  formatRate,
+  startCheckout,
+  type CheckoutRequest,
+} from "../lib/payments";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -82,6 +87,22 @@ interface PhasePlan {
   remainingBalance: number;
   phasePlanFeedback: { note: string; rejectedAt: string } | null;
   phases: PhasePlanPhase[];
+  /** CivilHub's share of each payment, taken from the engineer's side. */
+  commissionRate?: number;
+  /** Settled payments, oldest first. */
+  payments?: ProjectPaymentRecord[];
+}
+
+interface ProjectPaymentRecord {
+  tranId: string | null;
+  type: "advance" | "phase" | "full_remaining";
+  phaseId: string | null;
+  amount: number;
+  platformFee: number;
+  payeeAmount: number;
+  /** e.g. "bKash"; null for payments made before the gateway. */
+  method: string | null;
+  paidAt: string | null;
 }
 
 interface ProjectProgressResponse {
@@ -652,39 +673,48 @@ export function ProjectProgressPage(): ReactElement {
       return;
     }
 
+    await payThroughGateway({ purpose: "advance", projectId });
+  };
+
+  // Opens SSLCommerz; the page only stays here if the checkout couldn't open.
+  const payThroughGateway = async (request: CheckoutRequest): Promise<void> => {
     setIsProcessingPayment(true);
     setPaymentError("");
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/projects/${projectId}/payments/advance`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-
-      if (!response.ok) {
-        const errorBody: unknown = await response.json();
-        setPaymentError(getErrorMessage(errorBody));
-        return;
-      }
-
-      await loadData();
-    } catch {
-      setPaymentError("Unable to process payment. Please try again.");
-    } finally {
+    const error = await startCheckout(request);
+    if (error) {
+      setPaymentError(error);
       setIsProcessingPayment(false);
     }
   };
 
-  // Approving completes the phase, and charges for it on the phase-by-phase
-  // plan (or collects the remaining balance on the final full-upfront phase).
+  // Approving completes the phase. When approval costs something (every phase
+  // on the phase-by-phase plan, or the final full-upfront phase with the
+  // balance unpaid), it's "Approve & pay": the phase completes once
+  // SSLCommerz confirms the payment.
   const handleApprovePhase = async (phaseId: string): Promise<void> => {
-    if (!projectId) return;
+    if (!projectId || !phasePlan || !projectProgress) return;
 
     setUpdatingPhaseId(phaseId);
     setUpdateError("");
+
+    const phases = projectProgress.phases;
+    const phase = phases.find((item) => item.id === phaseId);
+    const isFinalPhase = phases[phases.length - 1]?.id === phaseId;
+    const needsPayment =
+      phasePlan.paymentPlan === "phase_by_phase"
+        ? (phase?.amountDue ?? 0) > 0
+        : isFinalPhase &&
+          !phasePlan.fullPaymentPaid &&
+          phasePlan.remainingBalance > 0;
+    if (needsPayment) {
+      const error = await startCheckout({ purpose: "phase", projectId, phaseId });
+      if (error) {
+        setUpdateError(error);
+        setUpdatingPhaseId(null);
+      }
+      return;
+    }
+
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/projects/${projectId}/phases/${phaseId}/approve`,
@@ -736,30 +766,7 @@ export function ProjectProgressPage(): ReactElement {
       return;
     }
 
-    setIsProcessingPayment(true);
-    setPaymentError("");
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/projects/${projectId}/payments/full-remaining`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-
-      if (!response.ok) {
-        const errorBody: unknown = await response.json();
-        setPaymentError(getErrorMessage(errorBody));
-        return;
-      }
-
-      await loadData();
-    } catch {
-      setPaymentError("Unable to process payment. Please try again.");
-    } finally {
-      setIsProcessingPayment(false);
-    }
+    await payThroughGateway({ purpose: "full_remaining", projectId });
   };
 
   const handleSubmitReview = async (): Promise<void> => {
@@ -817,6 +824,26 @@ export function ProjectProgressPage(): ReactElement {
   const phasePaymentsPaid =
     projectProgress?.phases.reduce((sum, phase) => sum + phase.amountPaid, 0) ??
     0;
+  const settledPayments = phasePlan?.payments ?? [];
+  const commissionRate = phasePlan?.commissionRate ?? 0.1;
+  const paymentFor = (
+    type: ProjectPaymentRecord["type"],
+    phaseId: string | null = null,
+  ): ProjectPaymentRecord | undefined =>
+    settledPayments.find(
+      (payment) =>
+        payment.type === type && (phaseId === null || payment.phaseId === phaseId),
+    );
+  // "via bKash", and for the engineer what they keep after CivilHub's fee.
+  const paidDetail = (payment: ProjectPaymentRecord | undefined): string => {
+    if (!payment?.method) return "";
+    const net =
+      isEngineerViewer && payment.platformFee > 0
+        ? ` · you receive ${formatCurrency(payment.payeeAmount)}`
+        : "";
+    return ` via ${payment.method}${net}`;
+  };
+  const remainingPayment = paymentFor("full_remaining");
 
   // One sentence saying where the project stands and whose move it is.
   const getHeaderSummary = (): string => {
@@ -1291,7 +1318,7 @@ export function ProjectProgressPage(): ReactElement {
                     <dt className="font-semibold text-white">Advance</dt>
                     <dd className={`mt-0.5 text-sm ${phasePlan.advancePaid ? "text-emerald-200" : "text-white/55"}`}>
                       {phasePlan.advancePaid
-                        ? `Paid${phasePlan.advancePaidAt ? ` on ${formatDate(phasePlan.advancePaidAt)}` : ""}`
+                        ? `Paid${phasePlan.advancePaidAt ? ` on ${formatDate(phasePlan.advancePaidAt)}` : ""}${paidDetail(paymentFor("advance"))}`
                         : "Due before work starts"}
                     </dd>
                   </div>
@@ -1306,7 +1333,7 @@ export function ProjectProgressPage(): ReactElement {
                         disabled={isProcessingPayment}
                         className={primaryButtonClassName}
                       >
-                        {isProcessingPayment ? "Paying..." : "Pay advance"}
+                        {isProcessingPayment ? "Opening payment..." : "Pay advance"}
                       </button>
                     </dd>
                   ) : (
@@ -1320,7 +1347,7 @@ export function ProjectProgressPage(): ReactElement {
                       <dt className="font-semibold text-white">Remaining balance</dt>
                       <dd className={`mt-0.5 text-sm ${phasePlan.fullPaymentPaid ? "text-emerald-200" : "text-white/55"}`}>
                         {phasePlan.fullPaymentPaid
-                          ? `Paid${phasePlan.fullPaymentPaidAt ? ` on ${formatDate(phasePlan.fullPaymentPaidAt)}` : ""}`
+                          ? `Paid${phasePlan.fullPaymentPaidAt ? ` on ${formatDate(phasePlan.fullPaymentPaidAt)}` : ""}${paidDetail(remainingPayment)}`
                           : phasePlan.advancePaid
                             ? "Pay now, or when you approve the final phase"
                             : "Due after the advance"}
@@ -1337,7 +1364,7 @@ export function ProjectProgressPage(): ReactElement {
                           disabled={isProcessingPayment}
                           className={secondaryButtonClassName}
                         >
-                          {isProcessingPayment ? "Paying..." : "Pay remaining"}
+                          {isProcessingPayment ? "Opening payment..." : "Pay remaining"}
                         </button>
                       </dd>
                     ) : (
@@ -1371,11 +1398,11 @@ export function ProjectProgressPage(): ReactElement {
                 </div>
               </dl>
 
-              {isClientViewer ? (
-                <p className="mt-3 text-xs text-white/45">
-                  Payments are simulated while the payment gateway is being set up.
-                </p>
-              ) : null}
+              <p className="mt-3 text-xs text-white/45">
+                {isClientViewer
+                  ? "Payments open SSLCommerz, where you can pay with bKash, Nagad, a card or internet banking."
+                  : `CivilHub keeps a ${formatRate(commissionRate)} fee from each payment; the rest is yours.`}
+              </p>
             </section>
           )}
 
@@ -1456,6 +1483,7 @@ export function ProjectProgressPage(): ReactElement {
                               phase.paymentStatus === "paid" ? (
                                 <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 text-emerald-200">
                                   Paid {formatCurrency(phase.amountPaid)}
+                                  {paidDetail(paymentFor("phase", phase.id))}
                                 </span>
                               ) : isPhaseByPhase ? (
                                 <span

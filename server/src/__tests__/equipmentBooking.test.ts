@@ -15,8 +15,16 @@ import { type IUser, User } from "../models/User.model";
 import equipmentRouter from "../routes/equipment.routes";
 import equipmentBookingRouter from "../routes/equipmentBooking.routes";
 import reviewsRouter from "../routes/reviews.routes";
+import paymentsRouter from "../routes/payments.routes";
+import {
+  installFakeGateway,
+  payViaGateway,
+  type FakeGateway,
+} from "./helpers/fakeGateway";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+
+let gateway: FakeGateway;
 
 interface TestFixture {
   ownerUser: IUser;
@@ -42,6 +50,7 @@ const createTestApp = (): Express => {
   app.use("/api/equipment", equipmentRouter);
   app.use("/api", equipmentBookingRouter);
   app.use("/api/reviews", reviewsRouter);
+  app.use("/api/payments", paymentsRouter);
   app.use(errorHandler);
   return app;
 };
@@ -146,10 +155,13 @@ const payBooking = async (
   renterUser: IUser,
   bookingId: string,
 ): Promise<request.Response> => {
-  return request(app)
-    .post(`/api/equipment-bookings/${bookingId}/pay`)
-    .set("Cookie", authCookieForUser(renterUser))
-    .send({});
+  const { checkout, callback } = await payViaGateway(
+    app,
+    gateway,
+    authCookieForUser(renterUser),
+    { purpose: "equipment_booking", bookingId },
+  );
+  return callback ?? checkout;
 };
 
 const confirmPickup = async (
@@ -188,9 +200,11 @@ const resolveDeposit = async (
 beforeAll(async () => {
   memoryServer = await MongoMemoryServer.create();
   await mongoose.connect(memoryServer.getUri());
+  gateway = installFakeGateway();
 });
 
 afterAll(async () => {
+  gateway.restore();
   await mongoose.disconnect();
   await memoryServer.stop();
 });
@@ -376,13 +390,27 @@ describe("Equipment Booking integration: overlap conflicts", () => {
     expect(secondBooking?.status).toBe("declined");
   });
 
-  test("6) a booking request with endDate equal/before startDate is rejected", async () => {
+  test("6) a booking request with endDate before startDate is rejected; a same-day hire is allowed", async () => {
     const app = createTestApp();
     const fixture = await createBaseFixture();
 
     const startDate = addDays(new Date(), 6);
 
-    const equalDates = await createBookingRequest({
+    const endBeforeStart = await createBookingRequest({
+      app,
+      authCookie: authCookieForUser(fixture.renterUser),
+      equipmentId: fixture.equipment._id.toString(),
+      startDate,
+      endDate: addDays(startDate, -1),
+    });
+
+    expect(endBeforeStart.status).toBe(400);
+    expect(endBeforeStart.body.message).toContain(
+      "End date can't be before the start date",
+    );
+
+    // Both ends count, so a single-day hire is a valid one-day booking.
+    const sameDay = await createBookingRequest({
       app,
       authCookie: authCookieForUser(fixture.renterUser),
       equipmentId: fixture.equipment._id.toString(),
@@ -390,10 +418,7 @@ describe("Equipment Booking integration: overlap conflicts", () => {
       endDate: startDate,
     });
 
-    expect(equalDates.status).toBe(400);
-    expect(equalDates.body.message).toContain(
-      "End date must be after start date",
-    );
+    expect(sameDay.status).toBe(201);
   });
 
   test("7) a booking request with startDate in the past is rejected", async () => {
@@ -620,9 +645,12 @@ describe("Equipment Booking integration: status transition guards", () => {
     );
 
     const ownerPayAttempt = await request(app)
-      .post(`/api/equipment-bookings/${bookingResponse.body.id as string}/pay`)
+      .post("/api/payments/checkout")
       .set("Cookie", authCookieForUser(fixture.ownerUser))
-      .send({});
+      .send({
+        purpose: "equipment_booking",
+        bookingId: bookingResponse.body.id as string,
+      });
 
     expect(ownerPayAttempt.status).toBe(403);
     expect(ownerPayAttempt.body.message).toContain("Only the renter can pay");

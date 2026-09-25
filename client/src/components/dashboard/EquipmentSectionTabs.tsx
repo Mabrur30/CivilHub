@@ -1,19 +1,25 @@
 import { type ReactElement } from "react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { equipmentPathsFor } from "./equipment/paths";
 
 interface EquipmentSectionTabsProps {
   className?: string;
 }
 
-const tabs = [
-  { label: "Browse", to: "/dashboard/engineer/equipment/browse" },
-  { label: "My listings", to: "/dashboard/engineer/equipment/mine" },
-  { label: "My bookings", to: "/dashboard/engineer/equipment/bookings" },
-];
-
 export function EquipmentSectionTabs({
   className = "",
 }: EquipmentSectionTabsProps): ReactElement {
+  const { currentUser } = useAuth();
+  const isClient = currentUser?.role === "client";
+  const paths = equipmentPathsFor(isClient ? "client" : "engineer");
+  // Clients rent but don't list equipment.
+  const tabs = [
+    { label: "Browse", to: paths.browse },
+    ...(isClient ? [] : [{ label: "My listings", to: paths.mine }]),
+    { label: "My bookings", to: paths.bookings },
+  ];
+
   return (
     <nav
       className={`scrollbar-hidden w-fit max-w-full overflow-x-auto rounded-full border border-white/10 bg-surface p-1 ${className}`}

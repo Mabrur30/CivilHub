@@ -1,13 +1,11 @@
 import { MagnifyingGlassIcon, MapPinIcon } from "@phosphor-icons/react";
-import {
-  type ReactElement,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type ReactElement, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
 import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
+import { ListingTermChips } from "../components/dashboard/equipment/ListingTermChips";
+import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
+import { useAuth } from "../context/AuthContext";
 import {
   inputClassName,
   primaryButtonClassName,
@@ -55,13 +53,19 @@ const hasActiveFilters = (
     maxPrice.trim(),
   );
 
-function EquipmentCard({ item }: { item: EquipmentListing }): ReactElement {
+function EquipmentCard({
+  item,
+  href,
+}: {
+  item: EquipmentListing;
+  href: string;
+}): ReactElement {
   const hasEquipmentRating =
     typeof item.equipmentRating === "number" && item.equipmentReviewCount > 0;
 
   return (
     <Link
-      to={`/dashboard/engineer/equipment/${item.id}`}
+      to={href}
       className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-surface transition-colors hover:border-white/25 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
     >
       <EquipmentThumb
@@ -87,6 +91,7 @@ function EquipmentCard({ item }: { item: EquipmentListing }): ReactElement {
             />
           ) : null}
         </div>
+        <ListingTermChips terms={item} className="mt-3" />
 
         {/* The footer is pinned to the bottom so prices line up across a row
             of cards whose titles and ratings take different heights. */}
@@ -107,6 +112,11 @@ function EquipmentCard({ item }: { item: EquipmentListing }): ReactElement {
                 {formatCurrency(item.dailyRate)}
               </span>
               <span className="ml-1 text-xs text-white/50">/day</span>
+              {item.weeklyRate !== null ? (
+                <span className="block text-xs text-white/50">
+                  {formatCurrency(item.weeklyRate)}/week
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -133,6 +143,8 @@ function EquipmentCardSkeleton(): ReactElement {
 }
 
 export function BrowseEquipmentPage(): ReactElement {
+  const paths = useEquipmentPaths();
+  const isClient = useAuth().currentUser?.role === "client";
   const [items, setItems] = useState<EquipmentListing[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -270,10 +282,18 @@ export function BrowseEquipmentPage(): ReactElement {
             />
           </FormField>
           <FormField id="equipment-min" label="Min per day">
-            <MoneyInput id="equipment-min" value={minPrice} onChange={setMinPrice} />
+            <MoneyInput
+              id="equipment-min"
+              value={minPrice}
+              onChange={setMinPrice}
+            />
           </FormField>
           <FormField id="equipment-max" label="Max per day">
-            <MoneyInput id="equipment-max" value={maxPrice} onChange={setMaxPrice} />
+            <MoneyInput
+              id="equipment-max"
+              value={maxPrice}
+              onChange={setMaxPrice}
+            />
           </FormField>
         </div>
 
@@ -328,14 +348,13 @@ export function BrowseEquipmentPage(): ReactElement {
         ) : (
           <EmptyPanel
             title="No equipment listed yet"
-            body="When engineers list machines or tools for rent, they appear here."
+            body="When owners list machines or tools for rent, they appear here."
             action={
-              <Link
-                to="/dashboard/engineer/equipment/mine"
-                className={primaryButtonClassName}
-              >
-                List your equipment
-              </Link>
+              isClient ? undefined : (
+                <Link to={paths.mine} className={primaryButtonClassName}>
+                  List your equipment
+                </Link>
+              )
             }
           />
         )
@@ -346,7 +365,11 @@ export function BrowseEquipmentPage(): ReactElement {
             aria-label="Equipment for rent"
           >
             {items.map((item) => (
-              <EquipmentCard key={item.id} item={item} />
+              <EquipmentCard
+                key={item.id}
+                item={item}
+                href={paths.listing(item.id)}
+              />
             ))}
           </section>
 

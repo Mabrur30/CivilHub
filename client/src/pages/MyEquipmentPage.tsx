@@ -19,7 +19,11 @@ import {
 } from "../components/dashboard/equipment/bookingStatus";
 import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
 import { ListingFields } from "../components/dashboard/equipment/ListingFields";
+import { ListingTermChips } from "../components/dashboard/equipment/ListingTermChips";
+import { describeBookingExtras } from "../components/dashboard/equipment/bookingTerms";
 import {
+  emptyListingDetails,
+  listingToDetails,
   validateListingDetails,
   type ListingDetails,
 } from "../components/dashboard/equipment/listingDetails";
@@ -71,15 +75,6 @@ const rentalBucketLabel: Record<EquipmentBookingBucket, string> = {
   history: "Past",
 };
 
-const defaultDetails: ListingDetails = {
-  title: "",
-  description: "",
-  category: "Excavator",
-  dailyRate: "",
-  securityDeposit: "",
-  location: "",
-};
-
 interface RowError {
   id: string;
   message: string;
@@ -107,15 +102,6 @@ const validateImageFile = (file: File): string => {
   }
   return "";
 };
-
-const toDetails = (item: EquipmentListing): ListingDetails => ({
-  title: item.title,
-  description: item.description,
-  category: item.category,
-  dailyRate: String(item.dailyRate),
-  securityDeposit: String(item.securityDeposit),
-  location: item.location,
-});
 
 function PartyLine({ party }: { party: EquipmentBookingParty }): ReactElement {
   return (
@@ -227,7 +213,8 @@ export function MyEquipmentPage(): ReactElement {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [isAddOpen, setIsAddOpen] = useState<boolean>(false);
-  const [addDetails, setAddDetails] = useState<ListingDetails>(defaultDetails);
+  const [addDetails, setAddDetails] =
+    useState<ListingDetails>(emptyListingDetails);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [addError, setAddError] = useState<string>("");
@@ -235,7 +222,7 @@ export function MyEquipmentPage(): ReactElement {
 
   const [editingItem, setEditingItem] = useState<EquipmentListing | null>(null);
   const [editDetails, setEditDetails] =
-    useState<ListingDetails>(defaultDetails);
+    useState<ListingDetails>(emptyListingDetails);
   const [editError, setEditError] = useState<string>("");
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
@@ -334,7 +321,7 @@ export function MyEquipmentPage(): ReactElement {
 
   const closeAdd = useCallback((): void => {
     setIsAddOpen(false);
-    setAddDetails(defaultDetails);
+    setAddDetails(emptyListingDetails);
     setPhotos([]);
     setPreviewUrls((current) => {
       current.forEach((url) => URL.revokeObjectURL(url));
@@ -514,10 +501,7 @@ export function MyEquipmentPage(): ReactElement {
       <EquipmentSectionTabs />
 
       {showRequests ? (
-        <section
-          className={panelClassName}
-          aria-labelledby="requests-heading"
-        >
+        <section className={panelClassName} aria-labelledby="requests-heading">
           <PanelHeading
             id="requests-heading"
             title="Booking requests"
@@ -555,6 +539,11 @@ export function MyEquipmentPage(): ReactElement {
                         <p className="mt-0.5 text-sm text-white/55">
                           {formatDateRange(booking.startDate, booking.endDate)}
                         </p>
+                        {describeBookingExtras(booking) ? (
+                          <p className="mt-0.5 text-xs text-white/50">
+                            {describeBookingExtras(booking)}
+                          </p>
+                        ) : null}
                         <PartyLine party={booking.renter} />
                       </div>
                     </Link>
@@ -658,7 +647,9 @@ export function MyEquipmentPage(): ReactElement {
                     </p>
                     <p className="text-xs text-white/45">
                       {formatCurrency(item.securityDeposit)} deposit
+                      {item.quantity > 1 ? " per unit" : ""}
                     </p>
+                    <ListingTermChips terms={item} className="mt-2" />
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 lg:col-span-4 lg:justify-end">
@@ -690,7 +681,7 @@ export function MyEquipmentPage(): ReactElement {
                           type="button"
                           onClick={() => {
                             setEditingItem(item);
-                            setEditDetails(toDetails(item));
+                            setEditDetails(listingToDetails(item));
                             setEditError("");
                           }}
                           className={rowButtonClassName}
@@ -791,6 +782,11 @@ export function MyEquipmentPage(): ReactElement {
                         <p className="mt-0.5 text-sm text-white/55">
                           {formatDateRange(booking.startDate, booking.endDate)}
                         </p>
+                        {describeBookingExtras(booking) ? (
+                          <p className="mt-0.5 text-xs text-white/50">
+                            {describeBookingExtras(booking)}
+                          </p>
+                        ) : null}
                         <PartyLine party={booking.renter} />
                       </div>
                     </div>
@@ -886,7 +882,9 @@ export function MyEquipmentPage(): ReactElement {
                         type="button"
                         onClick={() =>
                           setPhotoSelection(
-                            photos.filter((_, photoIndex) => photoIndex !== index),
+                            photos.filter(
+                              (_, photoIndex) => photoIndex !== index,
+                            ),
                           )
                         }
                         className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-void/80 text-white transition-colors hover:bg-void focus-visible:outline-2 focus-visible:outline-glow"

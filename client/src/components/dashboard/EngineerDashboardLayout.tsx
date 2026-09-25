@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { BrandLogo } from "../BrandLogo";
 import { ThemeToggle } from "../ThemeToggle";
 import { TopNavAlerts } from "./TopNavAlerts";
 import { UserMenu } from "./UserMenu";
@@ -39,12 +40,7 @@ export function EngineerDashboardLayout(
               onClick={() => navigate("/dashboard/engineer")}
               className="flex items-center gap-3 rounded-full text-white transition-opacity duration-300 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
-                C
-              </span>
-              <span className="font-heading text-xl font-bold">
-                CivilHub
-              </span>
+              <BrandLogo height={34} />
             </button>
 
             <div className="flex items-center gap-3">

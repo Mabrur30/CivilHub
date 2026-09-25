@@ -1,3 +1,4 @@
+import { equipmentPathsFor } from "./equipment/paths";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
@@ -24,7 +25,8 @@ export type NotificationType =
   | "review_received"
   | "review_reply"
   | "comment_received"
-  | "post_reposted";
+  | "post_reposted"
+  | "payment_refund_due";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -75,6 +77,7 @@ const notificationTypes: NotificationType[] = [
   "review_reply",
   "comment_received",
   "post_reposted",
+  "payment_refund_due",
 ];
 
 export const isNotificationType = (value: unknown): value is NotificationType =>
@@ -163,7 +166,8 @@ export const mapNotificationTypeToActivityType = (
     type === "review_received" ||
     type === "review_reply" ||
     type === "comment_received" ||
-    type === "post_reposted"
+    type === "post_reposted" ||
+    type === "payment_refund_due"
   ) {
     return "milestone";
   }
@@ -178,6 +182,7 @@ export interface NotificationTargetRefs {
   type: NotificationType;
   projectId?: string | null;
   equipmentId?: string | null;
+  equipmentBookingId?: string | null;
   bidId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
@@ -191,27 +196,23 @@ export const getNotificationTargetPath = (
     return `/messages/${notification.conversationId}`;
   }
 
-  // Equipment listing and booking are engineer-only, and the equipment routes
-  // exist only under /dashboard/engineer, so role is deliberately not used here.
+  // Equipment notifications open the booking itself, which both the owner and
+  // the renter can view, inside the reader's own dashboard (clients rent too).
   if (
-    (notification.type === "equipment_booking_request" ||
-      notification.type === "equipment_booking_declined" ||
-      notification.type === "equipment_booking_auto_declined" ||
-      notification.type === "equipment_booking_payment_received") &&
-    notification.equipmentId
+    notification.type.startsWith("equipment_") ||
+    (notification.type === "payment_refund_due" &&
+      notification.equipmentBookingId)
   ) {
-    return "/dashboard/engineer/equipment/mine";
-  }
-
-  if (
-    (notification.type === "equipment_booking_approved" ||
-      notification.type === "equipment_pickup_confirmed" ||
-      notification.type === "equipment_return_confirmed" ||
-      notification.type === "equipment_deposit_released" ||
-      notification.type === "equipment_deposit_claimed") &&
-    notification.equipmentId
-  ) {
-    return "/dashboard/engineer/equipment/bookings";
+    const equipment = equipmentPathsFor(role);
+    if (notification.equipmentBookingId) {
+      return equipment.booking(notification.equipmentBookingId);
+    }
+    if (notification.equipmentId) {
+      return notification.type === "equipment_booking_request" &&
+        role === "engineer"
+        ? equipment.mine
+        : equipment.bookings;
+    }
   }
 
   if (
@@ -224,6 +225,7 @@ export const getNotificationTargetPath = (
       notification.type === "advance_payment_received" ||
       notification.type === "phase_payment_received" ||
       notification.type === "full_payment_received" ||
+      notification.type === "payment_refund_due" ||
       notification.type === "review_received" ||
       notification.type === "review_reply") &&
     notification.projectId

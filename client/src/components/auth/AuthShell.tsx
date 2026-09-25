@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { MotionConfig, motion } from "framer-motion";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { BrandLogo } from "../BrandLogo";
 
 interface AuthShellProps {
   children: ReactNode;
@@ -57,9 +58,9 @@ export function AuthShell({
             <Link
               to="/"
               aria-label="Back to home"
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-lg font-bold text-primary transition-all duration-300 hover:-translate-y-0.5 hover:border-primary hover:bg-primary/15"
+              className="mx-auto flex w-fit items-center justify-center rounded-full p-1 transition-transform duration-300 hover:-translate-y-0.5"
             >
-              C
+              <BrandLogo height={44} markOnly />
             </Link>
             {children}
           </div>

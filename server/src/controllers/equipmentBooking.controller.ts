@@ -9,12 +9,20 @@ import {
   EquipmentBooking,
   type DepositResolutionStatus,
   type EquipmentBookingStatus,
+  type EquipmentFulfilment,
   type IEquipmentBooking,
 } from "../models/EquipmentBooking.model";
 import { Notification } from "../models/Notification.model";
-import { Payment } from "../models/Payment.model";
+import { Payment, type IPayment } from "../models/Payment.model";
+import { describePaymentMethod, payeeShareNote } from "../services/payments";
 import { Review } from "../models/Review.model";
 import { formatTaka } from "../utils/money";
+import {
+  listingPricingOf,
+  quoteBooking,
+  type RentalQuote,
+} from "../utils/equipmentPricing";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
 
 interface BookingError extends Error {
   statusCode: number;
@@ -33,6 +41,18 @@ export interface CreateBookingBody {
   equipmentId?: string;
   startDate?: string;
   endDate?: string;
+  units?: number | string;
+  withOperator?: boolean | string;
+  fulfilment?: string;
+  deliveryAddress?: string;
+}
+
+interface QuoteQuery {
+  startDate?: string;
+  endDate?: string;
+  units?: string;
+  withOperator?: string;
+  fulfilment?: string;
 }
 
 export interface RespondBookingBody {
@@ -53,9 +73,10 @@ interface BookingParams {
   bookingId?: string;
 }
 
-interface AvailabilityItem {
-  startDate: string;
-  endDate: string;
+interface AvailabilityResponse {
+  quantity: number;
+  /** Only days with at least one unit out; any other day is fully free. */
+  days: Array<{ date: string; unitsBooked: number }>;
 }
 
 type BookingPaymentStatus = "unpaid" | "paid";
@@ -87,6 +108,14 @@ interface BookingViewResponse {
   owner: BookingParticipant;
   startDate: string;
   endDate: string;
+  units: number;
+  rentalDays: number;
+  rentalFee: number;
+  operatorFee: number;
+  deliveryFee: number;
+  withOperator: boolean;
+  fulfilment: EquipmentFulfilment;
+  deliveryAddress: string | null;
   totalRentalFee: number;
   securityDeposit: number;
   status: EquipmentBookingStatus;
@@ -103,6 +132,19 @@ interface BookingViewResponse {
   depositClaimAmount: number | null;
   bucket: BookingBucket;
   createdAt: string;
+  /** The settled payment; only on the single-booking view. */
+  payment?: BookingPaymentResponse | null;
+}
+
+interface BookingPaymentResponse {
+  tranId: string | null;
+  amount: number;
+  platformFee: number;
+  payeeAmount: number;
+  depositAmount: number;
+  /** e.g. "bKash"; null for payments made before the gateway. */
+  method: string | null;
+  paidAt: string | null;
 }
 
 interface PopulatedBookingUser {
@@ -137,9 +179,12 @@ const createBookingError = (
   return error;
 };
 
-const requireEngineerUserId = (req: AuthenticatedRequest): string => {
-  if (!req.user?.userId || req.user.role !== "engineer") {
-    throw createBookingError("Engineer access required", 403);
+const requireRenterUserId = (req: AuthenticatedRequest): string => {
+  if (
+    !req.user?.userId ||
+    (req.user.role !== "engineer" && req.user.role !== "client")
+  ) {
+    throw createBookingError("Sign in to rent equipment", 403);
   }
 
   return req.user.userId;
@@ -278,12 +323,9 @@ const toBookingEquipmentId = (value: unknown): Types.ObjectId | null => {
   return populated ? populated._id : null;
 };
 
-const getDurationDays = (startDate: Date, endDate: Date): number =>
-  Math.floor((endDate.getTime() - startDate.getTime()) / DAY_MS);
-
 const assertBookingDatesValid = (startDate: Date, endDate: Date): void => {
-  if (endDate <= startDate) {
-    throw createBookingError("End date must be after start date", 400);
+  if (endDate < startDate) {
+    throw createBookingError("End date can't be before the start date", 400);
   }
 
   const today = toUtcDayStart(new Date());
@@ -292,38 +334,80 @@ const assertBookingDatesValid = (startDate: Date, endDate: Date): void => {
   }
 };
 
-const buildApprovedOverlapQuery = (
-  equipmentId: Types.ObjectId,
-  startDate: Date,
-  endDate: Date,
-): Record<string, unknown> => ({
-  equipment: equipmentId,
-  status: "approved",
-  startDate: { $lte: endDate },
-  endDate: { $gte: startDate },
-});
+// Bookings that hold units: approved ones and machines already out on rent.
+const CAPACITY_STATUSES: EquipmentBookingStatus[] = ["approved", "in_progress"];
 
-const hasApprovedOverlap = async (
+const dayKey = (date: Date): string => date.toISOString().slice(0, 10);
+
+/** Units held on each day of [startDate, endDate], both ends inclusive. */
+const unitsBookedByDay = async (
   equipmentId: Types.ObjectId,
   startDate: Date,
   endDate: Date,
   excludeBookingId?: Types.ObjectId,
+): Promise<Map<string, number>> => {
+  const rows = await EquipmentBooking.find({
+    equipment: equipmentId,
+    status: { $in: CAPACITY_STATUSES },
+    startDate: { $lte: endDate },
+    endDate: { $gte: startDate },
+    ...(excludeBookingId ? { _id: { $ne: excludeBookingId } } : {}),
+  })
+    .select("startDate endDate units")
+    .exec();
+
+  const byDay = new Map<string, number>();
+  for (const row of rows) {
+    const from = Math.max(row.startDate.getTime(), startDate.getTime());
+    const to = Math.min(row.endDate.getTime(), endDate.getTime());
+    for (let time = from; time <= to; time += DAY_MS) {
+      const key = dayKey(new Date(time));
+      byDay.set(key, (byDay.get(key) ?? 0) + (row.units ?? 1));
+    }
+  }
+  return byDay;
+};
+
+/** True when `units` more fit on every day of the range. */
+const fitsCapacity = async (
+  equipmentId: Types.ObjectId,
+  quantity: number,
+  startDate: Date,
+  endDate: Date,
+  units: number,
+  excludeBookingId?: Types.ObjectId,
 ): Promise<boolean> => {
-  const query: Record<string, unknown> = buildApprovedOverlapQuery(
+  const byDay = await unitsBookedByDay(
     equipmentId,
     startDate,
     endDate,
+    excludeBookingId,
   );
-
-  if (excludeBookingId) {
-    query._id = { $ne: excludeBookingId };
+  for (let time = startDate.getTime(); time <= endDate.getTime(); time += DAY_MS) {
+    if ((byDay.get(dayKey(new Date(time))) ?? 0) + units > quantity) {
+      return false;
+    }
   }
-
-  const conflicting = await EquipmentBooking.findOne(query)
-    .select("_id")
-    .exec();
-  return Boolean(conflicting);
+  return true;
 };
+
+const parseUnits = (value: number | string | undefined): number => {
+  if (value === undefined || value === "") return 1;
+  const units = typeof value === "number" ? value : Number.parseInt(value, 10);
+  if (!Number.isInteger(units) || units < 1) {
+    throw createBookingError("Choose at least one unit", 400);
+  }
+  return units;
+};
+
+const parseFulfilment = (value: string | undefined): EquipmentFulfilment => {
+  if (value === undefined || value === "" || value === "pickup") return "pickup";
+  if (value === "delivery") return "delivery";
+  throw createBookingError("Choose pickup or delivery", 400);
+};
+
+const parseFlag = (value: boolean | string | undefined): boolean =>
+  value === true || value === "true" || value === "1";
 
 const getEquipmentById = async (equipmentId: string): Promise<IEquipment> => {
   if (!Types.ObjectId.isValid(equipmentId)) {
@@ -336,25 +420,6 @@ const getEquipmentById = async (equipmentId: string): Promise<IEquipment> => {
   }
 
   return equipment;
-};
-
-const getEngineerPhotoMap = async (
-  userIds: Types.ObjectId[],
-): Promise<Map<string, string>> => {
-  if (userIds.length === 0) {
-    return new Map<string, string>();
-  }
-
-  const engineers = await Engineer.find({ user: { $in: userIds } })
-    .select("user profilePhoto")
-    .exec();
-
-  return new Map(
-    engineers.map((engineer) => [
-      engineer.user.toString(),
-      engineer.profilePhoto?.url ?? "",
-    ]),
-  );
 };
 
 const getEngineerRatingMap = async (
@@ -484,7 +549,7 @@ const mapBookingRowsToResponse = async (
   const allIds = Array.from(allIdsByKey.values());
 
   const [photoMap, ratingMap] = await Promise.all([
-    getEngineerPhotoMap(allIds),
+    getProfilePhotoMap(allIds),
     getEngineerRatingMap(allIds),
   ]);
 
@@ -528,6 +593,15 @@ const mapBookingRowsToResponse = async (
         },
         startDate: row.startDate.toISOString(),
         endDate: row.endDate.toISOString(),
+        units: row.units ?? 1,
+        rentalDays: row.rentalDays ?? 1,
+        // Bookings made before the breakdown existed only have the total.
+        rentalFee: row.rentalFee || row.totalRentalFee,
+        operatorFee: row.operatorFee ?? 0,
+        deliveryFee: row.deliveryFee ?? 0,
+        withOperator: row.withOperator ?? false,
+        fulfilment: row.fulfilment ?? "pickup",
+        deliveryAddress: row.deliveryAddress ?? null,
         totalRentalFee: row.totalRentalFee,
         securityDeposit: row.securityDeposit,
         status: row.status,
@@ -617,11 +691,11 @@ const getOtherPartyId = (
 
 export const getEquipmentAvailability = async (
   req: AuthenticatedRequest,
-  res: Response<AvailabilityItem[]>,
+  res: Response<AvailabilityResponse>,
   next: NextFunction,
 ): Promise<void> => {
   try {
-    requireEngineerUserId(req);
+    requireRenterUserId(req);
     const { equipmentId } = getAvailabilityParams(req);
 
     if (!equipmentId) {
@@ -630,20 +704,55 @@ export const getEquipmentAvailability = async (
 
     const equipment = await getEquipmentById(equipmentId);
     const { rangeStart, rangeEnd } = parseMonthRange(getAvailabilityQuery(req));
+    const byDay = await unitsBookedByDay(equipment._id, rangeStart, rangeEnd);
 
-    const rows = await EquipmentBooking.find({
-      ...buildApprovedOverlapQuery(equipment._id, rangeStart, rangeEnd),
-    })
-      .select("startDate endDate")
-      .sort({ startDate: 1 })
-      .exec();
+    res.status(200).json({
+      quantity: listingPricingOf(equipment).quantity,
+      days: [...byDay.entries()]
+        .sort(([first], [second]) => first.localeCompare(second))
+        .map(([date, unitsBooked]) => ({ date, unitsBooked })),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
 
-    res.status(200).json(
-      rows.map((row) => ({
-        startDate: row.startDate.toISOString(),
-        endDate: row.endDate.toISOString(),
-      })),
+/**
+ * The price a request would be booked at, plus whether it fits on those dates.
+ * Booking creation uses the same quote, so what the renter sees is what's stored.
+ */
+export const getEquipmentQuote = async (
+  req: AuthenticatedRequest,
+  res: Response<RentalQuote & { fits: boolean }>,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    requireRenterUserId(req);
+    const { equipmentId } = getAvailabilityParams(req);
+    if (!equipmentId) {
+      throw createBookingError("Equipment ID is required", 400);
+    }
+    const query = req.query as unknown as QuoteQuery;
+    const equipment = await getEquipmentById(equipmentId);
+    const startDate = parseDateField(query.startDate, "Start date");
+    const endDate = parseDateField(query.endDate, "End date");
+    const terms = listingPricingOf(equipment);
+    const quote = quoteBooking(terms, {
+      startDate,
+      endDate,
+      units: parseUnits(query.units),
+      withOperator: parseFlag(query.withOperator),
+      fulfilment: parseFulfilment(query.fulfilment),
+    });
+    const fits = await fitsCapacity(
+      equipment._id,
+      terms.quantity,
+      startDate,
+      endDate,
+      quote.units,
     );
+
+    res.status(200).json({ ...quote, fits });
   } catch (error: unknown) {
     next(error);
   }
@@ -655,7 +764,7 @@ export const createBookingRequest = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const renterId = requireEngineerUserId(req);
+    const renterId = requireRenterUserId(req);
     const equipmentId = req.body.equipmentId;
 
     if (!equipmentId) {
@@ -675,17 +784,35 @@ export const createBookingRequest = async (
     const endDate = parseDateField(req.body.endDate, "End date");
     assertBookingDatesValid(startDate, endDate);
 
-    const conflicting = await hasApprovedOverlap(
-      equipment._id,
+    const terms = listingPricingOf(equipment);
+    const fulfilment = parseFulfilment(req.body.fulfilment);
+    const deliveryAddress = req.body.deliveryAddress?.trim() ?? "";
+    if (fulfilment === "delivery" && deliveryAddress.length < 5) {
+      throw createBookingError("Add the site address for delivery", 400);
+    }
+    const quote = quoteBooking(terms, {
       startDate,
       endDate,
-    );
-    if (conflicting) {
-      throw createBookingError("These dates are no longer available", 409);
-    }
+      units: parseUnits(req.body.units),
+      withOperator: parseFlag(req.body.withOperator),
+      fulfilment,
+    });
 
-    const durationDays = getDurationDays(startDate, endDate);
-    const totalRentalFee = durationDays * equipment.dailyRate;
+    const fits = await fitsCapacity(
+      equipment._id,
+      terms.quantity,
+      startDate,
+      endDate,
+      quote.units,
+    );
+    if (!fits) {
+      throw createBookingError(
+        quote.units > 1
+          ? `${quote.units} units aren't free on all of these dates`
+          : "These dates are no longer available",
+        409,
+      );
+    }
 
     const booking = await EquipmentBooking.create({
       equipment: equipment._id,
@@ -693,8 +820,16 @@ export const createBookingRequest = async (
       owner: equipment.owner,
       startDate,
       endDate,
-      totalRentalFee,
-      securityDeposit: equipment.securityDeposit,
+      units: quote.units,
+      rentalDays: quote.rentalDays,
+      rentalFee: quote.rentalFee,
+      operatorFee: quote.operatorFee,
+      deliveryFee: quote.deliveryFee,
+      withOperator: quote.operatorFee > 0,
+      fulfilment,
+      ...(fulfilment === "delivery" ? { deliveryAddress } : {}),
+      totalRentalFee: quote.totalRentalFee,
+      securityDeposit: quote.securityDeposit,
       status: "pending",
       paymentStatus: "unpaid",
       depositResolution: "pending",
@@ -732,7 +867,7 @@ export const getIncomingBookingRequests = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const ownerId = requireEngineerUserId(req);
+    const ownerId = requireRenterUserId(req);
 
     const rows = await EquipmentBooking.find({
       owner: ownerId,
@@ -756,7 +891,7 @@ export const getOwnerBookings = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const ownerId = requireEngineerUserId(req);
+    const ownerId = requireRenterUserId(req);
 
     const rows = await EquipmentBooking.find({ owner: ownerId })
       .populate("equipment", "title photos")
@@ -777,7 +912,7 @@ export const getMyBookings = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const renterId = requireEngineerUserId(req);
+    const renterId = requireRenterUserId(req);
 
     const rows = await EquipmentBooking.find({ renter: renterId })
       .populate("equipment", "title photos")
@@ -798,7 +933,7 @@ export const getBookingByIdForUser = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireEngineerUserId(req);
+    const userId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
     if (!bookingId) {
       throw createBookingError("Booking ID is required", 400);
@@ -812,7 +947,31 @@ export const getBookingByIdForUser = async (
       throw createBookingError("Unable to map booking details", 500);
     }
 
-    res.status(200).json(response);
+    const payment = await Payment.findOne({
+      equipmentBooking: booking._id,
+      status: "paid",
+      refundDue: { $ne: true },
+    })
+      .sort({ paidAt: 1 })
+      .exec();
+
+    res.status(200).json({
+      ...response,
+      payment: payment
+        ? {
+            tranId: payment.tranId ?? null,
+            amount: payment.amount,
+            platformFee: payment.platformFee,
+            payeeAmount: payment.payeeAmount,
+            depositAmount: payment.depositAmount,
+            method:
+              payment.method === "sslcommerz"
+                ? describePaymentMethod(payment.cardType)
+                : null,
+            paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
+          }
+        : null,
+    });
   } catch (error: unknown) {
     next(error);
   }
@@ -824,7 +983,7 @@ export const respondToBookingRequest = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const ownerId = requireEngineerUserId(req);
+    const ownerId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
     if (!bookingId || !Types.ObjectId.isValid(bookingId)) {
       throw createBookingError("Valid booking ID is required", 400);
@@ -877,27 +1036,47 @@ export const respondToBookingRequest = async (
       return;
     }
 
-    const conflictsNow = await hasApprovedOverlap(
+    const equipmentDoc = await Equipment.findById(equipmentId)
+      .select("quantity")
+      .exec();
+    const quantity = equipmentDoc?.quantity ?? 1;
+
+    const fitsNow = await fitsCapacity(
       equipmentId,
+      quantity,
       booking.startDate,
       booking.endDate,
+      booking.units ?? 1,
       booking._id,
     );
-
-    if (conflictsNow) {
+    if (!fitsNow) {
       throw createBookingError("These dates are no longer available", 409);
     }
 
     booking.status = "approved";
     await booking.save();
 
-    const overlappingPending = await EquipmentBooking.find({
+    const pendingOnDates = await EquipmentBooking.find({
       equipment: equipmentId,
       status: "pending",
       _id: { $ne: booking._id },
       startDate: { $lte: booking.endDate },
       endDate: { $gte: booking.startDate },
     }).exec();
+
+    // With several units, other requests on these dates may still fit.
+    const overlappingPending: IEquipmentBooking[] = [];
+    for (const item of pendingOnDates) {
+      const stillFits = await fitsCapacity(
+        equipmentId,
+        quantity,
+        item.startDate,
+        item.endDate,
+        item.units ?? 1,
+        item._id,
+      );
+      if (!stillFits) overlappingPending.push(item);
+    }
 
     if (overlappingPending.length > 0) {
       await EquipmentBooking.updateMany(
@@ -940,7 +1119,7 @@ export const cancelBookingRequest = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const renterId = requireEngineerUserId(req);
+    const renterId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
 
     if (!bookingId || !Types.ObjectId.isValid(bookingId)) {
@@ -978,67 +1157,87 @@ export const cancelBookingRequest = async (
   }
 };
 
-export const payForBooking = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    const renterId = requireEngineerUserId(req);
-    const { bookingId } = getBookingParams(req);
-    if (!bookingId) {
-      throw createBookingError("Booking ID is required", 400);
-    }
+// ============ Gateway payments ============
+// Checkouts start in payment.controller; these decide what a renter owes and
+// what a verified payment does to the booking.
 
-    const booking = await getBookingByIdOrFail(bookingId);
-    const bookingRenterId = toBookingUserId(booking.renter);
-    if (!bookingRenterId || bookingRenterId.toString() !== renterId) {
-      throw createBookingError("Only the renter can pay for this booking", 403);
-    }
+export interface BookingCharge {
+  booking: IEquipmentBooking;
+  amount: number;
+  depositAmount: number;
+  payee: Types.ObjectId;
+  productName: string;
+  returnPath: string;
+}
 
-    if (booking.status !== "approved") {
-      throw createBookingError("Only approved bookings can be paid", 409);
-    }
-
-    if (booking.paymentStatus !== "unpaid") {
-      throw createBookingError("This booking has already been paid", 409);
-    }
-
-    const paymentDate = new Date();
-    const totalDue = booking.totalRentalFee + booking.securityDeposit;
-
-    await Payment.create({
-      equipmentBooking: booking._id,
-      type: "equipment_booking",
-      amount: totalDue,
-      paidBy: renterId,
-      method: "mock",
-      paidAt: paymentDate,
-    });
-
-    booking.paymentStatus = "paid";
-    booking.paidAt = paymentDate;
-    await booking.save();
-
-    const equipmentId = toBookingEquipmentId(booking.equipment);
-    await Notification.create({
-      recipient: booking.owner,
-      type: "equipment_booking_payment_received",
-      message: `Mock payment of ${formatTaka(totalDue)} received for ${normalizeBookingEquipmentTitle(booking)}.`,
-      ...(equipmentId ? { equipment: equipmentId } : {}),
-      equipmentBooking: booking._id,
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Booking payment processed (mock)",
-      amount: totalDue,
-      paidAt: paymentDate.toISOString(),
-      paymentStatus: booking.paymentStatus,
-    });
-  } catch (error: unknown) {
-    next(error);
+/** The rental plus the deposit for an approved, unpaid booking of the renter's. */
+export const prepareBookingCharge = async (
+  userId: string,
+  role: string,
+  bookingId: unknown,
+): Promise<BookingCharge> => {
+  if (role !== "engineer" && role !== "client") {
+    throw createBookingError("Sign in to rent equipment", 403);
   }
+  if (typeof bookingId !== "string") {
+    throw createBookingError("Booking ID is required", 400);
+  }
+
+  const booking = await getBookingByIdOrFail(bookingId);
+  const renterId = toBookingUserId(booking.renter);
+  const ownerId = toBookingUserId(booking.owner);
+  if (!renterId || renterId.toString() !== userId) {
+    throw createBookingError("Only the renter can pay for this booking", 403);
+  }
+  if (!ownerId) {
+    throw createBookingError("Unable to resolve booking participants", 500);
+  }
+  if (booking.status !== "approved") {
+    throw createBookingError("Only approved bookings can be paid", 409);
+  }
+  if (booking.paymentStatus !== "unpaid") {
+    throw createBookingError("This booking has already been paid", 409);
+  }
+
+  return {
+    booking,
+    amount: booking.totalRentalFee + booking.securityDeposit,
+    depositAmount: booking.securityDeposit,
+    payee: ownerId,
+    productName: `Equipment rental - ${normalizeBookingEquipmentTitle(booking)}`,
+    returnPath: `/dashboard/${role}/equipment/bookings/${booking._id.toString()}`,
+  };
+};
+
+/**
+ * Marks the booking paid for a verified payment. Returns false when it no
+ * longer needs paying (already paid, or no longer approved), so the caller
+ * can flag the money for a refund.
+ */
+export const applyBookingPayment = async (payment: IPayment): Promise<boolean> => {
+  const paidAt = payment.paidAt ?? new Date();
+  const booking = await EquipmentBooking.findOneAndUpdate(
+    { _id: payment.equipmentBooking, status: "approved", paymentStatus: "unpaid" },
+    { $set: { paymentStatus: "paid", paidAt } },
+    { returnDocument: "after" },
+  )
+    .populate("equipment", "title")
+    .exec();
+  if (!booking) return false;
+
+  const equipmentId = toBookingEquipmentId(booking.equipment);
+  const deposit =
+    payment.depositAmount > 0
+      ? ` That includes a ${formatTaka(payment.depositAmount)} deposit CivilHub holds until the return.`
+      : "";
+  await Notification.create({
+    recipient: booking.owner,
+    type: "equipment_booking_payment_received",
+    message: `Payment of ${formatTaka(payment.amount)} received via ${describePaymentMethod(payment.cardType)} for ${normalizeBookingEquipmentTitle(booking)}.${deposit}${payeeShareNote(payment)}`,
+    ...(equipmentId ? { equipment: equipmentId } : {}),
+    equipmentBooking: booking._id,
+  });
+  return true;
 };
 
 export const confirmPickup = async (
@@ -1047,7 +1246,7 @@ export const confirmPickup = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireEngineerUserId(req);
+    const userId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
     if (!bookingId) {
       throw createBookingError("Booking ID is required", 400);
@@ -1105,7 +1304,7 @@ export const confirmReturn = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireEngineerUserId(req);
+    const userId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
     if (!bookingId) {
       throw createBookingError("Booking ID is required", 400);
@@ -1159,7 +1358,7 @@ export const resolveDeposit = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const ownerId = requireEngineerUserId(req);
+    const ownerId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
     if (!bookingId) {
       throw createBookingError("Booking ID is required", 400);
@@ -1198,6 +1397,12 @@ export const resolveDeposit = async (
       }
       if (!Number.isFinite(claimAmount) || claimAmount <= 0) {
         throw createBookingError("Claim amount must be a positive number", 400);
+      }
+      if (claimAmount > booking.securityDeposit) {
+        throw createBookingError(
+          `You can claim at most the deposit held (${formatTaka(booking.securityDeposit)})`,
+          400,
+        );
       }
 
       booking.depositResolution = "claimed";

@@ -19,13 +19,9 @@ import {
   getProjectProgress,
   updateProjectPhase,
   type UpdateProjectPhaseBody,
-  payAdvance,
-  type PayAdvanceRequestBody,
   approvePhase,
   requestPhaseChanges,
   type RequestPhaseChangesBody,
-  payFullRemaining,
-  type PayFullRemainingRequestBody,
 } from "../controllers/projectProgress.controller";
 import { getMyProjectHistory } from "../controllers/projectHistory.controller";
 import {
@@ -67,8 +63,9 @@ projectsRouter.patch("/:projectId/phases/:phaseId", protect, (req, res, next) =>
   ),
 );
 
-// Only the client completes a phase: approving it (and paying for it on the
-// phase-by-phase plan), or sending it back with a note.
+// Only the client completes a phase: approving it, or sending it back with a
+// note. A phase that costs something is approved by paying for it through
+// /api/payments.
 projectsRouter.post(
   "/:projectId/phases/:phaseId/approve",
   protect,
@@ -124,19 +121,6 @@ projectsRouter.post(
     ),
 );
 
-// ===== Payment Routes =====
-projectsRouter.post("/:projectId/payments/advance", protect, (req, res, next) =>
-  payAdvance(req as AuthenticatedRequest<PayAdvanceRequestBody>, res, next),
-);
-projectsRouter.post(
-  "/:projectId/payments/full-remaining",
-  protect,
-  (req, res, next) =>
-    payFullRemaining(
-      req as AuthenticatedRequest<PayFullRemainingRequestBody>,
-      res,
-      next,
-    ),
-);
+// Payments (advance, phases, remaining balance) go through /api/payments.
 
 export default projectsRouter;

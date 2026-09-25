@@ -1,12 +1,20 @@
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import {
   fetchEquipmentAvailability,
-  type EquipmentAvailabilityRange,
+  type EquipmentAvailability,
 } from "../pages/equipment.api";
+import { toIsoDate } from "../lib/timeline";
+
+export interface SelectedRange {
+  start: Date;
+  end: Date;
+}
 
 interface EquipmentCalendarProps {
   equipmentId: string;
-  onRangeSelect: (start: Date, end: Date) => void;
+  /** Units the renter wants; a day is unavailable when that many aren't free. */
+  units: number;
+  onRangeChange: (range: SelectedRange | null) => void;
 }
 
 interface DayCell {
@@ -19,20 +27,13 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const toDayStart = (value: Date): Date =>
   new Date(value.getFullYear(), value.getMonth(), value.getDate());
 
-const toDateKey = (value: Date): string => {
-  const y = value.getFullYear();
-  const m = String(value.getMonth() + 1).padStart(2, "0");
-  const d = String(value.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-};
+// Day keys are the local calendar date, the same "YYYY-MM-DD" the API uses.
+const toDateKey = toIsoDate;
 
 const isSameDay = (a: Date, b: Date): boolean =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
-
-const isWithinRangeInclusive = (date: Date, start: Date, end: Date): boolean =>
-  date.getTime() >= start.getTime() && date.getTime() <= end.getTime();
 
 const getMonthLabel = (value: Date): string =>
   value.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -43,9 +44,8 @@ const buildMonthGrid = (monthAnchor: Date): DayCell[] => {
     monthAnchor.getMonth(),
     1,
   );
-  const firstWeekday = firstOfMonth.getDay();
   const gridStart = new Date(firstOfMonth);
-  gridStart.setDate(firstOfMonth.getDate() - firstWeekday);
+  gridStart.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
 
   return Array.from({ length: 42 }, (_, index) => {
     const date = new Date(gridStart);
@@ -57,29 +57,32 @@ const buildMonthGrid = (monthAnchor: Date): DayCell[] => {
   });
 };
 
-const rangeOverlapsBlocked = (
-  start: Date,
-  end: Date,
-  blockedRanges: Array<{ start: Date; end: Date }>,
-): boolean =>
-  blockedRanges.some(
-    (range) =>
-      range.start.getTime() <= end.getTime() &&
-      range.end.getTime() >= start.getTime(),
-  );
+const eachDay = (start: Date, end: Date): Date[] => {
+  const days: Date[] = [];
+  const cursor = new Date(start);
+  while (cursor.getTime() <= end.getTime()) {
+    days.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+};
+
+const blockedStripes =
+  "bg-[repeating-linear-gradient(135deg,rgba(242,106,27,0.18),rgba(242,106,27,0.18)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]";
 
 export function EquipmentCalendar({
   equipmentId,
-  onRangeSelect,
+  units,
+  onRangeChange,
 }: EquipmentCalendarProps): ReactElement {
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-
-  const [blockedRangesRaw, setBlockedRangesRaw] = useState<
-    EquipmentAvailabilityRange[]
-  >([]);
+  const [availability, setAvailability] = useState<EquipmentAvailability>({
+    quantity: 1,
+    unitsBookedByDate: new Map(),
+  });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string>("");
 
@@ -90,104 +93,91 @@ export function EquipmentCalendar({
   const today = useMemo(() => toDayStart(new Date()), []);
 
   useEffect(() => {
+    let isCancelled = false;
     const loadAvailability = async (): Promise<void> => {
       setIsLoading(true);
       setLoadError("");
       try {
-        const month = visibleMonth.getMonth() + 1;
-        const year = visibleMonth.getFullYear();
-        const ranges = await fetchEquipmentAvailability(
+        const result = await fetchEquipmentAvailability(
           equipmentId,
-          month,
-          year,
+          visibleMonth.getMonth() + 1,
+          visibleMonth.getFullYear(),
         );
-        setBlockedRangesRaw(ranges);
+        if (!isCancelled) setAvailability(result);
       } catch (error: unknown) {
-        const message =
+        if (isCancelled) return;
+        setLoadError(
           error instanceof Error
             ? error.message
-            : "Unable to load availability calendar.";
-        setLoadError(message);
-        setBlockedRangesRaw([]);
+            : "Unable to load availability calendar.",
+        );
       } finally {
-        setIsLoading(false);
+        if (!isCancelled) setIsLoading(false);
       }
     };
 
     void loadAvailability();
+    return () => {
+      isCancelled = true;
+    };
   }, [equipmentId, visibleMonth]);
 
-  const blockedRanges = useMemo(
-    () =>
-      blockedRangesRaw
-        .map((range) => {
-          const parsedStart = toDayStart(new Date(range.startDate));
-          const parsedEnd = toDayStart(new Date(range.endDate));
-          if (
-            Number.isNaN(parsedStart.getTime()) ||
-            Number.isNaN(parsedEnd.getTime())
-          ) {
-            return null;
-          }
-          return { start: parsedStart, end: parsedEnd };
-        })
-        .filter((range): range is { start: Date; end: Date } => range !== null),
-    [blockedRangesRaw],
-  );
+  const unitsFree = (day: Date): number =>
+    availability.quantity -
+    (availability.unitsBookedByDate.get(toDateKey(day)) ?? 0);
 
-  const blockedDateKeys = useMemo(() => {
-    const keys = new Set<string>();
+  const isBlocked = (day: Date): boolean => unitsFree(day) < units;
 
-    blockedRanges.forEach((range) => {
-      const cursor = new Date(range.start);
-      while (cursor.getTime() <= range.end.getTime()) {
-        keys.add(toDateKey(cursor));
-        cursor.setDate(cursor.getDate() + 1);
-      }
-    });
-
-    return keys;
-  }, [blockedRanges]);
+  // Asking for more units can make an existing selection impossible.
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+    if (eachDay(startDate, endDate).some(isBlocked)) {
+      setStartDate(null);
+      setEndDate(null);
+      setSelectionError(
+        `${units} units aren't free on all of those dates. Pick new dates.`,
+      );
+      onRangeChange(null);
+    }
+    // Only re-check when the requested units or the loaded availability change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [units, availability]);
 
   const dayCells = useMemo(() => buildMonthGrid(visibleMonth), [visibleMonth]);
 
-  const hasSelection = Boolean(startDate && endDate);
-
   const onDateClick = (clickedDate: Date): void => {
     const day = toDayStart(clickedDate);
-    const dateKey = toDateKey(day);
+    if (day < today || isBlocked(day)) return;
 
-    if (day < today) return;
-    if (blockedDateKeys.has(dateKey)) return;
-
-    if (!startDate || (startDate && endDate)) {
+    // First click, or starting over after a finished range.
+    if (!startDate || endDate) {
       setStartDate(day);
       setEndDate(null);
+      setSelectionError("");
+      onRangeChange(null);
+      return;
+    }
+
+    if (day.getTime() < startDate.getTime()) {
+      setStartDate(day);
       setSelectionError("");
       return;
     }
 
-    if (day.getTime() <= startDate.getTime()) {
-      setStartDate(day);
-      setEndDate(null);
-      setSelectionError("");
-      return;
-    }
-
-    if (rangeOverlapsBlocked(startDate, day, blockedRanges)) {
+    // Same day twice is a one-day hire.
+    if (eachDay(startDate, day).some(isBlocked)) {
       setSelectionError(
-        "Selected range includes unavailable dates. Please choose a different range.",
+        "Some days in that range aren't available. Choose a different range.",
       );
       return;
     }
 
     setEndDate(day);
     setSelectionError("");
-    onRangeSelect(startDate, day);
+    onRangeChange({ start: startDate, end: day });
   };
 
-  const selectionRange =
-    startDate && endDate ? { start: startDate, end: endDate } : null;
+  const selectionEnd = endDate ?? startDate;
 
   return (
     <div className="rounded-xl border border-white/10 bg-void/45 p-4">
@@ -246,19 +236,22 @@ export function EquipmentCalendar({
             const day = toDayStart(cell.date);
             const key = toDateKey(day);
             const isPast = day.getTime() < today.getTime();
-            const isBlocked = blockedDateKeys.has(key);
-            const isToday = isSameDay(day, today);
+            const blocked = isBlocked(day);
+            const free = unitsFree(day);
+            const showLeft =
+              !isPast &&
+              !blocked &&
+              availability.quantity > 1 &&
+              free < availability.quantity;
             const isStart = Boolean(startDate && isSameDay(day, startDate));
             const isEnd = Boolean(endDate && isSameDay(day, endDate));
             const isInRange = Boolean(
-              selectionRange &&
-              isWithinRangeInclusive(
-                day,
-                selectionRange.start,
-                selectionRange.end,
-              ),
+              startDate &&
+              selectionEnd &&
+              day >= startDate &&
+              day <= selectionEnd,
             );
-            const disabled = isPast || isBlocked;
+            const disabled = isPast || blocked;
 
             return (
               <button
@@ -266,25 +259,44 @@ export function EquipmentCalendar({
                 type="button"
                 disabled={disabled}
                 onClick={() => onDateClick(day)}
-                className={`relative aspect-square rounded-lg border text-xs transition-colors ${
-                  !cell.inCurrentMonth
-                    ? "border-transparent text-white/25"
-                    : disabled
-                      ? "border-white/5 text-white/35"
-                      : "border-white/10 text-white hover:border-primary/60"
-                } ${isInRange ? "bg-primary/20" : "bg-transparent"} ${
-                  isStart || isEnd ? "border-primary bg-primary text-on-primary" : ""
+                className={`relative flex aspect-square flex-col items-center justify-center rounded-lg border text-xs transition-colors ${
+                  // One branch per state, so the endpoint fill never competes
+                  // with the in-range tint for the same property.
+                  isStart || isEnd
+                    ? "border-primary bg-primary font-semibold text-on-primary"
+                    : !cell.inCurrentMonth
+                      ? "border-transparent text-white/25"
+                      : disabled
+                        ? "border-white/5 text-white/35"
+                        : isInRange
+                          ? "border-primary/30 bg-primary/20 text-white"
+                          : "border-white/10 text-white hover:border-primary/60"
                 }`}
-                aria-label={`${day.toDateString()}${isBlocked ? " unavailable" : ""}`}
+                aria-label={`${day.toDateString()}${
+                  blocked
+                    ? ", unavailable"
+                    : showLeft
+                      ? `, ${free} of ${availability.quantity} free`
+                      : ""
+                }`}
               >
-                <span className="relative z-10">{day.getDate()}</span>
+                <span className="relative z-10 leading-none">
+                  {day.getDate()}
+                </span>
+                {showLeft && cell.inCurrentMonth ? (
+                  <span className="relative z-10 mt-0.5 text-[9px] leading-none opacity-70">
+                    {free} left
+                  </span>
+                ) : null}
 
-                {isToday ? (
+                {isSameDay(day, today) ? (
                   <span className="pointer-events-none absolute inset-1 rounded-md border border-cyan-300/70" />
                 ) : null}
 
-                {isBlocked ? (
-                  <span className="pointer-events-none absolute inset-0 rounded-lg bg-[repeating-linear-gradient(135deg,rgba(242,106,27,0.18),rgba(242,106,27,0.18)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />
+                {blocked && !isPast ? (
+                  <span
+                    className={`pointer-events-none absolute inset-0 rounded-lg ${blockedStripes}`}
+                  />
                 ) : null}
               </button>
             );
@@ -295,17 +307,22 @@ export function EquipmentCalendar({
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-white/55">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-primary/20" /> Selected
-          range
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm border border-cyan-300/70" />{" "}
           Today
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[repeating-linear-gradient(135deg,rgba(242,106,27,0.22),rgba(242,106,27,0.22)_4px,rgba(0,0,0,0)_4px,rgba(0,0,0,0)_8px)]" />{" "}
-          Unavailable
+          <span className={`h-2.5 w-2.5 rounded-sm ${blockedStripes}`} />{" "}
+          {availability.quantity > 1 ? "Not enough units" : "Unavailable"}
         </span>
       </div>
+
+      <p className="mt-2 text-xs text-white/45">
+        {startDate && !endDate
+          ? "Now tap the last day. Tap the same day again for a one-day hire."
+          : "Tap the first day, then the last day."}
+      </p>
 
       {loadError ? (
         <p role="alert" className="mt-3 text-sm text-rose-300">
@@ -317,10 +334,6 @@ export function EquipmentCalendar({
         <p role="alert" className="mt-2 text-sm text-rose-300">
           {selectionError}
         </p>
-      ) : null}
-
-      {hasSelection ? (
-        <p className="mt-2 text-xs text-emerald-300">Date range selected.</p>
       ) : null}
     </div>
   );

@@ -11,6 +11,7 @@ export type EquipmentBookingStatus =
 export type EquipmentBookingPaymentStatus = "unpaid" | "paid";
 
 export type DepositResolutionStatus = "pending" | "released" | "claimed";
+export type EquipmentFulfilment = "pickup" | "delivery";
 
 export interface BookingConditionPhoto {
   url: string;
@@ -21,9 +22,20 @@ export interface IEquipmentBooking extends Document {
   equipment: Types.ObjectId;
   renter: Types.ObjectId;
   owner: Types.ObjectId;
+  /** Both inclusive: a Mon-Wed booking holds three days. */
   startDate: Date;
   endDate: Date;
+  units: number;
+  rentalDays: number;
+  rentalFee: number;
+  operatorFee: number;
+  deliveryFee: number;
+  withOperator: boolean;
+  fulfilment: EquipmentFulfilment;
+  deliveryAddress?: string;
+  /** Rental + operator + delivery; the deposit is held separately. */
   totalRentalFee: number;
+  /** Deposit for all units on this booking. */
   securityDeposit: number;
   status: EquipmentBookingStatus;
   paymentStatus: EquipmentBookingPaymentStatus;
@@ -79,6 +91,18 @@ const equipmentBookingSchema = new Schema<IEquipmentBooking>(
       required: true,
       index: true,
     },
+    units: { type: Number, min: 1, default: 1 },
+    rentalDays: { type: Number, min: 1, default: 1 },
+    rentalFee: { type: Number, min: 0, default: 0 },
+    operatorFee: { type: Number, min: 0, default: 0 },
+    deliveryFee: { type: Number, min: 0, default: 0 },
+    withOperator: { type: Boolean, default: false },
+    fulfilment: {
+      type: String,
+      enum: ["pickup", "delivery"],
+      default: "pickup",
+    },
+    deliveryAddress: { type: String, trim: true, maxlength: 300, required: false },
     totalRentalFee: {
       type: Number,
       required: true,

@@ -10,12 +10,20 @@ import { Payment } from "../models/Payment.model";
 import { type IProject, Project } from "../models/Project.model";
 import { ProjectPhase } from "../models/ProjectPhase.model";
 import { type IUser, User } from "../models/User.model";
+import paymentsRouter from "../routes/payments.routes";
 import projectsRouter from "../routes/projects.routes";
+import {
+  installFakeGateway,
+  payViaGateway,
+  type FakeGateway,
+  type GatewayPaymentResult,
+} from "./helpers/fakeGateway";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 
 let memoryServer: MongoMemoryServer;
 let app: Express;
+let gateway: FakeGateway;
 let client: IUser;
 let engineer: IUser;
 
@@ -73,35 +81,58 @@ const createApprovedProject = async (
 const setStatus = (projectId: string, phaseId: string, status: string) =>
   asEngineer(request(app).patch(`/api/projects/${projectId}/phases/${phaseId}`)).send({ status });
 
+/** Approval for phases that cost nothing to approve. */
 const approve = (projectId: string, phaseId: string) =>
   asClient(request(app).post(`/api/projects/${projectId}/phases/${phaseId}/approve`));
 
-const payAdvance = (projectId: string) =>
-  asClient(request(app).post(`/api/projects/${projectId}/payments/advance`));
+const pay = (body: Record<string, unknown>): Promise<GatewayPaymentResult> =>
+  payViaGateway(app, gateway, cookieFor(client), body);
 
-/** Engineer starts and submits a phase, client approves it. */
-const deliverPhase = async (projectId: string, phaseId: string) => {
-  expect((await setStatus(projectId, phaseId, "in_progress")).status).toBe(200);
-  expect((await setStatus(projectId, phaseId, "awaiting_approval")).status).toBe(200);
-  return approve(projectId, phaseId);
+/** A checkout that SSLCommerz confirmed, sending the client back to the result page. */
+const expectPaid = (result: GatewayPaymentResult): void => {
+  expect(result.checkout.status).toBe(201);
+  expect(result.callback?.status).toBe(303);
 };
 
+const payAdvance = (projectId: string) => pay({ purpose: "advance", projectId });
+
+/** "Approve & pay": the phase completes once its payment is verified. */
+const payPhase = (projectId: string, phaseId: string) =>
+  pay({ purpose: "phase", projectId, phaseId });
+
+const submitPhase = async (projectId: string, phaseId: string) => {
+  expect((await setStatus(projectId, phaseId, "in_progress")).status).toBe(200);
+  expect((await setStatus(projectId, phaseId, "awaiting_approval")).status).toBe(200);
+};
+
+const phaseStatus = async (phaseId: string) =>
+  (await ProjectPhase.findById(phaseId).exec())?.status;
+
+/** What the client has actually paid on the project (refunds due excluded). */
 const totalPaid = async (projectId: string): Promise<number> => {
-  const payments = await Payment.find({ project: projectId }).exec();
+  const payments = await Payment.find({
+    project: projectId,
+    status: "paid",
+    refundDue: false,
+  }).exec();
   return Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
 };
 
 beforeAll(async () => {
   memoryServer = await MongoMemoryServer.create();
   await mongoose.connect(memoryServer.getUri());
+  gateway = installFakeGateway();
   app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use("/api/projects", projectsRouter);
+  app.use("/api/payments", paymentsRouter);
   app.use(errorHandler);
 });
 
 afterAll(async () => {
+  gateway.restore();
   await mongoose.disconnect();
   await memoryServer.stop();
 });
@@ -139,19 +170,24 @@ describe("Phase-by-phase payments", () => {
     );
     expect(Math.round(dueTotal * 100) / 100).toBe(8000.01);
 
-    expect((await payAdvance(id)).status).toBe(200);
+    expectPaid(await payAdvance(id));
     for (const phaseId of phaseIds) {
-      const approved = await deliverPhase(id, phaseId);
-      expect(approved.status).toBe(200);
+      await submitPhase(id, phaseId);
+      expectPaid(await payPhase(id, phaseId));
+      expect(await phaseStatus(phaseId)).toBe("completed");
     }
 
     expect(await totalPaid(id)).toBe(10000.01);
     const finished = await Project.findById(id).exec();
     expect(finished?.status).toBe("completed");
     expect(finished?.progressPercentage).toBe(100);
+
+    const history = await asEngineer(request(app).get(`/api/projects/${id}/phase-plan`));
+    expect(history.body.payments).toHaveLength(4);
+    expect(history.body.payments[0]).toMatchObject({ type: "advance", method: "bKash" });
   });
 
-  test("approving charges the phase's share, and a second approve charges nothing", async () => {
+  test("a phase is charged its share, and it can't be approved for free or paid twice", async () => {
     const { project, phaseIds } = await createApprovedProject(
       5000,
       [
@@ -161,50 +197,100 @@ describe("Phase-by-phase payments", () => {
       "phase_by_phase",
     );
     const id = project._id.toString();
-    await payAdvance(id);
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
 
-    const first = await deliverPhase(id, phaseIds[0]);
-    expect(first.status).toBe(200);
-    expect(first.body.amountCharged).toBe(800);
+    const free = await approve(id, phaseIds[0]);
+    expect(free.status).toBe(409);
+    expect(free.body.message).toMatch(/Approve & pay/);
 
-    const again = await approve(id, phaseIds[0]);
-    expect(again.status).toBe(409);
+    expectPaid(await payPhase(id, phaseIds[0]));
+    const paid = await Payment.findOne({ project: id, type: "phase" }).exec();
+    expect(paid?.amount).toBe(800);
+    expect(paid?.platformFee).toBe(80);
+    expect(paid?.payeeAmount).toBe(720);
+
+    const again = await payPhase(id, phaseIds[0]);
+    expect(again.checkout.status).toBe(409);
     expect(await Payment.countDocuments({ project: id, type: "phase" })).toBe(1);
   });
 
-  test("two approvals racing for the same phase create one payment", async () => {
-    const { project, phaseIds } = await createApprovedProject(
-      2000,
-      [{ title: "Survey", price: 2000 }],
-      "phase_by_phase",
-    );
+  test("a failed or cancelled payment leaves the phase waiting for approval", async () => {
+    const { project, phaseIds } = await createApprovedProject(2000, [{ title: "Survey", price: 2000 }], "phase_by_phase");
     const id = project._id.toString();
-    await payAdvance(id);
-    await setStatus(id, phaseIds[0], "in_progress");
-    await setStatus(id, phaseIds[0], "awaiting_approval");
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
 
-    const results = await Promise.all([approve(id, phaseIds[0]), approve(id, phaseIds[0])]);
-    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
-    expect(await Payment.countDocuments({ project: id, type: "phase" })).toBe(1);
+    const cancelledCheckout = await asClient(request(app).post("/api/payments/checkout")).send({
+      purpose: "phase",
+      projectId: id,
+      phaseId: phaseIds[0],
+    });
+    const cancelled = await request(app)
+      .post("/api/payments/sslcommerz/cancel")
+      .type("form")
+      .send({ tran_id: cancelledCheckout.body.tranId as string, status: "CANCELLED" });
+    expect(cancelled.status).toBe(303);
+    expect((await Payment.findOne({ tranId: cancelledCheckout.body.tranId as string }).exec())?.status).toBe("cancelled");
+
+    expect(await phaseStatus(phaseIds[0])).toBe("awaiting_approval");
+
+    // SSLCommerz confirms a transaction for less than we asked for.
+    const short = await payViaGateway(
+      app,
+      gateway,
+      cookieFor(client),
+      { purpose: "phase", projectId: id, phaseId: phaseIds[0] },
+      { amount: "10.00", currency_amount: "10.00" },
+    );
+    expect(short.callback?.status).toBe(303);
+    expect((await Payment.findOne({ tranId: short.tranId }).exec())?.status).toBe("failed");
+    expect(await phaseStatus(phaseIds[0])).toBe("awaiting_approval");
+
+    expectPaid(await payPhase(id, phaseIds[0]));
+    expect(await phaseStatus(phaseIds[0])).toBe("completed");
   });
 
-  test("the advance can only be paid once", async () => {
+  test("the same payment confirmed twice (redirect and IPN) is applied once", async () => {
+    const { project, phaseIds } = await createApprovedProject(2000, [{ title: "Survey", price: 2000 }], "phase_by_phase");
+    const id = project._id.toString();
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
+
+    const result = await payPhase(id, phaseIds[0]);
+    expectPaid(result);
+    const ipn = await request(app)
+      .post("/api/payments/sslcommerz/ipn")
+      .type("form")
+      .send({ tran_id: result.tranId, val_id: `VAL${result.tranId}`, status: "VALID" });
+    expect(ipn.status).toBe(200);
+
+    expect(await Payment.countDocuments({ project: id, type: "phase", status: "paid" })).toBe(1);
+    expect(
+      await Notification.countDocuments({ recipient: engineer._id, type: "phase_payment_received" }),
+    ).toBe(1);
+  });
+
+  test("paying the advance twice in parallel flags the second for a refund", async () => {
     const { project } = await createApprovedProject(1000, [{ title: "Survey", price: 1000 }], "phase_by_phase");
     const id = project._id.toString();
     const results = await Promise.all([payAdvance(id), payAdvance(id)]);
-    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
-    expect(await Payment.countDocuments({ project: id, type: "advance" })).toBe(1);
+    results.forEach(expectPaid);
+
+    expect(await Payment.countDocuments({ project: id, type: "advance", status: "paid" })).toBe(2);
+    expect(await Payment.countDocuments({ project: id, type: "advance", refundDue: true })).toBe(1);
+    expect(await Notification.countDocuments({ recipient: client._id, type: "payment_refund_due" })).toBe(1);
+    expect(await totalPaid(id)).toBe(200);
   });
 
   test("a phase an engineer completed under the old rules can still be paid", async () => {
     const { project, phaseIds } = await createApprovedProject(1000, [{ title: "Survey", price: 1000 }], "phase_by_phase");
     const id = project._id.toString();
-    await payAdvance(id);
+    expectPaid(await payAdvance(id));
     await ProjectPhase.updateOne({ _id: phaseIds[0] }, { $set: { status: "completed", completedAt: new Date() } });
 
-    const settled = await approve(id, phaseIds[0]);
-    expect(settled.status).toBe(200);
-    expect(settled.body.amountCharged).toBe(800);
+    expectPaid(await payPhase(id, phaseIds[0]));
+    expect((await ProjectPhase.findById(phaseIds[0]).exec())?.paymentStatus).toBe("paid");
     expect(await totalPaid(id)).toBe(1000);
   });
 });
@@ -233,21 +319,22 @@ describe("Phase status rules", () => {
   });
 
   test("the engineer can't complete a phase, or skip ahead", async () => {
-    await payAdvance(id);
+    expectPaid(await payAdvance(id));
     expect((await setStatus(id, phaseIds[0], "completed")).status).toBe(409);
     expect((await setStatus(id, phaseIds[1], "in_progress")).status).toBe(409);
     expect((await setStatus(id, phaseIds[0], "awaiting_approval")).status).toBe(409);
   });
 
   test("a completed phase can't be reopened", async () => {
-    await payAdvance(id);
-    await deliverPhase(id, phaseIds[0]);
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
+    expectPaid(await payPhase(id, phaseIds[0]));
     expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(409);
     expect((await setStatus(id, phaseIds[0], "not_started")).status).toBe(409);
   });
 
   test("a delayed phase can resume and be submitted", async () => {
-    await payAdvance(id);
+    expectPaid(await payAdvance(id));
     expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(200);
     expect((await setStatus(id, phaseIds[0], "delayed")).status).toBe(200);
     expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(200);
@@ -256,9 +343,8 @@ describe("Phase status rules", () => {
   });
 
   test("requesting changes sends the phase back with the note, and it can be resubmitted", async () => {
-    await payAdvance(id);
-    await setStatus(id, phaseIds[0], "in_progress");
-    await setStatus(id, phaseIds[0], "awaiting_approval");
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
 
     const empty = await asClient(
       request(app).post(`/api/projects/${id}/phases/${phaseIds[0]}/request-changes`),
@@ -276,18 +362,35 @@ describe("Phase status rules", () => {
     expect(await Payment.countDocuments({ project: id, type: "phase" })).toBe(0);
 
     expect((await setStatus(id, phaseIds[0], "awaiting_approval")).status).toBe(200);
-    expect((await approve(id, phaseIds[0])).status).toBe(200);
+    expectPaid(await payPhase(id, phaseIds[0]));
     const after = await asEngineer(request(app).get(`/api/projects/${id}/progress`));
     expect(after.body.phases[0].changeRequest).toBeNull();
   });
 
-  test("only the project's client can approve", async () => {
-    await payAdvance(id);
-    await setStatus(id, phaseIds[0], "in_progress");
-    await setStatus(id, phaseIds[0], "awaiting_approval");
-    const byEngineer = await asEngineer(
-      request(app).post(`/api/projects/${id}/phases/${phaseIds[0]}/approve`),
-    );
+  test("changes can't be requested while the client is paying for the phase", async () => {
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
+    const checkout = await asClient(request(app).post("/api/payments/checkout")).send({
+      purpose: "phase",
+      projectId: id,
+      phaseId: phaseIds[0],
+    });
+    expect(checkout.status).toBe(201);
+
+    const sentBack = await asClient(
+      request(app).post(`/api/projects/${id}/phases/${phaseIds[0]}/request-changes`),
+    ).send({ note: "Soil report is missing" });
+    expect(sentBack.status).toBe(409);
+  });
+
+  test("only the project's client can pay for a phase", async () => {
+    expectPaid(await payAdvance(id));
+    await submitPhase(id, phaseIds[0]);
+    const byEngineer = await asEngineer(request(app).post("/api/payments/checkout")).send({
+      purpose: "phase",
+      projectId: id,
+      phaseId: phaseIds[0],
+    });
     expect(byEngineer.status).toBe(403);
   });
 });
@@ -303,14 +406,19 @@ describe("Full upfront payments", () => {
       "full_upfront",
     );
     const id = project._id.toString();
-    await payAdvance(id);
+    expectPaid(await payAdvance(id));
 
-    const first = await deliverPhase(id, phaseIds[0]);
+    await submitPhase(id, phaseIds[0]);
+    const first = await approve(id, phaseIds[0]);
+    expect(first.status).toBe(200);
     expect(first.body.amountCharged).toBe(0);
 
-    const last = await deliverPhase(id, phaseIds[1]);
-    expect(last.status).toBe(200);
-    expect(last.body.amountCharged).toBe(4000);
+    await submitPhase(id, phaseIds[1]);
+    expect((await approve(id, phaseIds[1])).status).toBe(409);
+    const last = await payPhase(id, phaseIds[1]);
+    expectPaid(last);
+    expect((await Payment.findOne({ tranId: last.tranId }).exec())?.type).toBe("full_remaining");
+    expect(await phaseStatus(phaseIds[1])).toBe("completed");
 
     expect(await totalPaid(id)).toBe(5000);
     expect((await Project.findById(id).exec())?.status).toBe("completed");
@@ -319,10 +427,12 @@ describe("Full upfront payments", () => {
   test("a remaining balance paid early isn't charged again at the end", async () => {
     const { project, phaseIds } = await createApprovedProject(2000, [{ title: "Build", price: 2000 }], "full_upfront");
     const id = project._id.toString();
-    await payAdvance(id);
-    expect((await asClient(request(app).post(`/api/projects/${id}/payments/full-remaining`))).status).toBe(200);
+    expectPaid(await payAdvance(id));
+    expectPaid(await pay({ purpose: "full_remaining", projectId: id }));
 
-    const last = await deliverPhase(id, phaseIds[0]);
+    await submitPhase(id, phaseIds[0]);
+    const last = await approve(id, phaseIds[0]);
+    expect(last.status).toBe(200);
     expect(last.body.amountCharged).toBe(0);
     expect(await totalPaid(id)).toBe(2000);
   });

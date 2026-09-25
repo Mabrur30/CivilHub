@@ -2,6 +2,7 @@ import { type ReactElement, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { scrollToSection } from "../../lib/scrollToSection";
+import { BrandLogo } from "../BrandLogo";
 import { ThemeToggle } from "../ThemeToggle";
 import { GetStartedMenu } from "./GetStartedMenu";
 
@@ -38,12 +39,7 @@ export function Navbar(_props: NavbarProps): ReactElement {
           onClick={() => navigate(homeTarget)}
           className="flex items-center gap-3 text-white transition-opacity duration-300 hover:opacity-90"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
-            C
-          </div>
-          <div>
-            <div className="font-heading text-xl font-bold">CivilHub</div>
-          </div>
+          <BrandLogo height={36} />
         </button>
 
         <div className="hidden items-center gap-8 text-sm font-medium text-white/75 lg:flex">

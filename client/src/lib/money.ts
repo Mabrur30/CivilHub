@@ -28,6 +28,16 @@ export const formatTakaShort = (amount: number): string => {
   return words ? `৳${words}` : formatTaka(amount);
 };
 
+/** "৳40.57 lakh - ৳47.63 lakh" for a brief's budget, or the fallback when either end is missing. */
+export const formatBudgetShort = (
+  min: number | null,
+  max: number | null,
+  fallback: string,
+): string =>
+  min !== null && max !== null
+    ? `${formatTakaShort(min)} - ${formatTakaShort(max)}`
+    : fallback;
+
 const unitMultipliers: Record<string, number> = {
   k: 1_000,
   thousand: 1_000,

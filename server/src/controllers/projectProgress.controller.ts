@@ -1,8 +1,11 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
-import { Notification } from "../models/Notification.model";
-import { Payment } from "../models/Payment.model";
+import {
+  Notification,
+  type NotificationType,
+} from "../models/Notification.model";
+import { type IPayment, type PaymentType } from "../models/Payment.model";
 import { Project, type IProject } from "../models/Project.model";
 import {
   ProjectPhase,
@@ -10,10 +13,16 @@ import {
   type ProjectPhaseStatus,
 } from "../models/ProjectPhase.model";
 import {
+  getAdvanceAmount,
   getAmountsPaidByPhase,
   getPhaseAmountsDue,
   getRemainingBalance,
 } from "../utils/phasePayments";
+import {
+  describePaymentMethod,
+  hasCheckoutInFlight,
+  payeeShareNote,
+} from "../services/payments";
 import { formatTaka } from "../utils/money";
 
 interface ProjectProgressError extends Error {
@@ -496,31 +505,112 @@ export const updateProjectPhase = async (
 
 // ============ Client phase decisions ============
 
-/** Marks the remaining balance paid once, however many requests race for it. */
-const collectRemainingBalance = async (
+/** What approving a phase charges right now, or null when approval is free. */
+export interface PhaseCharge {
+  type: "phase" | "full_remaining";
+  amount: number;
+}
+
+const getPhaseCharge = (
   project: IProject,
-  paidBy: string,
-): Promise<number | null> => {
-  const paidAt = new Date();
+  phase: IProjectPhase,
+  phases: IProjectPhase[],
+): PhaseCharge | null => {
+  if (project.paymentPlan === "phase_by_phase") {
+    return {
+      type: "phase",
+      amount: getPhaseAmountsDue(project, phases).get(phase._id.toString()) ?? 0,
+    };
+  }
+  const isFinalPhase =
+    phase.order === Math.max(...phases.map((item) => item.order));
+  if (
+    project.paymentPlan === "full_upfront" &&
+    isFinalPhase &&
+    !project.fullPaymentPaid
+  ) {
+    return { type: "full_remaining", amount: getRemainingBalance(project) };
+  }
+  return null;
+};
+
+/**
+ * Checks the client can approve this phase now. Phases an engineer marked
+ * complete under the old rules were never paid for; approving them now
+ * settles the payment, so they count as approvable too.
+ */
+const assertPhaseApprovable = (
+  project: IProject,
+  phase: IProjectPhase,
+): { isLegacyUnpaid: boolean } => {
+  const isLegacyUnpaid =
+    project.paymentPlan === "phase_by_phase" &&
+    phase.status === "completed" &&
+    phase.paymentStatus === "unpaid";
+
+  if (phase.status === "completed" && !isLegacyUnpaid) {
+    throw createProjectProgressError(
+      `${phase.name} has already been approved`,
+      409,
+    );
+  }
+  if (phase.status !== "awaiting_approval" && !isLegacyUnpaid) {
+    throw createProjectProgressError(
+      `${phase.name} hasn't been submitted for approval yet`,
+      409,
+    );
+  }
+  if (!project.advancePaid) {
+    throw createProjectProgressError(
+      "Pay the advance before approving phases",
+      409,
+    );
+  }
+  return { isLegacyUnpaid };
+};
+
+/** Completes the phase once, however many requests race for it. */
+const completePhase = (
+  project: IProject,
+  phase: IProjectPhase,
+  isLegacyUnpaid: boolean,
+  now: Date,
+): Promise<IProjectPhase | null> =>
+  ProjectPhase.findOneAndUpdate(
+    isLegacyUnpaid
+      ? { _id: phase._id, status: "completed", paymentStatus: "unpaid" }
+      : { _id: phase._id, status: "awaiting_approval" },
+    {
+      $set: {
+        status: "completed",
+        completedAt: isLegacyUnpaid ? (phase.completedAt ?? now) : now,
+        changeRequest: null,
+        ...(project.paymentPlan === "phase_by_phase"
+          ? { paymentStatus: "paid", paidAt: now }
+          : {}),
+      },
+    },
+    { returnDocument: "after" },
+  ).exec();
+
+/** Marks the remaining balance paid once; false if it already was. */
+const claimRemainingBalance = async (
+  projectId: Types.ObjectId,
+  paidAt: Date,
+): Promise<boolean> => {
   const claimed = await Project.findOneAndUpdate(
-    { _id: project._id, advancePaid: true, fullPaymentPaid: false },
+    { _id: projectId, advancePaid: true, fullPaymentPaid: false },
     { $set: { fullPaymentPaid: true, fullPaymentPaidAt: paidAt } },
     { returnDocument: "after" },
   ).exec();
-  if (!claimed) return null;
-
-  const amount = getRemainingBalance(project);
-  await Payment.create({
-    project: project._id,
-    type: "full_remaining",
-    amount,
-    paidBy,
-    method: "mock",
-    paidAt,
-  });
-  return amount;
+  return Boolean(claimed);
 };
 
+/**
+ * Approves a phase that costs nothing to approve: any phase on the full
+ * upfront plan except a final one with the balance still unpaid. Phases that
+ * need a payment are approved by paying for them (see payment.controller).
+ */
 export const approvePhase = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -530,91 +620,37 @@ export const approvePhase = async (
     const project = await loadOwnedProject(req);
     requireApprovedPlan(project);
     const phase = await loadPhase(req, project);
-    const clientId = req.user?.userId as string;
-    const isPhaseByPhase = project.paymentPlan === "phase_by_phase";
-
-    // Phases an engineer marked complete under the old rules were never paid
-    // for; approving them now settles the payment.
-    const isLegacyUnpaid =
-      isPhaseByPhase &&
-      phase.status === "completed" &&
-      phase.paymentStatus === "unpaid";
-
-    if (phase.status === "completed" && !isLegacyUnpaid) {
-      throw createProjectProgressError(
-        `${phase.name} has already been approved`,
-        409,
-      );
-    }
-    if (phase.status !== "awaiting_approval" && !isLegacyUnpaid) {
-      throw createProjectProgressError(
-        `${phase.name} hasn't been submitted for approval yet`,
-        409,
-      );
-    }
-    if (!project.advancePaid) {
-      throw createProjectProgressError(
-        "Pay the advance before approving phases",
-        409,
-      );
-    }
+    const { isLegacyUnpaid } = assertPhaseApprovable(project, phase);
 
     const phases = await ProjectPhase.find({ project: project._id }).exec();
-    const isFinalPhase =
-      phase.order === Math.max(...phases.map((item) => item.order));
-    const now = new Date();
-    const phaseAmount = isPhaseByPhase
-      ? (getPhaseAmountsDue(project, phases).get(phase._id.toString()) ?? 0)
-      : 0;
+    const charge = getPhaseCharge(project, phase, phases);
+    if (charge && charge.amount > 0) {
+      throw createProjectProgressError(
+        `Approving ${phase.name} needs a payment of ${formatTaka(charge.amount)}. Use Approve & pay.`,
+        409,
+      );
+    }
 
-    const approved = await ProjectPhase.findOneAndUpdate(
-      isLegacyUnpaid
-        ? { _id: phase._id, status: "completed", paymentStatus: "unpaid" }
-        : { _id: phase._id, status: "awaiting_approval" },
-      {
-        $set: {
-          status: "completed",
-          completedAt: isLegacyUnpaid ? (phase.completedAt ?? now) : now,
-          changeRequest: null,
-          ...(isPhaseByPhase ? { paymentStatus: "paid", paidAt: now } : {}),
-        },
-      },
-      { returnDocument: "after" },
-    ).exec();
+    const now = new Date();
+    const approved = await completePhase(project, phase, isLegacyUnpaid, now);
     if (!approved) {
       throw createProjectProgressError(
         `${phase.name} has already been approved`,
         409,
       );
     }
-
-    let amountCharged = 0;
-    if (isPhaseByPhase) {
-      await Payment.create({
-        project: project._id,
-        phase: phase._id,
-        type: "phase",
-        amount: phaseAmount,
-        paidBy: clientId,
-        method: "mock",
-        paidAt: now,
-      });
-      amountCharged = phaseAmount;
-    } else if (isFinalPhase) {
-      amountCharged = (await collectRemainingBalance(project, clientId)) ?? 0;
+    // A zero balance (the advance covered everything) settles without a charge.
+    if (charge?.type === "full_remaining") {
+      await claimRemainingBalance(project._id, now);
     }
 
     await refreshProjectState(project._id);
 
     if (project.assignedEngineer) {
-      const label = projectLabel(project, "your project");
       await Notification.create({
         recipient: project.assignedEngineer,
-        type: amountCharged > 0 ? "phase_payment_received" : "project_phase_updated",
-        message:
-          amountCharged > 0
-            ? `The client approved ${phase.name} on ${label} and paid ${formatTaka(amountCharged)}.`
-            : `The client approved ${phase.name} on ${label}.`,
+        type: "project_phase_updated",
+        message: `The client approved ${phase.name} on ${projectLabel(project, "your project")}.`,
         project: project._id,
       });
     }
@@ -622,8 +658,8 @@ export const approvePhase = async (
     res.status(200).json({
       success: true,
       phase: phase.name,
-      amountCharged,
-      paidAt: amountCharged > 0 ? now.toISOString() : null,
+      amountCharged: 0,
+      paidAt: null,
     });
   } catch (error: unknown) {
     next(error);
@@ -639,6 +675,12 @@ export const requestPhaseChanges = async (
     const project = await loadOwnedProject(req);
     requireApprovedPlan(project);
     const phase = await loadPhase(req, project);
+    if (await hasCheckoutInFlight({ phase: phase._id })) {
+      throw createProjectProgressError(
+        "A payment for this phase is in progress. Finish or cancel it before requesting changes.",
+        409,
+      );
+    }
 
     const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
     if (!note) {
@@ -688,82 +730,88 @@ export const requestPhaseChanges = async (
   }
 };
 
-// ============ Payment Methods ============
+// ============ Gateway payments ============
+// Checkouts start in payment.controller. These rules decide what a client may
+// pay for and how much, and what a verified payment does to the project.
 
-export interface PayAdvanceRequestBody {
-  // Mock payment - no additional data needed
+export interface ProjectCharge {
+  project: IProject;
+  phase: IProjectPhase | null;
+  type: PaymentType;
+  amount: number;
+  payee: Types.ObjectId;
+  productName: string;
+  returnPath: string;
 }
 
-export interface PayFullRemainingRequestBody {
-  // Mock payment - no additional data needed
-}
+export type ProjectChargePurpose = "advance" | "phase" | "full_remaining";
 
-export const payAdvance = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    const project = await loadOwnedProject(req);
+const findClientProject = async (
+  userId: string,
+  role: string,
+  projectId: unknown,
+): Promise<IProject> => {
+  if (role !== "client") {
+    throw createProjectProgressError("Client access required", 403);
+  }
+  if (typeof projectId !== "string" || !Types.ObjectId.isValid(projectId)) {
+    throw createProjectProgressError("Project not found", 404);
+  }
+  const project = await Project.findById(projectId).exec();
+  if (!project) {
+    throw createProjectProgressError("Project not found", 404);
+  }
+  if (project.client?.toString() !== userId) {
+    throw createProjectProgressError("You do not own this project", 403);
+  }
+  return project;
+};
 
+/** Works out what the client owes for this purpose, or explains why nothing is due. */
+export const prepareProjectCharge = async (
+  userId: string,
+  role: string,
+  purpose: ProjectChargePurpose,
+  projectId: unknown,
+  phaseId: unknown,
+): Promise<ProjectCharge> => {
+  const project = await findClientProject(userId, role, projectId);
+  if (!project.assignedEngineer) {
+    throw createProjectProgressError(
+      "This project has no engineer to pay yet",
+      409,
+    );
+  }
+  const label = projectLabel(project, "Project");
+  const base = {
+    project,
+    payee: project.assignedEngineer,
+    returnPath: `/dashboard/client/projects/${project._id.toString()}`,
+  };
+
+  if (purpose === "advance") {
     if (project.phasePlanStatus !== "approved") {
       throw createProjectProgressError(
         "Phase plan must be approved before payment",
         409,
       );
     }
-
-    const paidAt = new Date();
-    const claimed = await Project.findOneAndUpdate(
-      { _id: project._id, phasePlanStatus: "approved", advancePaid: false },
-      { $set: { advancePaid: true, advancePaidAt: paidAt } },
-      { returnDocument: "after" },
-    ).exec();
-    if (!claimed) {
+    if (project.advancePaid) {
       throw createProjectProgressError(
         "Advance payment has already been made",
         409,
       );
     }
-
-    const advanceAmount = claimed.advanceRequiredAmount || 0;
-    await Payment.create({
-      project: project._id,
+    return {
+      ...base,
+      phase: null,
       type: "advance",
-      amount: advanceAmount,
-      paidBy: req.user?.userId,
-      method: "mock",
-      paidAt,
-    });
-
-    if (project.assignedEngineer) {
-      await Notification.create({
-        recipient: project.assignedEngineer,
-        type: "advance_payment_received",
-        message: `Advance payment of ${formatTaka(advanceAmount)} received for ${projectLabel(project, "your project")}. Work can now begin.`,
-        project: project._id,
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Advance payment processed (mock)",
-      amount: advanceAmount,
-      paidAt: paidAt.toISOString(),
-    });
-  } catch (error: unknown) {
-    next(error);
+      amount: getAdvanceAmount(project),
+      productName: `Advance for ${label}`,
+    };
   }
-};
 
-export const payFullRemaining = async (
-  req: AuthenticatedRequest<PayFullRemainingRequestBody>,
-  res: Response,
-  next: NextFunction,
-): Promise<void> => {
-  try {
-    const project = await loadOwnedProject(req);
-
+  if (purpose === "full_remaining") {
     if (project.paymentPlan !== "full_upfront") {
       throw createProjectProgressError(
         "This project uses a different payment plan",
@@ -776,36 +824,116 @@ export const payFullRemaining = async (
         409,
       );
     }
-
-    const amount = await collectRemainingBalance(
-      project,
-      req.user?.userId as string,
-    );
-    if (amount === null) {
+    if (project.fullPaymentPaid) {
       throw createProjectProgressError(
         "Full payment has already been made",
         409,
       );
     }
+    return {
+      ...base,
+      phase: null,
+      type: "full_remaining",
+      amount: getRemainingBalance(project),
+      productName: `Remaining balance for ${label}`,
+    };
+  }
 
-    await refreshProjectState(project._id);
+  requireApprovedPlan(project);
+  if (typeof phaseId !== "string" || !Types.ObjectId.isValid(phaseId)) {
+    throw createProjectProgressError("Project phase not found", 404);
+  }
+  const phase = await ProjectPhase.findOne({
+    _id: phaseId,
+    project: project._id,
+  }).exec();
+  if (!phase) {
+    throw createProjectProgressError("Project phase not found", 404);
+  }
+  assertPhaseApprovable(project, phase);
+  const phases = await ProjectPhase.find({ project: project._id }).exec();
+  const charge = getPhaseCharge(project, phase, phases);
+  if (!charge || charge.amount <= 0) {
+    throw createProjectProgressError(
+      `${phase.name} has nothing to pay. Approve it instead.`,
+      409,
+    );
+  }
+  return {
+    ...base,
+    phase,
+    type: charge.type,
+    amount: charge.amount,
+    productName: `${phase.name} - ${label}`,
+  };
+};
 
-    if (project.assignedEngineer) {
-      await Notification.create({
-        recipient: project.assignedEngineer,
-        type: "full_payment_received",
-        message: `Remaining payment of ${formatTaka(amount)} received for ${projectLabel(project, "your project")}.`,
-        project: project._id,
-      });
+/**
+ * Applies a verified payment to its project. Returns false when there was
+ * nothing left to pay for (already paid, or the phase moved on), so the
+ * caller can flag the money for a refund.
+ */
+export const applyProjectPayment = async (
+  payment: IPayment,
+): Promise<boolean> => {
+  const project = payment.project
+    ? await Project.findById(payment.project).exec()
+    : null;
+  if (!project) return false;
+
+  const paidAt = payment.paidAt ?? new Date();
+  const label = projectLabel(project, "your project");
+  const via = ` via ${describePaymentMethod(payment.cardType)}`;
+  const share = payeeShareNote(payment);
+  let applied = false;
+  let type: NotificationType = "phase_payment_received";
+  let message = `Remaining payment of ${formatTaka(payment.amount)} received${via} for ${label}.${share}`;
+
+  if (payment.type === "advance") {
+    const claimed = await Project.findOneAndUpdate(
+      { _id: project._id, phasePlanStatus: "approved", advancePaid: false },
+      { $set: { advancePaid: true, advancePaidAt: paidAt } },
+      { returnDocument: "after" },
+    ).exec();
+    applied = Boolean(claimed);
+    type = "advance_payment_received";
+    message = `Advance payment of ${formatTaka(payment.amount)} received${via} for ${label}. Work can now begin.${share}`;
+  } else if (payment.type === "full_remaining" && !payment.phase) {
+    applied = await claimRemainingBalance(project._id, paidAt);
+    type = "full_payment_received";
+  } else if (payment.phase) {
+    const phase = await ProjectPhase.findById(payment.phase).exec();
+    let approvable: { isLegacyUnpaid: boolean } | null = null;
+    try {
+      approvable = phase ? assertPhaseApprovable(project, phase) : null;
+    } catch {
+      approvable = null;
     }
 
-    res.status(200).json({
-      success: true,
-      message: "Remaining payment processed (mock)",
-      amount,
-      paidAt: new Date().toISOString(),
-    });
-  } catch (error: unknown) {
-    next(error);
+    // On the full-upfront plan the balance is owed whatever the phase does.
+    if (payment.type === "full_remaining") {
+      applied = await claimRemainingBalance(project._id, paidAt);
+      type = "full_payment_received";
+    }
+    const completed =
+      phase && approvable
+        ? await completePhase(project, phase, approvable.isLegacyUnpaid, paidAt)
+        : null;
+    if (payment.type === "phase") applied = Boolean(completed);
+    if (completed) {
+      message = `The client approved ${completed.name} on ${label} and paid ${formatTaka(payment.amount)}${via}.${share}`;
+    }
   }
+
+  await refreshProjectState(project._id);
+
+  if (applied && project.assignedEngineer) {
+    await Notification.create({
+      recipient: project.assignedEngineer,
+      type,
+      message,
+      project: project._id,
+    });
+  }
+  return applied;
 };

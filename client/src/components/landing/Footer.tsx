@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { scrollToSection } from "../../lib/scrollToSection";
+import { BrandLogo } from "../BrandLogo";
 
 interface FooterProps {}
 
@@ -43,14 +44,7 @@ export function Footer(_props: FooterProps): ReactElement {
       <div className="mx-auto max-w-7xl border-t border-white/10 pt-12">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
           <div className="max-w-xs">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/60 bg-primary/10 text-sm font-bold text-primary">
-                C
-              </div>
-              <div className="font-heading text-xl font-bold">
-                CivilHub
-              </div>
-            </div>
+            <BrandLogo height={36} />
 
             <p className="mt-4 text-sm leading-6 text-white/55">
               One platform for bids, approvals, and site coordination — from
