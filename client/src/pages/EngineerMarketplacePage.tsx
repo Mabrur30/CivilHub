@@ -15,6 +15,7 @@ import {
   primaryButtonClassName,
   inlineLinkClassName,
   quietLinkClassName,
+  secondaryButtonClassName,
 } from "../components/dashboard/ui/buttonStyles";
 import { Dialog } from "../components/dashboard/ui/Dialog";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
@@ -24,6 +25,8 @@ import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { BriefCard } from "../components/project/BriefCard";
 import { formatBudgetShort, moneyValue } from "../lib/money";
 import { describeTimeline } from "../lib/timeline";
+import { useDashboardBase } from "../lib/dashboardPaths";
+import { findCategory, useProjectCriteria } from "../lib/projectCriteria";
 
 interface MarketplaceProject {
   id: string;
@@ -39,6 +42,9 @@ interface MarketplaceProject {
   location: string;
   postedDate: string;
   category: string;
+  district: string | null;
+  /** The project type's key facts, e.g. "Apartment · 5 katha · 6 storeys". */
+  siteSummary: string | null;
 }
 
 interface BidForm {
@@ -61,6 +67,7 @@ type BudgetFilter = "any" | "under-10l" | "10l-1cr" | "over-1cr";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const ALL_CATEGORIES = "All categories";
+const ALL_DISTRICTS = "All districts";
 
 const budgetOptions: { key: BudgetFilter; label: string }[] = [
   { key: "any", label: "Any budget" },
@@ -96,6 +103,8 @@ const toMarketplaceProject = (value: unknown): MarketplaceProject | null => {
     budgetMax: numberOrNull(project.budgetMax),
     targetStartDate: stringOrNull(project.targetStartDate),
     targetCompletionDate: stringOrNull(project.targetCompletionDate),
+    district: stringOrNull(project.district),
+    siteSummary: stringOrNull(project.siteSummary),
   };
 };
 
@@ -192,22 +201,27 @@ function BriefListSkeleton(): ReactElement {
 
 interface BriefRowProps {
   project: MarketplaceProject;
+  categoryTitle: string;
   hasSubmittedBid: boolean;
   onBid: () => void;
 }
 
+const fullWidthSecondaryClassName = secondaryButtonClassName.replace("w-fit", "w-full");
+
 function BriefRow({
   project,
+  categoryTitle,
   hasSubmittedBid,
   onBid,
 }: BriefRowProps): ReactElement {
+  const base = useDashboardBase();
   const posted = formatRelativeTime(project.postedDate);
 
   return (
     <li>
       <BriefCard
         titleAs="h2"
-        category={project.category}
+        category={categoryTitle}
         posted={`Posted ${posted ? posted.toLowerCase() : formatDate(project.postedDate)}`}
         title={project.title}
         client={
@@ -215,7 +229,7 @@ function BriefRow({
             <Link
               to={`/profile/${project.clientId}`}
               state={{
-                backTo: "/dashboard/engineer/marketplace",
+                backTo: `${base}/marketplace`,
                 backLabel: "Back to Marketplace",
               }}
               className={inlineLinkClassName}
@@ -227,24 +241,34 @@ function BriefRow({
           )
         }
         description={project.description}
+        facts={project.siteSummary ?? undefined}
         budget={budgetOf(project)}
         location={project.location}
         timeline={timelineOf(project)}
         footer={
-          hasSubmittedBid ? (
-            <p className="flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
-              <CheckIcon className="h-4 w-4" aria-hidden="true" />
-              Bid submitted
-            </p>
-          ) : (
-            <button
-              type="button"
-              onClick={onBid}
-              className={`${primaryButtonBaseClassName} w-full`}
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              to={`${base}/marketplace/${project.id}`}
+              aria-label={`View details of ${project.title}`}
+              className={fullWidthSecondaryClassName}
             >
-              Submit bid
-            </button>
-          )
+              View details
+            </Link>
+            {hasSubmittedBid ? (
+              <p className="flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
+                <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                Bid submitted
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={onBid}
+                className={`${primaryButtonBaseClassName} w-full`}
+              >
+                Submit bid
+              </button>
+            )}
+          </div>
         }
       />
     </li>
@@ -258,6 +282,10 @@ export function EngineerMarketplacePage(): ReactElement {
   const [retryKey, setRetryKey] = useState<number>(0);
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [budget, setBudget] = useState<BudgetFilter>("any");
+  const [district, setDistrict] = useState<string>(ALL_DISTRICTS);
+  const { spec } = useProjectCriteria();
+  const categoryTitle = (value: string): string =>
+    findCategory(spec, value)?.title ?? value;
   const [search, setSearch] = useState<string>("");
   const [selectedProject, setSelectedProject] =
     useState<MarketplaceProject | null>(null);
@@ -360,19 +388,39 @@ export function EngineerMarketplacePage(): ReactElement {
     ALL_CATEGORIES,
     ...new Set(projects.map((project) => project.category)),
   ];
+  const districts = [
+    ALL_DISTRICTS,
+    ...[
+      ...new Set(
+        projects
+          .map((project) => project.district)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ].sort(),
+  ];
   const searchTerm = search.trim().toLowerCase();
   const filteredProjects = projects.filter((project) => {
     const matchesCategory =
       category === ALL_CATEGORIES || project.category === category;
+    const matchesDistrict =
+      district === ALL_DISTRICTS || project.district === district;
     const matchesSearch =
       !searchTerm ||
       `${project.title} ${project.clientName} ${project.location}`
         .toLowerCase()
         .includes(searchTerm);
-    return matchesCategory && matchesSearch && matchesBudget(project, budget);
+    return (
+      matchesCategory &&
+      matchesDistrict &&
+      matchesSearch &&
+      matchesBudget(project, budget)
+    );
   });
   const hasActiveFilters =
-    searchTerm !== "" || category !== ALL_CATEGORIES || budget !== "any";
+    searchTerm !== "" ||
+    category !== ALL_CATEGORIES ||
+    district !== ALL_DISTRICTS ||
+    budget !== "any";
   const openToBid = projects.filter(
     (project) => !submittedProjectIds.has(project.id),
   ).length;
@@ -380,6 +428,7 @@ export function EngineerMarketplacePage(): ReactElement {
   const clearFilters = (): void => {
     setSearch("");
     setCategory(ALL_CATEGORIES);
+    setDistrict(ALL_DISTRICTS);
     setBudget("any");
   };
 
@@ -465,7 +514,7 @@ export function EngineerMarketplacePage(): ReactElement {
         </p>
       ) : null}
 
-      <div className="grid gap-4 rounded-2xl border border-white/10 bg-surface p-4 sm:p-5 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid gap-4 rounded-2xl border border-white/10 bg-surface p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <div className="grid gap-2">
           <label
             htmlFor="marketplace-search"
@@ -502,6 +551,26 @@ export function EngineerMarketplacePage(): ReactElement {
             className={inputClassName}
           >
             {categories.map((option) => (
+              <option key={option} value={option}>
+                {option === ALL_CATEGORIES ? option : categoryTitle(option)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid gap-2">
+          <label
+            htmlFor="marketplace-district"
+            className="text-xs font-semibold text-white/55"
+          >
+            District
+          </label>
+          <select
+            id="marketplace-district"
+            value={district}
+            onChange={(event) => setDistrict(event.target.value)}
+            className={inputClassName}
+          >
+            {districts.map((option) => (
               <option key={option}>{option}</option>
             ))}
           </select>
@@ -575,6 +644,7 @@ export function EngineerMarketplacePage(): ReactElement {
               <BriefRow
                 key={project.id}
                 project={project}
+                categoryTitle={categoryTitle(project.category)}
                 hasSubmittedBid={submittedProjectIds.has(project.id)}
                 onBid={() => openBidDialog(project)}
               />

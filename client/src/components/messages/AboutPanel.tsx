@@ -4,7 +4,9 @@ import { Link } from "react-router-dom";
 import { formatCurrency } from "../../lib/format";
 import { Avatar } from "../Avatar";
 import { API_BASE_URL } from "./api";
-import { type Participant } from "./types";
+import { type UserRole } from "../../context/AuthContext";
+import { projectPathFor, relationLabel } from "./projectContext";
+import { type ConversationProject, type Participant } from "./types";
 
 interface AboutRow {
   label: string;
@@ -41,7 +43,7 @@ const toAboutData = (body: Json): AboutData => {
 
   push("From", text(body.location) ?? text(body.derivedLocation));
 
-  if (body.role === "engineer") {
+  if (body.role === "engineer" || body.role === "organisation") {
     const rating = num(body.rating);
     const reviews = num(body.reviewCount) ?? 0;
     push(
@@ -101,12 +103,17 @@ const toAboutData = (body: Json): AboutData => {
 
 interface AboutPanelProps {
   participant: Participant;
+  /** Projects the two have talked about, newest first. */
+  projects?: ConversationProject[];
+  viewerRole?: UserRole;
   /** Shown as a drawer on narrower screens, with a close button. */
   onClose?: () => void;
 }
 
 export function AboutPanel({
   participant,
+  projects = [],
+  viewerRole,
   onClose,
 }: AboutPanelProps): ReactElement {
   const [data, setData] = useState<AboutData | null>(null);
@@ -225,6 +232,44 @@ export function AboutPanel({
           ) : null}
         </>
       )}
+
+      {projects.length > 0 ? (
+        <>
+          <div className="mx-5 my-5 h-px bg-white/10" />
+          <section aria-labelledby="about-projects" className="px-5">
+            <h3
+              id="about-projects"
+              className="text-xs font-semibold uppercase tracking-wider text-white/45"
+            >
+              Projects together
+            </h3>
+            <ul className="mt-3 space-y-2.5">
+              {projects.map((project) => {
+                const path = projectPathFor(project, viewerRole);
+                return (
+                  <li key={project.id} className="text-sm">
+                    {path ? (
+                      <Link
+                        to={path}
+                        className="font-semibold text-white/85 underline decoration-white/25 underline-offset-4 hover:decoration-white/70"
+                      >
+                        {project.title}
+                      </Link>
+                    ) : (
+                      <span className="font-semibold text-white/85">
+                        {project.title}
+                      </span>
+                    )}
+                    <span className="block text-xs text-white/50">
+                      {relationLabel(project, viewerRole)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        </>
+      ) : null}
 
       <div className="mt-auto px-5 pb-5 pt-6">
         <Link

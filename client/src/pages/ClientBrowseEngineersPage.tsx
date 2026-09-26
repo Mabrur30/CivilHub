@@ -3,7 +3,6 @@ import {
   MagnifyingGlassIcon,
   MapPinIcon,
   PaperPlaneTiltIcon,
-  SealCheckIcon,
 } from "@phosphor-icons/react";
 import {
   type ReactElement,
@@ -19,6 +18,7 @@ import { InviteToBidDialog } from "../components/dashboard/client/InviteToBidDia
 import {
   inputClassName,
   panelClassName,
+  primaryButtonBaseClassName,
   quietLinkClassName,
   rowButtonClassName,
   secondaryButtonClassName,
@@ -29,6 +29,7 @@ import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency } from "../lib/format";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
+import { ENGINEER_DISCIPLINES } from "../lib/disciplines";
 
 interface EngineerDirectoryItem {
   id: string;
@@ -36,13 +37,19 @@ interface EngineerDirectoryItem {
   profilePhotoUrl: string | null;
   bio: string;
   location: string | null;
-  specialty: string;
+  /** Their main speciality, or null when they haven't chosen one. */
+  specialty: string | null;
   rating: number | null;
   reviewCount: number;
   typicalRate: number | null;
   rateMin: number | null;
   rateMax: number | null;
-  isVerified: boolean;
+  /** Certificates the engineer uploaded; clients can open them on the profile. */
+  certificateCount: number;
+  /** Engineers and companies that take on projects share this directory. */
+  role: "engineer" | "organisation";
+  teamSize: string | null;
+  yearFounded: number | null;
 }
 
 interface DirectoryResponse {
@@ -58,7 +65,13 @@ const TYPING_DELAY_MS = 300;
 
 // URL param -> API param. Filters live in the URL so a search can be
 // bookmarked, shared, or restored with the back button.
-const filterKeys = ["q", "category", "location", "minRating", "minRate", "maxRate"] as const;
+const filterKeys = ["q", "category", "location", "minRating", "minRate", "maxRate", "type"] as const;
+
+const typeOptions = [
+  { value: "", label: "Everyone" },
+  { value: "engineer", label: "Engineers" },
+  { value: "company", label: "Companies" },
+];
 type FilterKey = (typeof filterKeys)[number];
 type Filters = Record<FilterKey, string>;
 
@@ -71,13 +84,14 @@ const isDirectoryItem = (value: unknown): value is EngineerDirectoryItem => {
     (typeof item.profilePhotoUrl === "string" || item.profilePhotoUrl === null) &&
     typeof item.bio === "string" &&
     (typeof item.location === "string" || item.location === null) &&
-    typeof item.specialty === "string" &&
+    (typeof item.specialty === "string" || item.specialty === null) &&
     (typeof item.rating === "number" || item.rating === null) &&
     typeof item.reviewCount === "number" &&
     (typeof item.typicalRate === "number" || item.typicalRate === null) &&
     (typeof item.rateMin === "number" || item.rateMin === null) &&
     (typeof item.rateMax === "number" || item.rateMax === null) &&
-    typeof item.isVerified === "boolean"
+    typeof item.certificateCount === "number" &&
+    (item.role === "engineer" || item.role === "organisation")
   );
 };
 
@@ -105,7 +119,34 @@ const formatRate = (engineer: EngineerDirectoryItem): string | null => {
 const readFilters = (params: URLSearchParams): Filters =>
   Object.fromEntries(filterKeys.map((key) => [key, params.get(key) ?? ""])) as Filters;
 
-function EngineerRow({
+// Same grid as the marketplace, so both sides of the product browse alike.
+const cardGridClassName = "grid gap-5 md:grid-cols-2 xl:grid-cols-3";
+
+function CardSkeleton(): ReactElement {
+  return (
+    <ul className={cardGridClassName} aria-label="Loading engineers">
+      {[1, 2, 3].map((item) => (
+        <li key={item} className={`${panelClassName} animate-pulse p-5 sm:p-6`}>
+          <div className="h-5 w-40 rounded-full bg-white/10" />
+          <div className="mt-4 flex items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-white/10" />
+            <div className="h-6 w-3/5 rounded bg-white/10" />
+          </div>
+          <div className="mt-4 h-3.5 w-full rounded bg-white/10" />
+          <div className="mt-2 h-3.5 w-4/5 rounded bg-white/10" />
+          <div className="mt-6 space-y-3 border-t border-white/10 pt-4">
+            <div className="h-3.5 w-full rounded bg-white/10" />
+            <div className="h-3.5 w-2/3 rounded bg-white/10" />
+            <div className="h-3.5 w-3/4 rounded bg-white/10" />
+          </div>
+          <div className="mt-5 h-11 w-full rounded-full bg-white/10" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function EngineerCard({
   engineer,
   onInvite,
 }: {
@@ -113,54 +154,105 @@ function EngineerRow({
   onInvite: () => void;
 }): ReactElement {
   const rate = formatRate(engineer);
+  const isCompany = engineer.role === "organisation";
+  const profileLink = {
+    pathname: `/profile/${engineer.id}`,
+    state: { backTo: "/dashboard/client/network", backLabel: "Back to Browse Engineers" },
+  };
+
   return (
-    <li className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-8">
-      <div className="flex min-w-0 gap-4">
-        <Avatar name={engineer.name} photoUrl={engineer.profilePhotoUrl} size="sm" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="font-semibold text-white">{engineer.name}</p>
-            {engineer.isVerified ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-200">
-                <SealCheckIcon className="h-4 w-4" weight="fill" aria-hidden="true" />
-                Verified
-              </span>
-            ) : null}
-            {engineer.rating !== null ? (
-              <RatingBadge rating={engineer.rating} reviewCount={engineer.reviewCount} size="sm" />
-            ) : (
-              <span className="text-xs text-white/45">No reviews yet</span>
-            )}
-          </div>
-          <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/55">
-            <span>{engineer.specialty}</span>
-            {engineer.location ? (
-              <span className="flex items-center gap-1">
-                <MapPinIcon className="h-4 w-4" aria-hidden="true" />
-                {engineer.location}
-              </span>
-            ) : null}
-            {rate ? <span className="tabular-nums">Typical bid {rate}</span> : null}
-          </p>
-          {engineer.bio.trim() ? (
-            <p className="mt-2 line-clamp-2 max-w-[70ch] text-sm leading-6 text-white/60">
-              {engineer.bio}
-            </p>
+    <li>
+      <div className={`${panelClassName} flex h-full flex-col p-5 sm:p-6`}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-xs">
+          {engineer.specialty ? (
+            <span className="rounded-full bg-white/5 px-2.5 py-1 font-semibold text-white/70">
+              {engineer.specialty}
+            </span>
+          ) : (
+            <span className="rounded-full border border-dashed border-white/15 px-2.5 py-1 text-white/45">
+              No speciality set
+            </span>
+          )}
+          {isCompany ? (
+            <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 font-semibold uppercase tracking-[0.08em] text-primary">
+              Company
+            </span>
           ) : null}
         </div>
-      </div>
-      <div className="flex flex-wrap gap-2 pl-14 lg:pl-0">
-        <button type="button" onClick={onInvite} className={rowButtonClassName}>
-          <PaperPlaneTiltIcon className="h-4 w-4" aria-hidden="true" />
-          Invite to bid
-        </button>
-        <Link
-          to={`/profile/${engineer.id}`}
-          state={{ backTo: "/dashboard/client/network", backLabel: "Back to Browse Engineers" }}
-          className={rowButtonClassName}
-        >
-          View profile
-        </Link>
+
+        <div className="mt-4 flex items-center gap-3">
+          <Avatar name={engineer.name} photoUrl={engineer.profilePhotoUrl} size="md" />
+          <div className="min-w-0">
+            <h2 className="font-heading text-2xl font-bold leading-tight text-white">
+              <Link
+                to={profileLink.pathname}
+                state={profileLink.state}
+                className="rounded transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+              >
+                {engineer.name}
+              </Link>
+            </h2>
+            <div className="mt-1">
+              {engineer.rating !== null ? (
+                <RatingBadge rating={engineer.rating} reviewCount={engineer.reviewCount} size="sm" />
+              ) : (
+                <span className="text-xs text-white/45">No reviews yet</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <p className="mb-5 mt-3 line-clamp-4 whitespace-pre-line text-sm leading-6 text-white/60">
+          {engineer.bio.trim() ||
+            (isCompany
+              ? "This company hasn't added an introduction yet."
+              : "This engineer hasn't added an introduction yet.")}
+        </p>
+
+        <dl className="mt-auto grid gap-3 border-t border-white/10 pt-4 text-sm">
+          <div className="flex justify-between gap-4">
+            <dt className="shrink-0 text-white/45">Typical bid</dt>
+            <dd className="text-right font-semibold tabular-nums text-white/90">
+              {rate ?? <span className="font-normal text-white/50">No accepted bids yet</span>}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="shrink-0 text-white/45">Where</dt>
+            <dd className="flex items-center gap-1.5 text-right text-white/80">
+              <MapPinIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {engineer.location ?? "Not listed"}
+            </dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="shrink-0 text-white/45">{isCompany ? "Team" : "Credentials"}</dt>
+            <dd className="text-right text-white/80">
+              {isCompany
+                ? [
+                    engineer.teamSize ? `${engineer.teamSize} people` : null,
+                    engineer.yearFounded ? `since ${engineer.yearFounded}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "Not listed"
+                : engineer.certificateCount > 0
+                  ? `${engineer.certificateCount} ${engineer.certificateCount === 1 ? "certificate" : "certificates"} to view`
+                  : "None uploaded yet"}
+            </dd>
+          </div>
+        </dl>
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button type="button" onClick={onInvite} className={`${primaryButtonBaseClassName} w-full`}>
+            <PaperPlaneTiltIcon className="h-4 w-4" aria-hidden="true" />
+            Invite to bid
+          </button>
+          <Link
+            to={profileLink.pathname}
+            state={profileLink.state}
+            className={`${secondaryButtonClassName} w-full`}
+          >
+            View profile
+          </Link>
+        </div>
       </div>
     </li>
   );
@@ -285,12 +377,41 @@ export function ClientBrowseEngineersPage(): ReactElement {
         title="Browse engineers"
         summary={
           isLoading
-            ? "Search by name, specialty or area, then invite engineers to bid on your briefs."
-            : `${countOf(total, "engineer matches", "engineers match")} ${hasFilters ? "these filters" : "on CivilHub"}. Invite the ones you like to bid on a brief.`
+            ? "Search engineers and construction companies by name, specialty or area, then invite them to bid on your briefs."
+            : `${
+                applied.type === "company"
+                  ? countOf(total, "company matches", "companies match")
+                  : applied.type === "engineer"
+                    ? countOf(total, "engineer matches", "engineers match")
+                    : countOf(total, "engineer or company matches", "engineers and companies match")
+              } ${hasFilters ? "these filters" : "on CivilHub"}. Invite the ones you like to bid on a brief.`
         }
       />
 
       <section aria-label="Search filters" className={`${panelClassName} p-4 sm:p-5`}>
+        <div
+          role="radiogroup"
+          aria-label="Show"
+          className="mb-4 flex w-fit max-w-full gap-1 overflow-x-auto rounded-full border border-white/10 bg-void/60 p-1"
+        >
+          {typeOptions.map((option) => {
+            const isActive = draft.type === option.value;
+            return (
+              <button
+                key={option.label}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                onClick={() => update("type", option.value, true)}
+                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow ${
+                  isActive ? "bg-white/10 text-white" : "text-white/55 hover:text-white"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)]">
           <div className="grid gap-1.5">
             <label htmlFor="engineer-search" className="text-xs font-semibold text-white/55">
@@ -309,14 +430,21 @@ export function ClientBrowseEngineersPage(): ReactElement {
           </div>
           <div className="grid gap-1.5">
             <label htmlFor="engineer-specialty" className="text-xs font-semibold text-white/55">
-              Specialty
+              Speciality
             </label>
-            <input
+            <select
               id="engineer-specialty"
               value={draft.category}
               onChange={(event) => update("category", event.target.value)}
               className={inputClassName}
-            />
+            >
+              <option value="">Any speciality</option>
+              {ENGINEER_DISCIPLINES.map((discipline) => (
+                <option key={discipline} value={discipline}>
+                  {discipline}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid gap-1.5">
             <label htmlFor="engineer-location" className="text-xs font-semibold text-white/55">
@@ -393,19 +521,7 @@ export function ClientBrowseEngineersPage(): ReactElement {
       {error ? (
         <ErrorPanel message={error} onRetry={() => setRetryKey((key) => key + 1)} />
       ) : isLoading ? (
-        <section className={panelClassName} aria-label="Loading engineers">
-          <ul className="divide-y divide-white/10">
-            {[0, 1, 2, 3].map((row) => (
-              <li key={row} className="flex animate-pulse gap-4 px-6 py-5">
-                <span className="h-10 w-10 rounded-full bg-white/10" />
-                <span className="flex-1">
-                  <span className="block h-4 w-1/3 rounded bg-white/10" />
-                  <span className="mt-2 block h-3 w-1/2 rounded bg-white/10" />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <CardSkeleton />
       ) : engineers.length === 0 ? (
         <EmptyPanel
           title="No engineers match"
@@ -423,14 +539,14 @@ export function ClientBrowseEngineersPage(): ReactElement {
           }
         />
       ) : (
-        <section className={panelClassName} aria-label="Engineers">
-          <ul className="divide-y divide-white/10">
+        <section className="grid gap-4" aria-label="Engineers and companies">
+          <ul className={cardGridClassName}>
             {engineers.map((engineer) => (
-              <EngineerRow key={engineer.id} engineer={engineer} onInvite={() => setInviting(engineer)} />
+              <EngineerCard key={engineer.id} engineer={engineer} onInvite={() => setInviting(engineer)} />
             ))}
           </ul>
           {totalPages > 1 ? (
-            <div className="flex items-center justify-between gap-4 border-t border-white/10 px-5 py-4 sm:px-6">
+            <div className="flex items-center justify-between gap-4 pt-2">
               <button type="button" onClick={() => setPage(page - 1)} disabled={page <= 1} className={rowButtonClassName}>
                 Previous
               </button>

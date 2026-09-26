@@ -6,6 +6,8 @@ import {
   getIncomingRequests,
   getMyConnections,
   getSentRequests,
+  getSuggestions,
+  removeConnection,
   sendConnectionRequest,
 } from "../controllers/network.controller";
 import {
@@ -16,6 +18,12 @@ import {
 const networkRouter = Router();
 networkRouter.post("/:targetUserId/request", protect, (req, res, next) =>
   sendConnectionRequest(req as AuthenticatedRequest, res, next),
+);
+networkRouter.get("/suggestions", protect, (req, res, next) =>
+  getSuggestions(req as AuthenticatedRequest, res, next),
+);
+networkRouter.delete("/:connectionId", protect, (req, res, next) =>
+  removeConnection(req as AuthenticatedRequest, res, next),
 );
 networkRouter.get("/incoming", protect, (req, res, next) =>
   getIncomingRequests(req as AuthenticatedRequest, res, next),

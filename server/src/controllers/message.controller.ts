@@ -11,8 +11,21 @@ import {
 } from "../middleware/upload.middleware";
 import { type IMessage, Message } from "../models/Message.model";
 import { Notification } from "../models/Notification.model";
+import { Project } from "../models/Project.model";
 import { User, type UserRole } from "../models/User.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
+import { isProviderRole } from "../utils/roles";
+import {
+  type ChatUser,
+  type ConversationProjectView,
+  clientAndProvider,
+  describeConversationProjects,
+  hiredPartnerIds,
+  loadDiscussableProject,
+  maskContactInfo,
+  needsContactMasking,
+} from "../utils/projectContact";
+import { type IConversation } from "../models/Conversation.model";
 
 interface MessageError extends Error {
   statusCode: number;
@@ -32,6 +45,8 @@ export interface SendMessageBody {
   content?: string;
   messageType?: string;
   durationSeconds?: string;
+  /** The project the message is about; must already be on the conversation. */
+  projectId?: string;
 }
 
 interface PopulatedUser {
@@ -71,7 +86,8 @@ const ensureAcceptedConnection = async (
   requesterRole: UserRole,
   otherUserRole: UserRole,
 ): Promise<void> => {
-  if (requesterRole === "client" && otherUserRole === "engineer") {
+  // Clients can contact anyone they might hire, engineer or company, directly.
+  if (requesterRole === "client" && isProviderRole(otherUserRole)) {
     return;
   }
 
@@ -120,6 +136,61 @@ const getConversationIfParticipant = async (
 
 const hasUser = (ids: Types.ObjectId[] | undefined, userId: string): boolean =>
   (ids ?? []).some((id) => id.toString() === userId);
+
+/** Puts a project at the front of the conversation's context. */
+const addProjectContext = (
+  conversation: IConversation,
+  projectId: Types.ObjectId,
+): void => {
+  conversation.projects = [
+    ...conversation.projects.filter(
+      (entry) => !entry.project.equals(projectId),
+    ),
+    { project: projectId, addedAt: new Date() },
+  ];
+};
+
+/**
+ * The project context and contact-masking state of conversations, as the
+ * viewer sees them, keyed by conversation id.
+ */
+const describeProjectContext = async (
+  viewer: ChatUser,
+  conversations: Array<{
+    conversation: IConversation;
+    other: ChatUser | null;
+  }>,
+): Promise<
+  Map<string, { projects: ConversationProjectView[]; contactsHidden: boolean }>
+> => {
+  const hired = await hiredPartnerIds(
+    viewer.id,
+    conversations
+      .map((entry) => entry.other?.id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const projectsByConversation = await describeConversationProjects(
+    conversations.map(({ conversation, other }) => ({
+      id: conversation._id.toString(),
+      participants: other ? [viewer, other] : [viewer],
+      projects: conversation.projects ?? [],
+    })),
+  );
+  return new Map(
+    conversations.map(({ conversation, other }) => {
+      const id = conversation._id.toString();
+      return [
+        id,
+        {
+          projects: projectsByConversation.get(id) ?? [],
+          contactsHidden: Boolean(
+            other && clientAndProvider(viewer, other) && !hired.has(other.id),
+          ),
+        },
+      ];
+    }),
+  );
+};
 
 const markConversationMessagesRead = async (
   conversationId: Types.ObjectId,
@@ -290,10 +361,28 @@ export const getOrCreateConversation = async (
       throw createMessageError("User not found", 404);
     }
 
+    const requestedProject =
+      typeof req.query.project === "string" && req.query.project
+        ? req.query.project
+        : null;
+    // Talking about a project needs no connection: either side may start,
+    // as long as both are part of it (see loadDiscussableProject).
+    const project = requestedProject
+      ? await loadDiscussableProject(
+          requestedProject,
+          { id: userId, role: req.user.role },
+          { id: otherUserId, role: otherUser.role },
+        )
+      : null;
+
     const pairKey = createPairKey(userId, otherUserId);
     const existing = await Conversation.findOne({ pairKey }).exec();
 
     if (existing) {
+      if (project) {
+        addProjectContext(existing, project._id);
+        await existing.save();
+      }
       res.status(200).json({
         id: existing._id.toString(),
         participants: existing.participants.map((participant) =>
@@ -304,12 +393,14 @@ export const getOrCreateConversation = async (
       return;
     }
 
-    await ensureAcceptedConnection(
-      userId,
-      otherUserId,
-      req.user.role,
-      otherUser.role,
-    );
+    if (!project) {
+      await ensureAcceptedConnection(
+        userId,
+        otherUserId,
+        req.user.role,
+        otherUser.role,
+      );
+    }
 
     const conversation = await Conversation.create({
       participants: [
@@ -317,6 +408,7 @@ export const getOrCreateConversation = async (
         new Types.ObjectId(otherUserId),
       ],
       pairKey,
+      projects: project ? [{ project: project._id, addedAt: new Date() }] : [],
     });
 
     res.status(201).json({
@@ -422,8 +514,24 @@ export const getMyConversations = async (
       conversationIds,
     );
 
+    const contextByConversation = await describeProjectContext(
+      { id: userId, role: req.user.role },
+      conversations.map((conversation) => {
+        const other = (
+          conversation.participants as unknown as PopulatedUser[]
+        ).find((participant) => participant._id.toString() !== userId);
+        return {
+          conversation,
+          other: other ? { id: other._id.toString(), role: other.role } : null,
+        };
+      }),
+    );
+
     res.status(200).json(
       conversations.map((conversation) => {
+        const context = contextByConversation.get(
+          conversation._id.toString(),
+        ) ?? { projects: [], contactsHidden: false };
         const participants =
           conversation.participants as unknown as PopulatedUser[];
         const otherParticipant = participants.find(
@@ -462,6 +570,7 @@ export const getMyConversations = async (
             isStarred: hasUser(conversation.starredBy, userId),
             isArchived: hasUser(conversation.archivedBy, userId),
             updatedAt: conversation.updatedAt.toISOString(),
+            ...context,
           };
         }
 
@@ -484,6 +593,7 @@ export const getMyConversations = async (
           isStarred: hasUser(conversation.starredBy, userId),
           isArchived: hasUser(conversation.archivedBy, userId),
           updatedAt: conversation.updatedAt.toISOString(),
+          ...context,
         };
       }),
     );
@@ -537,12 +647,24 @@ export const getMessages = async (
       (participant) => participant._id.toString() !== userId,
     );
     const participantPhotoMap = await getPhotoMap(typedParticipants);
+    const context = (
+      await describeProjectContext({ id: userId, role: req.user.role }, [
+        {
+          conversation,
+          other: otherParticipant
+            ? { id: otherParticipant._id.toString(), role: otherParticipant.role }
+            : null,
+        },
+      ])
+    ).get(conversation._id.toString());
 
     res.status(200).json({
       conversationId: conversation._id.toString(),
       otherParticipant: otherParticipant
         ? toUserView(otherParticipant, participantPhotoMap)
         : null,
+      projects: context?.projects ?? [],
+      contactsHidden: context?.contactsHidden ?? false,
       messages: messages.map((message) => {
         const sender = message.sender as unknown as PopulatedUser;
         return {
@@ -551,6 +673,8 @@ export const getMessages = async (
           messageType: message.messageType ?? "text",
           content: message.content ?? "",
           attachment: toAttachmentView(message),
+          projectId: message.project?.toString() ?? null,
+          contactHidden: message.contactHidden ?? false,
           createdAt: message.createdAt.toISOString(),
           sender: {
             userId: sender._id.toString(),
@@ -582,8 +706,8 @@ export const sendMessage = async (
       throw createMessageError("Conversation ID is required", 400);
     }
 
-    const content = req.body.content?.trim();
-    if (!content && !req.file) {
+    const typed = req.body.content?.trim();
+    if (!typed && !req.file) {
       throw createMessageError("Message content is required", 400);
     }
 
@@ -591,6 +715,41 @@ export const sendMessage = async (
       conversationId,
       userId,
     );
+
+    const projectId =
+      typeof req.body.projectId === "string" && req.body.projectId
+        ? req.body.projectId
+        : null;
+    const projectContext = projectId
+      ? conversation.projects.find(
+          (entry) => entry.project.toString() === projectId,
+        )
+      : undefined;
+    if (projectId && !projectContext) {
+      throw createMessageError(
+        "This conversation is not about that project",
+        400,
+      );
+    }
+
+    const recipientId = conversation.participants
+      .find((participant) => participant.toString() !== userId)
+      ?.toString();
+    const recipientUser = recipientId
+      ? await User.findById(recipientId).select("role").exec()
+      : null;
+    // Before a hire, contact details are masked so the deal stays on CivilHub.
+    const masking =
+      typed && recipientId && recipientUser
+        ? await needsContactMasking(
+            { id: userId, role: req.user.role },
+            { id: recipientId, role: recipientUser.role },
+          )
+        : false;
+    const { text: content, masked: contactHidden } =
+      typed && masking
+        ? maskContactInfo(typed)
+        : { text: typed, masked: false };
 
     const senderObjectId = new Types.ObjectId(userId);
 
@@ -609,6 +768,8 @@ export const sendMessage = async (
         sender: senderObjectId,
         messageType: attachment?.messageType ?? "text",
         content: content || undefined,
+        project: projectContext?.project,
+        contactHidden,
         ...(attachment
           ? {
               attachmentUrl: attachment.url,
@@ -642,17 +803,27 @@ export const sendMessage = async (
       (participant) => participant.toString() !== userId,
     );
 
+    const sender = await User.findById(userId).select("name role").exec();
+
     if (recipient) {
+      const aboutProject = projectContext
+        ? await Project.findById(projectContext.project)
+            .select("title name")
+            .exec()
+        : null;
+      const aboutTitle = aboutProject?.title ?? aboutProject?.name;
       await Notification.create({
         recipient,
         type: "new_message",
-        message: "You received a new message.",
+        message: aboutTitle
+          ? `${sender?.name ?? "Someone"} messaged you about ${aboutTitle}.`
+          : "You received a new message.",
+        project: projectContext?.project,
         conversation: conversation._id,
         messageRef: message._id,
       });
     }
 
-    const sender = await User.findById(userId).select("name role").exec();
     const senderPhotoMap = await getPhotoMap(
       sender
         ? [
@@ -671,6 +842,8 @@ export const sendMessage = async (
       messageType: message.messageType,
       content: message.content ?? "",
       attachment: toAttachmentView(message),
+      projectId: message.project?.toString() ?? null,
+      contactHidden: message.contactHidden ?? false,
       createdAt: message.createdAt.toISOString(),
       sender: {
         userId,

@@ -32,6 +32,8 @@ interface NotificationListItem {
   connectionId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** The post the notification is about, for likes, comments and reposts. */
+  postId: string | null;
 }
 
 interface GetMyNotificationsResponse {
@@ -107,6 +109,7 @@ const toNotificationListItem = (
   conversationId: notification.conversation
     ? notification.conversation.toString()
     : null,
+  postId: notification.post ? notification.post.toString() : null,
   messageId: notification.messageRef
     ? notification.messageRef.toString()
     : null,

@@ -2,6 +2,7 @@ import { type ReactElement } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { equipmentPathsFor } from "./equipment/paths";
+import { canListEquipment } from "../../lib/dashboardPaths";
 
 interface EquipmentSectionTabsProps {
   className?: string;
@@ -11,12 +12,13 @@ export function EquipmentSectionTabs({
   className = "",
 }: EquipmentSectionTabsProps): ReactElement {
   const { currentUser } = useAuth();
-  const isClient = currentUser?.role === "client";
-  const paths = equipmentPathsFor(isClient ? "client" : "engineer");
-  // Clients rent but don't list equipment.
+  const paths = equipmentPathsFor(currentUser?.role ?? "engineer");
+  // Clients, and companies that don't rent machines out, only rent.
   const tabs = [
     { label: "Browse", to: paths.browse },
-    ...(isClient ? [] : [{ label: "My listings", to: paths.mine }]),
+    ...(canListEquipment(currentUser)
+      ? [{ label: "My listings", to: paths.mine }]
+      : []),
     { label: "My bookings", to: paths.bookings },
   ];
 

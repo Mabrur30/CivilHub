@@ -13,6 +13,7 @@ export type NotificationType =
   | "equipment_deposit_released"
   | "equipment_deposit_claimed"
   | "connection_accepted"
+  | "connection_request"
   | "new_message"
   | "connection_post"
   | "post_liked"
@@ -27,7 +28,9 @@ export type NotificationType =
   | "review_reply"
   | "comment_received"
   | "post_reposted"
-  | "payment_refund_due";
+  | "payment_refund_due"
+  | "project_completed"
+  | "customer_review_received";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -40,6 +43,8 @@ export interface INotification extends Document {
   connection?: Types.ObjectId;
   conversation?: Types.ObjectId;
   messageRef?: Types.ObjectId;
+  /** The post a like, comment, repost or new-post notification is about. */
+  post?: Types.ObjectId;
   read: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -68,6 +73,7 @@ const notificationSchema = new Schema<INotification>(
         "equipment_deposit_released",
         "equipment_deposit_claimed",
         "connection_accepted",
+        "connection_request",
         "new_message",
         "connection_post",
         "post_liked",
@@ -83,6 +89,8 @@ const notificationSchema = new Schema<INotification>(
         "comment_received",
         "post_reposted",
         "payment_refund_due",
+        "project_completed",
+        "customer_review_received",
       ],
       required: true,
     },
@@ -90,6 +98,11 @@ const notificationSchema = new Schema<INotification>(
       type: String,
       required: true,
       trim: true,
+    },
+    post: {
+      type: Schema.Types.ObjectId,
+      ref: "Post",
+      required: false,
     },
     connection: {
       type: Schema.Types.ObjectId,

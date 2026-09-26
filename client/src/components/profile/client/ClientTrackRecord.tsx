@@ -8,8 +8,11 @@ import { type ClientTrackRecord } from "./clientProfile";
 const plural = (count: number, one: string, many: string): string =>
   `${count} ${count === 1 ? one : many}`;
 
+const approvalSpeed = (days: number): string =>
+  days < 1 ? "Same day" : days < 1.5 ? "~1 day" : `~${Math.round(days)} days`;
+
 // Each figure carries a sentence saying what it is counted from, so an engineer
-// never has to guess whether "67%" is good or how many projects it rests on.
+// never has to guess what a number rests on.
 const toBandStats = (stats: ClientTrackRecord): BandStat[] => [
   {
     label: "Projects posted",
@@ -20,27 +23,32 @@ const toBandStats = (stats: ClientTrackRecord): BandStat[] => [
         : `${stats.activeProjects} in progress, ${stats.openProjects} taking bids`,
   },
   {
-    label: "Hire rate",
-    value: stats.hireRate ?? 0,
-    display: stats.hireRate === null ? "New" : `${stats.hireRate}%`,
+    label: "Briefs hired",
+    value: stats.hiredProjects,
+    display:
+      stats.projectsPosted === 0
+        ? "New"
+        : `${stats.hiredProjects} of ${stats.projectsPosted}`,
     detail:
-      stats.hireRate === null
-        ? "No brief has been awarded or closed yet"
-        : `Hired on ${stats.hiredProjects} of ${plural(stats.decidedProjects, "decided brief", "decided briefs")}`,
+      stats.projectsPosted === 0
+        ? "No briefs posted yet"
+        : stats.openProjects > 0
+          ? `${plural(stats.openProjects, "brief is", "briefs are")} still taking bids`
+          : "Briefs that led to a hire",
   },
   {
-    label: "Phase payments",
-    value: stats.phasesPaid,
+    label: "Approves work in",
+    value: stats.approvalDaysMedian ?? 0,
     display:
-      stats.phasesDue === 0
-        ? "None due"
-        : `${stats.phasesPaid}/${stats.phasesDue}`,
+      stats.approvalDaysMedian === null
+        ? "New"
+        : approvalSpeed(stats.approvalDaysMedian),
     detail:
-      stats.phasesDue === 0
-        ? "No payments have fallen due yet"
-        : stats.phasesPaid === stats.phasesDue
-          ? "Every finished phase has been paid"
-          : `${plural(stats.phasesDue - stats.phasesPaid, "finished phase is", "finished phases are")} waiting for payment`,
+      stats.phasesWaitingOverWeek > 0
+        ? `${plural(stats.phasesWaitingOverWeek, "handed-over phase has", "handed-over phases have")} waited over a week`
+        : stats.approvalDaysMedian === null
+          ? "No handed-over work approved yet"
+          : `Typical time from handover to approval, over ${plural(stats.approvalsMeasured, "phase", "phases")}`,
   },
   {
     label: "Completed",

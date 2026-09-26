@@ -2,11 +2,12 @@ import { type ReactElement, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { RatingBadge } from "../RatingBadge";
+import { isProviderRole } from "../../lib/dashboardPaths";
 
 export interface CommentAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   rating?: number | null;
   reviewCount?: number;
@@ -141,6 +142,13 @@ export function usePostComments({
         current.filter((comment) => comment.id !== temporaryId),
       );
       setCommentCount((count) => Math.max(0, count - 1));
+      // Give the text back so a failed send doesn't lose what was typed.
+      if (parentCommentId) {
+        setReplyContent(nextContent);
+        setReplyTarget(parentCommentId);
+      } else {
+        setContent(nextContent);
+      }
       setError(
         submissionError instanceof Error
           ? submissionError.message
@@ -295,7 +303,7 @@ export function CommentPanel({
                 >
                   {comment.author.name}
                 </Link>
-                {comment.author.role === "engineer" && (
+                {isProviderRole(comment.author.role) && (
                   <RatingBadge
                     rating={comment.author.rating ?? null}
                     reviewCount={comment.author.reviewCount ?? 0}
@@ -309,6 +317,8 @@ export function CommentPanel({
               <p className="mt-1 wrap-break-word text-xs leading-5 text-white/70">
                 {comment.content}
               </p>
+              {/* Nothing to reply to or delete until the server has saved it. */}
+              {comment.id.startsWith("optimistic-") ? null : (
               <div className="mt-1.5 flex items-center gap-3">
                 <button
                   type="button"
@@ -333,6 +343,7 @@ export function CommentPanel({
                   </button>
                 ) : null}
               </div>
+              )}
               {replyTarget === comment.id && (
                 <div className="mt-2 flex gap-2">
                   <input
@@ -399,37 +410,6 @@ export function CommentPanel({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-interface PostCommentsProps {
-  postId: string;
-  initialCount: number;
-  currentUser: CommentAuthor | null;
-  variant?: "default" | "inline";
-}
-
-export function PostComments({
-  postId,
-  initialCount,
-  currentUser,
-  variant = "default",
-}: PostCommentsProps): ReactElement {
-  const state = usePostComments({ postId, initialCount, currentUser });
-  const isInline = variant === "inline";
-
-  return (
-    <div
-      className={isInline ? "min-w-0" : "mt-4 border-t border-white/10 pt-3"}
-    >
-      <CommentToggleButton
-        isOpen={state.isOpen}
-        commentCount={state.commentCount}
-        onToggle={state.toggleComments}
-        variant={variant}
-      />
-      <CommentPanel {...state} currentUser={currentUser} />
     </div>
   );
 }

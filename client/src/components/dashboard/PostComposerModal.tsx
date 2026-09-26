@@ -12,7 +12,7 @@ interface PostComposerModalProps {
   onClose: () => void;
   authorName: string;
   authorPhotoUrl: string | null;
-  authorRole: "client" | "engineer" | undefined;
+  authorRole: "client" | "engineer" | "organisation" | undefined;
   content: string;
   onContentChange: (value: string) => void;
   maxContentLength: number;

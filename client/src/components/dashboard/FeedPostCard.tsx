@@ -9,11 +9,12 @@ import {
   type CommentAuthor,
 } from "./PostComments";
 import { RepostButton } from "./RepostButton";
+import { isProviderRole } from "../../lib/dashboardPaths";
 
 export interface FeedAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
@@ -36,6 +37,8 @@ export interface FeedPost {
   likedByMe: boolean;
   commentCount: number;
   originalPost: FeedOriginalPost | null;
+  /** A repost whose original was deleted. */
+  originalRemoved?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +57,8 @@ interface FeedPostCardProps {
   isDeleting: boolean;
   onOpenImage: (url: string) => void;
   formatRelativeTime: (value: string) => string;
+  /** Called with the server's repost so the feed can show it straight away. */
+  onReposted?: (repost: unknown) => void;
 }
 
 export function FeedPostCard({
@@ -70,6 +75,7 @@ export function FeedPostCard({
   isDeleting,
   onOpenImage,
   formatRelativeTime,
+  onReposted,
 }: FeedPostCardProps): ReactElement {
   const commentsState = usePostComments({
     postId: post.id,
@@ -95,7 +101,7 @@ export function FeedPostCard({
             >
               {post.author.name}
             </Link>
-            {post.author.role === "engineer" && (
+            {isProviderRole(post.author.role) && (
               <RatingBadge
                 rating={post.author.rating ?? null}
                 reviewCount={post.author.reviewCount ?? 0}
@@ -138,7 +144,7 @@ export function FeedPostCard({
       {/* Post content (text + image) */}
       <div>
         <p className="mt-4 whitespace-pre-line text-sm leading-7 text-white/80">
-          {post.originalPost ? (
+          {post.originalPost || post.originalRemoved ? (
             <span className="text-sm text-white/75">
               {post.content === "Reposted" ? "" : post.content}
             </span>
@@ -146,6 +152,12 @@ export function FeedPostCard({
             post.content
           )}
         </p>
+
+        {post.originalRemoved ? (
+          <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-void/40 p-4 text-sm text-white/50">
+            The original post was removed.
+          </div>
+        ) : null}
 
         {post.originalPost ? (
           <div className="mt-4 rounded-xl border border-white/10 bg-void/40 p-4">
@@ -217,13 +229,16 @@ export function FeedPostCard({
             onToggle={commentsState.toggleComments}
             variant="inline"
           />
-          <RepostButton
-            originalPostId={post.originalPost?.id ?? post.id}
-            originalAuthor={post.originalPost?.author ?? post.author}
-            originalContent={post.originalPost?.content ?? post.content}
-            originalImageUrl={post.originalPost?.imageUrl ?? post.imageUrl}
-            variant="inline"
-          />
+          {post.originalRemoved ? null : (
+            <RepostButton
+              originalPostId={post.originalPost?.id ?? post.id}
+              originalAuthor={post.originalPost?.author ?? post.author}
+              originalContent={post.originalPost?.content ?? post.content}
+              originalImageUrl={post.originalPost?.imageUrl ?? post.imageUrl}
+              variant="inline"
+              onReposted={onReposted}
+            />
+          )}
         </div>
       </div>
 

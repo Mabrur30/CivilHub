@@ -1,10 +1,22 @@
-import { ChatCircleTextIcon, HourglassIcon } from "@phosphor-icons/react";
-import { type ReactElement, useState } from "react";
+import {
+  ChatCircleTextIcon,
+  HourglassIcon,
+  PaperclipIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { type ReactElement, useRef, useState } from "react";
 import { formatCurrency } from "../../lib/format";
+import {
+  ATTACHMENT_ACCEPT,
+  formatBytes,
+  validateAttachmentFile,
+} from "../../lib/messageAttachments";
+import { FileTypeIcon } from "../chat/MessageAttachmentView";
 import {
   inputClassName,
   primaryButtonBaseClassName,
   primaryButtonClassName,
+  rowButtonClassName,
   secondaryButtonClassName,
 } from "../dashboard/ui/buttonStyles";
 import { Dialog } from "../dashboard/ui/Dialog";
@@ -42,11 +54,20 @@ interface PhaseActionsProps {
   remainingBalance: number;
   isBusy: boolean;
   onSetStatus: (status: PhaseStatus) => void;
+  /** Hands the phase over; resolves to an error message, or "" when sent. */
+  onSubmitPhase: (
+    note: string,
+    files: File[],
+    onProgress: (fraction: number) => void,
+  ) => Promise<string>;
   onApprove: () => void;
   onRequestChanges: (note: string) => Promise<boolean>;
 }
 
 const NOTE_LIMIT = 500;
+// Mirror the server's limits in ProjectPhase.model.ts.
+const HANDOVER_NOTE_LIMIT = 1000;
+const HANDOVER_FILE_LIMIT = 5;
 
 const formatShortDate = (value: string): string => {
   const date = new Date(value);
@@ -151,14 +172,221 @@ function RequestChangesDialog({
   );
 }
 
+function SubmitPhaseDialog({
+  phaseName,
+  changeRequest,
+  onClose,
+  onSubmit,
+}: {
+  phaseName: string;
+  changeRequest: PhaseChangeRequest | null;
+  onClose: () => void;
+  onSubmit: PhaseActionsProps["onSubmitPhase"];
+}): ReactElement {
+  const [note, setNote] = useState<string>("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [error, setError] = useState<string>("");
+  const [progress, setProgress] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isSending = progress !== null;
+
+  const addFiles = (picked: FileList | null): void => {
+    if (!picked) return;
+    const next = [...files];
+    for (const file of Array.from(picked)) {
+      const problem = validateAttachmentFile(file);
+      if (problem) {
+        setError(`${file.name}: ${problem}`);
+        return;
+      }
+      if (next.length >= HANDOVER_FILE_LIMIT) {
+        setError(`Attach at most ${HANDOVER_FILE_LIMIT} files.`);
+        return;
+      }
+      next.push(file);
+    }
+    setFiles(next);
+    setError("");
+  };
+
+  const send = async (): Promise<void> => {
+    if (!note.trim()) {
+      setError("Describe what you're handing over so the client knows what to review.");
+      return;
+    }
+    setError("");
+    setProgress(0);
+    const problem = await onSubmit(note.trim(), files, setProgress);
+    if (problem) {
+      setError(problem);
+      setProgress(null);
+      return;
+    }
+    onClose();
+  };
+
+  return (
+    <Dialog
+      title="Submit for approval"
+      description={`Hand ${phaseName} over to the client. They review it, then approve it or ask for changes.`}
+      onClose={onClose}
+      isBusy={isSending}
+      size="lg"
+    >
+      <form
+        className="grid gap-5"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        {changeRequest ? (
+          <ChangeRequestNote changeRequest={changeRequest} className="" />
+        ) : null}
+
+        <div className="grid gap-2">
+          <label htmlFor="handover-note" className="text-sm font-semibold text-white/80">
+            What are you handing over?
+          </label>
+          <textarea
+            id="handover-note"
+            rows={5}
+            autoFocus
+            value={note}
+            maxLength={HANDOVER_NOTE_LIMIT}
+            onChange={(event) => {
+              setNote(event.target.value);
+              setError("");
+            }}
+            aria-describedby="handover-note-hint"
+            className={`${inputClassName} resize-y`}
+          />
+          <p id="handover-note-hint" className="flex justify-between gap-4 text-xs text-white/45">
+            <span>
+              {changeRequest
+                ? "Say how you addressed the client's note."
+                : "The work done, and anything the client should check."}
+            </span>
+            <span className="tabular-nums">
+              {note.length}/{HANDOVER_NOTE_LIMIT}
+            </span>
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-white/80">
+              Files <span className="font-normal text-white/45">(optional)</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending || files.length >= HANDOVER_FILE_LIMIT}
+              className={rowButtonClassName}
+            >
+              <PaperclipIcon className="h-4 w-4" aria-hidden="true" />
+              Attach files
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ATTACHMENT_ACCEPT}
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(event) => {
+                addFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </div>
+          {files.length > 0 ? (
+            <ul className="grid gap-2">
+              {files.map((file, index) => (
+                <li
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-void/70 p-2.5"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
+                    <FileTypeIcon mimeType={file.type} className="h-5 w-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white">
+                      {file.name}
+                    </span>
+                    <span className="block text-[11px] text-white/55">
+                      {formatBytes(file.size)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFiles(files.filter((_, i) => i !== index))}
+                    disabled={isSending}
+                    aria-label={`Remove ${file.name}`}
+                    className="rounded-full p-1.5 text-white/55 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow disabled:opacity-50"
+                  >
+                    <XIcon className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-white/45">
+              Drawings, site photos, reports or spreadsheets. Up to {HANDOVER_FILE_LIMIT} files, 10 MB each.
+            </p>
+          )}
+        </div>
+
+        {progress !== null && files.length > 0 ? (
+          <div className="grid gap-1.5" aria-live="polite">
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-200"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+            <p className="text-xs tabular-nums text-white/55">
+              {progress < 1 ? `Uploading ${Math.round(progress * 100)}%` : "Finishing up..."}
+            </p>
+          </div>
+        ) : null}
+
+        {error ? (
+          <p role="alert" className="text-sm text-rose-300">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSending}
+            className={secondaryButtonClassName}
+          >
+            Cancel
+          </button>
+          <button type="submit" disabled={isSending} className={primaryButtonBaseClassName}>
+            {isSending ? "Sending..." : "Submit for approval"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 /** The client's last "request changes" note, shown until the phase is approved. */
 export function ChangeRequestNote({
   changeRequest,
+  className = "mt-4",
 }: {
   changeRequest: PhaseChangeRequest;
+  className?: string;
 }): ReactElement {
   return (
-    <div className="mt-4 flex gap-3 rounded-xl border border-violet-300/25 bg-violet-300/5 p-3.5">
+    <div className={`${className} flex gap-3 rounded-xl border border-violet-300/25 bg-violet-300/5 p-3.5`}>
       <ChatCircleTextIcon
         className="mt-0.5 h-4 w-4 shrink-0 text-violet-200"
         aria-hidden="true"
@@ -197,11 +425,13 @@ export function PhaseActions({
   remainingBalance,
   isBusy,
   onSetStatus,
+  onSubmitPhase,
   onApprove,
   onRequestChanges,
 }: PhaseActionsProps): ReactElement | null {
   const [isRequestingChanges, setIsRequestingChanges] =
     useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const isPhaseByPhase = paymentPlan === "phase_by_phase";
 
   if (viewer === "engineer") {
@@ -233,26 +463,40 @@ export function PhaseActions({
       case "in_progress":
       case "delayed":
         return (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onSetStatus("awaiting_approval")}
-              disabled={isBusy}
-              className={primaryButtonClassName}
-            >
-              {isBusy ? "Updating..." : "Submit for approval"}
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onSetStatus(phase.status === "delayed" ? "in_progress" : "delayed")
-              }
-              disabled={isBusy}
-              className={secondaryButtonClassName}
-            >
-              {phase.status === "delayed" ? "Resume work" : "Mark delayed"}
-            </button>
-          </div>
+          <>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSubmitting(true)}
+                disabled={isBusy}
+                className={primaryButtonClassName}
+              >
+                Submit for approval
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onSetStatus(phase.status === "delayed" ? "in_progress" : "delayed")
+                }
+                disabled={isBusy}
+                className={secondaryButtonClassName}
+              >
+                {isBusy
+                  ? "Updating..."
+                  : phase.status === "delayed"
+                    ? "Resume work"
+                    : "Mark delayed"}
+              </button>
+            </div>
+            {isSubmitting ? (
+              <SubmitPhaseDialog
+                phaseName={phase.name}
+                changeRequest={phase.changeRequest}
+                onClose={() => setIsSubmitting(false)}
+                onSubmit={onSubmitPhase}
+              />
+            ) : null}
+          </>
         );
       case "awaiting_approval":
         return <WaitingNote>Waiting for the client to approve</WaitingNote>;

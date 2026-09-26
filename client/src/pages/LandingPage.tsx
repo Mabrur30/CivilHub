@@ -21,7 +21,7 @@ export function LandingPage(): ReactElement {
     setSearchParams(nextParams, { replace: true });
   };
 
-  const continueAsRole = (role: "client" | "engineer"): void => {
+  const continueAsRole = (role: "client" | "engineer" | "company"): void => {
     navigate(`/signup/${role}`);
   };
 
@@ -64,7 +64,17 @@ export function LandingPage(): ReactElement {
               >
                 Continue as Engineer
               </button>
+              <button
+                type="button"
+                onClick={() => continueAsRole("company")}
+                className="w-full rounded-full border border-white/20 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-all duration-300 hover:border-primary hover:text-primary"
+              >
+                Continue as a Company
+              </button>
             </div>
+            <p className="mt-3 text-xs text-white/50">
+              Companies rent out equipment or take on projects as a firm.
+            </p>
 
             <button
               type="button"

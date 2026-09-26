@@ -8,96 +8,43 @@ import {
 import { type ReactElement, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../../Avatar";
-import {
-  primaryButtonClassName,
-  secondaryButtonClassName,
-} from "../../dashboard/ui/buttonStyles";
+import { RatingBadge } from "../../RatingBadge";
+import { secondaryButtonClassName } from "../../dashboard/ui/buttonStyles";
 import {
   type ClientPublicProfile,
   describeClient,
   formatMonthYear,
 } from "./clientProfile";
 
-export interface ConnectionActions {
-  isActioning: boolean;
-  onConnect: () => void;
-  onRespond: (decision: "accept" | "decline") => void;
-}
-
 interface ClientProfileHeaderProps {
   profile: ClientPublicProfile;
   isSelf: boolean;
-  connection: ConnectionActions;
   onEditProfile: (field?: string) => void;
   photoInputRef: RefObject<HTMLInputElement | null>;
   isUploadingPhoto: boolean;
 }
 
+/**
+ * Clients don't use connections: engineers and companies reach a client
+ * through the client's open briefs and project chats. Pairs connected before
+ * that change keep their Message button.
+ */
 function ViewerActions({
   profile,
-  connection,
 }: {
   profile: ClientPublicProfile;
-  connection: ConnectionActions;
 }): ReactElement | null {
-  const { isActioning, onConnect, onRespond } = connection;
-
-  switch (profile.connectionStatus) {
-    case "not_connected":
-      return (
-        <button
-          type="button"
-          onClick={onConnect}
-          disabled={isActioning}
-          className={primaryButtonClassName}
-        >
-          <UsersThreeIcon className="h-4 w-4" aria-hidden="true" />
-          {isActioning ? "Sending..." : "Connect"}
-        </button>
-      );
-    case "pending_received":
-      return (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => onRespond("accept")}
-            disabled={isActioning}
-            className={primaryButtonClassName}
-          >
-            Accept request
-          </button>
-          <button
-            type="button"
-            onClick={() => onRespond("decline")}
-            disabled={isActioning}
-            className={secondaryButtonClassName}
-          >
-            Decline
-          </button>
-        </div>
-      );
-    case "pending_sent":
-      return (
-        <p className="inline-flex w-fit items-center rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
-          Request sent
-        </p>
-      );
-    case "connected":
-      return (
-        <Link
-          to={`/messages/${profile.userId}`}
-          className={secondaryButtonClassName}
-        >
-          Message
-        </Link>
-      );
-  }
+  if (profile.connectionStatus !== "connected") return null;
+  return (
+    <Link to={`/messages/${profile.userId}`} className={secondaryButtonClassName}>
+      Message
+    </Link>
+  );
 }
 
 export function ClientProfileHeader({
   profile,
   isSelf,
-  connection,
   onEditProfile,
   photoInputRef,
   isUploadingPhoto,
@@ -151,6 +98,12 @@ export function ClientProfileHeader({
               <h1 className="font-heading text-3xl font-bold leading-tight text-white sm:text-4xl">
                 {profile.name}
               </h1>
+              {profile.reviewCount > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <RatingBadge rating={profile.rating} reviewCount={profile.reviewCount} />
+                  <span className="text-xs text-white/50">from engineers and owners they worked with</span>
+                </div>
+              ) : null}
               {identity ? (
                 <p className="mt-1.5 text-base text-white/75">{identity}</p>
               ) : isSelf ? (
@@ -177,7 +130,7 @@ export function ClientProfileHeader({
                   Edit profile
                 </button>
               ) : (
-                <ViewerActions profile={profile} connection={connection} />
+                <ViewerActions profile={profile} />
               )}
             </div>
           </div>

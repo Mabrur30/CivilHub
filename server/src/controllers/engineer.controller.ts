@@ -1,14 +1,18 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
-import { type UploadApiOptions, type UploadApiResponse } from "cloudinary";
-import cloudinary from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
+import { onlyDisciplines } from "../utils/disciplines";
 import {
+  DISCIPLINE_LIMIT,
   Engineer,
+  isEngineerDiscipline,
+  type EngineerDiscipline,
   type EngineerCertificate,
   type EngineerPortfolioItem,
   type IEngineer,
 } from "../models/Engineer.model";
+import { Organisation } from "../models/Organisation.model";
 import { Project } from "../models/Project.model";
 import { Review } from "../models/Review.model";
 import { Bid } from "../models/Bid.model";
@@ -48,6 +52,7 @@ export interface UpdateEngineerProfileBody {
   location?: string | null;
   education?: EducationEntryBody[];
   experience?: ExperienceEntryBody[];
+  disciplines?: unknown;
 }
 
 interface SearchEngineersQuery {
@@ -59,6 +64,8 @@ interface SearchEngineersQuery {
   minRating?: string;
   minRate?: string;
   maxRate?: string;
+  /** "engineer" or "company"; both when absent. */
+  type?: string;
 }
 
 interface SearchEngineersAggregationRow {
@@ -67,21 +74,34 @@ interface SearchEngineersAggregationRow {
   profilePhotoUrl?: string;
   bio: string;
   certificatesCount: number;
+  role: "engineer" | "organisation";
+  /** What their own profile says: disciplines for engineers, specialties for companies. */
+  profileLocation?: string;
+  specialties?: string[];
+  teamSize?: string;
+  yearFounded?: number;
 }
 
 interface SearchResultView {
   id: string;
   name: string;
+  role: "engineer" | "organisation";
   profilePhotoUrl: string | null;
   bio: string;
   location: string | null;
-  specialty: string;
+  /** Their main discipline, or null when they haven't chosen one. */
+  specialty: string | null;
   rating: number | null;
   reviewCount: number;
   typicalRate: number | null;
   rateMin: number | null;
   rateMax: number | null;
-  isVerified: boolean;
+  /** Certificates the engineer uploaded. Nobody has checked them yet. */
+  certificateCount: number;
+  /** Disciplines or specialties from their profile. */
+  tags: string[];
+  teamSize: string | null;
+  yearFounded: number | null;
 }
 
 interface EngineerParams {
@@ -116,35 +136,6 @@ const requireEngineer = async (
     throw createEngineerError("Engineer profile not found", 404);
   }
   return engineer;
-};
-
-const uploadBuffer = (
-  buffer: Buffer,
-  options: UploadApiOptions,
-): Promise<UploadApiResponse> =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      options,
-      (error, result) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        if (!result) {
-          reject(new Error("Cloudinary did not return an upload result"));
-          return;
-        }
-        resolve(result);
-      },
-    );
-    stream.end(buffer);
-  });
-
-const deleteCloudinaryAsset = async (
-  publicId: string,
-  resourceType: "image" | "raw",
-): Promise<void> => {
-  await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 };
 
 const getFile = (req: AuthenticatedRequest): Express.Multer.File => {
@@ -378,6 +369,7 @@ const toEngineerProfile = (engineer: IEngineer) => ({
       ? engineer.startingRateMax
       : null,
   location: engineer.location?.trim() ? engineer.location.trim() : null,
+  disciplines: engineer.disciplines ?? [],
   education: (engineer.education ?? []).map((entry) => ({
     _id: entry._id.toString(),
     institution: entry.institution?.trim() || null,
@@ -398,6 +390,23 @@ const toEngineerProfile = (engineer: IEngineer) => ({
   certificates: engineer.certificates,
   portfolio: engineer.portfolio,
 });
+
+const normalizeDisciplines = (
+  value: unknown,
+): EngineerDiscipline[] | undefined => {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every(isEngineerDiscipline)) {
+    throw createEngineerError("Choose disciplines from the list", 400);
+  }
+  const unique = [...new Set(value)];
+  if (unique.length > DISCIPLINE_LIMIT) {
+    throw createEngineerError(
+      `Choose at most ${DISCIPLINE_LIMIT} disciplines`,
+      400,
+    );
+  }
+  return unique;
+};
 
 const escapeRegex = (value: string): string =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -437,7 +446,9 @@ export const updateMyEngineerProfile = async (
       location,
       education,
       experience,
+      disciplines,
     } = req.body;
+    const normalizedDisciplines = normalizeDisciplines(disciplines);
 
     if (bio !== undefined && bio.trim().length > 500) {
       throw createEngineerError("Bio must be 500 characters or fewer", 400);
@@ -503,6 +514,10 @@ export const updateMyEngineerProfile = async (
       engineer.set("experience", normalizedExperience);
     }
 
+    if (normalizedDisciplines !== undefined) {
+      engineer.set("disciplines", normalizedDisciplines);
+    }
+
     await engineer.save();
     res.status(200).json(toEngineerProfile(engineer));
   } catch (error: unknown) {
@@ -548,11 +563,13 @@ export const searchEngineers = async (
           $or: [
             { "userData.name": { $regex: escaped, $options: "i" } },
             { bio: { $regex: escaped, $options: "i" } },
+            { disciplines: { $regex: escaped, $options: "i" } },
           ],
         }
       : {};
 
-    const rows = await Engineer.aggregate<SearchEngineersAggregationRow>([
+    const type = query.type?.trim().toLowerCase();
+    const userLookup = [
       {
         $lookup: {
           from: "users",
@@ -562,28 +579,80 @@ export const searchEngineers = async (
         },
       },
       { $unwind: "$userData" },
-      {
-        $match: {
-          "userData.role": "engineer",
-          ...regexFilter,
-        },
-      },
-      { $sort: { "userData.name": 1 } },
-      {
-        $project: {
-          _id: 0,
-          userId: { $toString: "$userData._id" },
-          name: "$userData.name",
-          profilePhotoUrl: "$profilePhoto.url",
-          bio: { $ifNull: ["$bio", ""] },
-          certificatesCount: {
-            $size: {
-              $ifNull: ["$certificates", []],
+    ];
+
+    const engineerRows =
+      type === "company"
+        ? []
+        : await Engineer.aggregate<SearchEngineersAggregationRow>([
+            ...userLookup,
+            {
+              $match: {
+                "userData.role": "engineer",
+                ...regexFilter,
+              },
             },
-          },
-        },
-      },
-    ]).exec();
+            {
+              $project: {
+                _id: 0,
+                userId: { $toString: "$userData._id" },
+                name: "$userData.name",
+                role: "engineer",
+                profilePhotoUrl: "$profilePhoto.url",
+                bio: { $ifNull: ["$bio", ""] },
+                certificatesCount: {
+                  $size: {
+                    $ifNull: ["$certificates", []],
+                  },
+                },
+                profileLocation: "$location",
+                specialties: { $ifNull: ["$disciplines", []] },
+              },
+            },
+          ]).exec();
+
+    // Companies that take on project work sit alongside engineers; rental-only
+    // firms are found through their equipment listings instead.
+    const companyRows =
+      type === "engineer"
+        ? []
+        : await Organisation.aggregate<SearchEngineersAggregationRow>([
+            ...userLookup,
+            {
+              $match: {
+                "userData.role": "organisation",
+                services: "projects",
+                ...(escaped
+                  ? {
+                      $or: [
+                        { "userData.name": { $regex: escaped, $options: "i" } },
+                        { about: { $regex: escaped, $options: "i" } },
+                        { specialties: { $regex: escaped, $options: "i" } },
+                      ],
+                    }
+                  : {}),
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                userId: { $toString: "$userData._id" },
+                name: "$userData.name",
+                role: "organisation",
+                profilePhotoUrl: "$logo.url",
+                bio: { $ifNull: ["$about", ""] },
+                certificatesCount: { $literal: 0 },
+                profileLocation: "$location",
+                specialties: "$specialties",
+                teamSize: "$teamSize",
+                yearFounded: "$yearFounded",
+              },
+            },
+          ]).exec();
+
+    const rows = [...engineerRows, ...companyRows].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
 
     const engineerIds = rows.map((row) => row.userId);
     if (engineerIds.length === 0) {
@@ -716,7 +785,7 @@ export const searchEngineers = async (
       return winner;
     };
 
-    const engineers: SearchResultView[] = rows
+    const engineers = rows
       .map((row) => {
         const reviewStatsForEngineer = reviewByEngineer.get(row.userId) ?? {
           rating: null,
@@ -732,15 +801,21 @@ export const searchEngineers = async (
           locations: [],
         };
 
-        const specialty = mostFrequent(projectFacets.categories, "General");
+        // Only what they chose themselves; never guessed from past projects.
+        const tags = onlyDisciplines(row.specialties);
+        const specialty = tags[0] ?? null;
         const location =
-          projectFacets.locations.length > 0
+          row.profileLocation?.trim() ||
+          (projectFacets.locations.length > 0
             ? mostFrequent(projectFacets.locations, "")
-            : null;
+            : null);
 
         return {
           id: row.userId,
           name: row.name,
+          role: row.role,
+          teamSize: row.teamSize ?? null,
+          yearFounded: row.yearFounded ?? null,
           profilePhotoUrl: row.profilePhotoUrl ?? null,
           bio: truncateBio(row.bio, 180),
           location,
@@ -750,13 +825,15 @@ export const searchEngineers = async (
           typicalRate: rateStatsForEngineer.averageRate,
           rateMin: rateStatsForEngineer.minRate,
           rateMax: rateStatsForEngineer.maxRate,
-          isVerified: row.certificatesCount > 0,
+          certificateCount: row.certificatesCount,
+          tags,
+          categories: projectFacets.categories,
         };
       })
       .filter((engineer) => {
         if (
           categoryFilter &&
-          !engineer.specialty.toLowerCase().includes(categoryFilter)
+          !engineer.tags.some((value) => value.toLowerCase().includes(categoryFilter))
         ) {
           return false;
         }
@@ -790,7 +867,9 @@ export const searchEngineers = async (
       });
 
     const total = engineers.length;
-    const pagedEngineers = engineers.slice((page - 1) * limit, page * limit);
+    const pagedEngineers: SearchResultView[] = engineers
+      .slice((page - 1) * limit, page * limit)
+      .map(({ categories: _categories, ...engineer }) => engineer);
 
     res.status(200).json({
       engineers: pagedEngineers,

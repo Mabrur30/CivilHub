@@ -16,13 +16,13 @@ import {
   isProjectProgress,
   type ProjectProgress,
 } from "../lib/projectProgress";
+import { useDashboardBase } from "../lib/dashboardPaths";
 
 interface ErrorResponse {
   message?: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
@@ -69,12 +69,13 @@ const getSummary = (projects: ProjectProgress[]): string => {
 };
 
 function ProjectRow({ project }: { project: ProjectProgress }): ReactElement {
+  const base = useDashboardBase();
   const due = getDueLabel(project);
 
   return (
     <li>
       <Link
-        to={`/dashboard/engineer/projects/${project.id}`}
+        to={`${base}/projects/${project.id}`}
         className="grid gap-4 px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
       >
         <div className="min-w-0 lg:col-span-5">
@@ -183,6 +184,7 @@ function ProjectListSkeleton(): ReactElement {
 }
 
 export function EngineerProjectsPage(): ReactElement {
+  const base = useDashboardBase();
   const [projects, setProjects] = useState<ProjectProgress[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
@@ -250,7 +252,7 @@ export function EngineerProjectsPage(): ReactElement {
           title="No active projects yet"
           body="When a client accepts one of your bids, the project shows up here with its progress and next milestone."
           action={
-            <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+            <Link to={`${base}/marketplace`} className={primaryButtonClassName}>
               <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
               Find projects
             </Link>

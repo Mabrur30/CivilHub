@@ -55,11 +55,11 @@ import {
   type EquipmentOwnerBooking,
   type EquipmentStatus,
 } from "./equipment.api";
+import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 const PHOTO_LIMIT = 6;
-const BOOKING_DETAIL_BASE = "/dashboard/engineer/equipment/bookings";
 
 const RENTAL_BUCKETS: EquipmentBookingBucket[] = [
   "pending",
@@ -182,6 +182,7 @@ function PanelHeading({
 }
 
 export function MyEquipmentPage(): ReactElement {
+  const equipmentPaths = useEquipmentPaths();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [items, setItems] = useState<EquipmentListing[]>([]);
@@ -462,9 +463,9 @@ export function MyEquipmentPage(): ReactElement {
     ownerBookings.length > 0;
 
   const summary = (() => {
-    if (isLoading) return "Equipment you rent out to other engineers.";
+    if (isLoading) return "Equipment you rent out on CivilHub.";
     if (!hasListings) {
-      return "List a machine or tool and other engineers can request it by the day.";
+      return "List a machine or tool and clients, engineers and companies can request it by the day.";
     }
     const sentences = [
       `${countOf(items.length, "listing", "listings")}, ${activeCount} active.`,
@@ -524,7 +525,7 @@ export function MyEquipmentPage(): ReactElement {
                     className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
                   >
                     <Link
-                      to={`${BOOKING_DETAIL_BASE}/${booking.id}`}
+                      to={equipmentPaths.booking(booking.id)}
                       className="group flex min-w-0 gap-4 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow lg:col-span-6"
                     >
                       <EquipmentThumb
@@ -600,7 +601,7 @@ export function MyEquipmentPage(): ReactElement {
       ) : !hasListings ? (
         <EmptyPanel
           title="No listings yet"
-          body="Add a machine or tool with photos, a daily rate and a deposit. Other engineers can then request it for the dates they need."
+          body="Add a machine or tool with photos, a daily rate and a deposit. Renters can then request it for the dates they need."
           action={addButton}
         />
       ) : (
@@ -615,7 +616,7 @@ export function MyEquipmentPage(): ReactElement {
                   className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
                 >
                   <Link
-                    to={`/dashboard/engineer/equipment/${item.id}`}
+                    to={equipmentPaths.listing(item.id)}
                     className="group flex min-w-0 gap-4 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow lg:col-span-5"
                   >
                     <EquipmentThumb
@@ -766,7 +767,7 @@ export function MyEquipmentPage(): ReactElement {
               {rentalsByBucket[activeRentalBucket].map((booking) => (
                 <li key={booking.id}>
                   <Link
-                    to={`${BOOKING_DETAIL_BASE}/${booking.id}`}
+                    to={equipmentPaths.booking(booking.id)}
                     className="group grid gap-4 px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6"
                   >
                     <div className="flex min-w-0 gap-4 lg:col-span-6">

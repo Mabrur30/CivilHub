@@ -22,7 +22,10 @@ import costEstimatorRouter from "./routes/costEstimator.routes";
 import equipmentRouter from "./routes/equipment.routes";
 import equipmentBookingRouter from "./routes/equipmentBooking.routes";
 import paymentsRouter from "./routes/payments.routes";
+import organisationRouter from "./routes/organisation.routes";
+import geoRouter from "./routes/geo.routes";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
+import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
 
 dotenv.config();
@@ -71,6 +74,8 @@ app.use("/api/cost-estimator", costEstimatorRouter);
 app.use("/api/equipment", equipmentRouter);
 app.use("/api", equipmentBookingRouter);
 app.use("/api/payments", paymentsRouter);
+app.use("/api/organisations", organisationRouter);
+app.use("/api/geo", geoRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {
@@ -81,6 +86,7 @@ const startServer = async (): Promise<void> => {
     { $set: { status: "paid" } },
   ).exec();
   await backfillCompletedProjectStatuses();
+  await tidyConnections();
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });

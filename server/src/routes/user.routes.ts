@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getPublicProfile } from "../controllers/user.controller";
 import { getUserPosts } from "../controllers/post.controller";
+import { getCustomerReviews } from "../controllers/customerReview.controller";
 import {
   protect,
   type AuthenticatedRequest,
@@ -13,6 +14,9 @@ userRouter.get("/:userId/public-profile", protect, (req, res, next) =>
 );
 userRouter.get("/:userId/posts", protect, (req, res, next) =>
   getUserPosts(req as AuthenticatedRequest, res, next),
+);
+userRouter.get("/:userId/customer-reviews", protect, (req, res, next) =>
+  getCustomerReviews(req as AuthenticatedRequest, res, next),
 );
 
 export default userRouter;

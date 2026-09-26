@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
+import { Organisation } from "../models/Organisation.model";
 
 // Both engineers and clients can upload a profile photo, and each role keeps it
 // on its own profile document. Every lookup goes through here so a photo shows
@@ -16,12 +17,15 @@ export const getProfilePhotoMap = async (
     return new Map<string, string>();
   }
 
-  const [engineers, clients] = await Promise.all([
+  const [engineers, clients, organisations] = await Promise.all([
     Engineer.find({ user: { $in: objectIds } })
       .select("user profilePhoto")
       .exec(),
     Client.find({ user: { $in: objectIds } })
       .select("user profilePhoto")
+      .exec(),
+    Organisation.find({ user: { $in: objectIds } })
+      .select("user logo")
       .exec(),
   ]);
 
@@ -29,6 +33,11 @@ export const getProfilePhotoMap = async (
   for (const profile of [...engineers, ...clients]) {
     const url = profile.profilePhoto?.url;
     if (url) photos.set(profile.user.toString(), url);
+  }
+  // A company's logo stands in for a photo wherever an avatar shows.
+  for (const organisation of organisations) {
+    const url = organisation.logo?.url;
+    if (url) photos.set(organisation.user.toString(), url);
   }
   return photos;
 };

@@ -7,7 +7,7 @@ import {
 export interface Participant {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
 }
 
@@ -20,6 +20,21 @@ export interface ChatMessage {
   createdAt: string;
   sender: Participant;
   isReadByRequester: boolean;
+  /** The project the message was about, when sent from a project's context. */
+  projectId?: string | null;
+  /** Phone numbers or emails were hidden because the pair hadn't hired yet. */
+  contactHidden?: boolean;
+}
+
+/** Where the provider in a conversation stands on a project. */
+export type ProjectRelation = "open" | "bidding" | "hired" | "closed";
+
+/** A project the two people in a conversation have talked about. */
+export interface ConversationProject {
+  id: string;
+  title: string;
+  status: string;
+  relation: ProjectRelation;
 }
 
 export interface OptimisticMessage extends ChatMessage {
@@ -30,6 +45,9 @@ export interface GetMessagesResponse {
   conversationId: string;
   otherParticipant: Participant | null;
   messages: ChatMessage[];
+  /** Newest context first; missing from older servers. */
+  projects?: unknown;
+  contactsHidden?: boolean;
 }
 
 export interface CreateConversationResponse {
@@ -56,6 +74,9 @@ export interface ConversationSummary {
   isStarred: boolean;
   isArchived: boolean;
   updatedAt: string;
+  projects: ConversationProject[];
+  /** Contact details are masked until this pair has a hire together. */
+  contactsHidden: boolean;
 }
 
 export type InboxFilter = "all" | "unread" | "starred" | "archived";
@@ -63,11 +84,26 @@ export type InboxFilter = "all" | "unread" | "starred" | "archived";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+const RELATIONS: ProjectRelation[] = ["open", "bidding", "hired", "closed"];
+
+/** Reads a conversation's projects leniently; anything malformed is dropped. */
+export const toConversationProjects = (value: unknown): ConversationProject[] =>
+  Array.isArray(value)
+    ? value.filter(
+        (item): item is ConversationProject =>
+          isRecord(item) &&
+          typeof item.id === "string" &&
+          typeof item.title === "string" &&
+          typeof item.status === "string" &&
+          RELATIONS.includes(item.relation as ProjectRelation),
+      )
+    : [];
+
 export const isParticipant = (value: unknown): value is Participant =>
   isRecord(value) &&
   typeof value.userId === "string" &&
   typeof value.name === "string" &&
-  (value.role === "client" || value.role === "engineer") &&
+  (value.role === "client" || value.role === "engineer" || value.role === "organisation") &&
   (typeof value.profilePhotoUrl === "string" || value.profilePhotoUrl === null);
 
 export const isMessage = (value: unknown): value is ChatMessage =>
@@ -134,6 +170,8 @@ export const toConversationSummary = (
     isStarred: value.isStarred === true,
     isArchived: value.isArchived === true,
     updatedAt: value.updatedAt,
+    projects: toConversationProjects(value.projects),
+    contactsHidden: value.contactsHidden === true,
   };
 };
 

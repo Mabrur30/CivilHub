@@ -1,6 +1,7 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { type FormEvent, type ReactElement, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { MessageButton } from "../components/messages/MessageButton";
 import { formatRelativeTime } from "../components/dashboard/notificationUtils";
 import {
   inlineLinkClassName,
@@ -15,6 +16,7 @@ import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
+import { useDashboardBase } from "../lib/dashboardPaths";
 
 interface EngineerBid {
   id: string;
@@ -48,7 +50,6 @@ interface ErrorResponse {
 type BidFilter = "all" | EngineerBid["status"];
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
 
 const isEngineerBid = (value: unknown): value is EngineerBid => {
   if (typeof value !== "object" || value === null) return false;
@@ -227,7 +228,13 @@ function InvitationRow({
           </p>
         </div>
         {isAccepting ? null : (
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <MessageButton
+              userId={invitation.client.id}
+              projectId={invitation.projectId}
+              label="Message client"
+              size="page"
+            />
             <button
               type="button"
               onClick={onDecline}
@@ -325,8 +332,9 @@ function InvitationRow({
 }
 
 function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
+  const base = useDashboardBase();
   const isAccepted = bid.status === "accepted";
-  const projectPath = `/dashboard/engineer/projects/${bid.projectId}`;
+  const projectPath = `${base}/projects/${bid.projectId}`;
 
   return (
     <li className="grid grid-cols-2 items-center gap-3 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:gap-6">
@@ -374,6 +382,11 @@ function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
         >
           {statusLabels[bid.status]}
         </span>
+        <MessageButton
+          userId={bid.clientUserId}
+          projectId={bid.projectId}
+          label="Message client"
+        />
         {isAccepted ? (
           <Link
             to={projectPath}
@@ -388,6 +401,7 @@ function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
 }
 
 export function EngineerBidsPage(): ReactElement {
+  const base = useDashboardBase();
   const [bids, setBids] = useState<EngineerBid[]>([]);
   const [invitations, setInvitations] = useState<BidInvitation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -556,7 +570,7 @@ export function EngineerBidsPage(): ReactElement {
             : getSummary(bids, invitations)
         }
         action={
-          <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+          <Link to={`${base}/marketplace`} className={primaryButtonClassName}>
             <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
             Find projects
           </Link>

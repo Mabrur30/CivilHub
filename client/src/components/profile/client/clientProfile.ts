@@ -34,10 +34,12 @@ export interface ClientTrackRecord {
   completedProjects: number;
   openProjects: number;
   hiredProjects: number;
-  decidedProjects: number;
-  hireRate: number | null;
-  phasesDue: number;
-  phasesPaid: number;
+  /** Median days from a phase's handover to the client approving it. */
+  approvalDaysMedian: number | null;
+  /** How many approvals that median is based on. */
+  approvalsMeasured: number;
+  /** Handed-over phases still waiting for the client after a week. */
+  phasesWaitingOverWeek: number;
   budgetMin: number | null;
   budgetMax: number | null;
   topCategories: string[];
@@ -119,10 +121,9 @@ const isTrackRecord = (value: unknown): value is ClientTrackRecord =>
   typeof value.completedProjects === "number" &&
   typeof value.openProjects === "number" &&
   typeof value.hiredProjects === "number" &&
-  typeof value.decidedProjects === "number" &&
-  isNumberOrNull(value.hireRate) &&
-  typeof value.phasesDue === "number" &&
-  typeof value.phasesPaid === "number" &&
+  isNumberOrNull(value.approvalDaysMedian) &&
+  typeof value.approvalsMeasured === "number" &&
+  typeof value.phasesWaitingOverWeek === "number" &&
   isNumberOrNull(value.budgetMin) &&
   isNumberOrNull(value.budgetMax) &&
   Array.isArray(value.topCategories) &&

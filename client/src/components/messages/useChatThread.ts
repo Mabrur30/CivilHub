@@ -9,9 +9,11 @@ import {
 } from "./api";
 import {
   type ChatMessage,
+  type ConversationProject,
   type GetMessagesResponse,
   type OptimisticMessage,
   type Participant,
+  toConversationProjects,
 } from "./types";
 
 const POLL_MS = 4000;
@@ -34,6 +36,13 @@ export interface ChatThreadState {
   messages: OptimisticMessage[];
   isLoading: boolean;
   error: string;
+  /** Projects this pair has talked about, newest first. */
+  projects: ConversationProject[];
+  /** The project new messages are about, or null for none. */
+  activeProjectId: string | null;
+  setActiveProjectId: (projectId: string | null) => void;
+  /** Phone numbers and emails are masked until the pair has a hire. */
+  contactsHidden: boolean;
   /** Resolves to an error message, or "" once the message is saved. */
   sendText: (content: string) => Promise<string>;
   addMessage: (message: ChatMessage) => void;
@@ -49,6 +58,8 @@ export function useChatThread(
   targetId: string,
   currentUser: CurrentUser | null,
   onLoaded?: (conversationId: string) => void,
+  /** From ?project= on project pages' "Message" links. */
+  requestedProjectId?: string | null,
 ): ChatThreadState {
   const navigate = useNavigate();
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -58,6 +69,12 @@ export function useChatThread(
   const [messages, setMessages] = useState<OptimisticMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
+  const [projects, setProjects] = useState<ConversationProject[]>([]);
+  const [contactsHidden, setContactsHidden] = useState<boolean>(false);
+  // Null until chosen; then falls back to the link's project or the newest.
+  const [chosenProjectId, setChosenProjectId] = useState<string | null>(
+    requestedProjectId ?? null,
+  );
 
   // Kept in a ref so a changing callback identity never restarts loading.
   const onLoadedRef = useRef(onLoaded);
@@ -68,6 +85,8 @@ export function useChatThread(
   const apply = useCallback((response: GetMessagesResponse): void => {
     setConversationId(response.conversationId);
     setOtherParticipant(response.otherParticipant);
+    setProjects(toConversationProjects(response.projects));
+    setContactsHidden(response.contactsHidden === true);
     setMessages((current) =>
       normalizeMessages([
         ...response.messages,
@@ -94,15 +113,26 @@ export function useChatThread(
           return;
         }
 
-        const resolved = await resolveConversationWithUser(targetId);
+        const resolved = await resolveConversationWithUser(
+          targetId,
+          requestedProjectId,
+        );
         if (isCancelled) return;
         if (!resolved.ok) {
           setError(resolved.error);
           return;
         }
         if (resolved.data !== targetId) {
-          // The effect reruns for the real ID and loads it from there.
-          navigate(`/messages/${resolved.data}`, { replace: true });
+          // The effect reruns for the real ID and loads it from there. The
+          // project stays in the URL so the thread opens about it.
+          navigate(
+            `/messages/${resolved.data}${
+              requestedProjectId
+                ? `?project=${encodeURIComponent(requestedProjectId)}`
+                : ""
+            }`,
+            { replace: true },
+          );
           return;
         }
         setError("Unable to load this conversation.");
@@ -117,7 +147,7 @@ export function useChatThread(
     return () => {
       isCancelled = true;
     };
-  }, [targetId, apply, navigate]);
+  }, [targetId, apply, navigate, requestedProjectId]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -134,6 +164,11 @@ export function useChatThread(
   const addMessage = useCallback((message: ChatMessage): void => {
     setMessages((current) => normalizeMessages([...current, message]));
   }, []);
+
+  const activeProjectId =
+    chosenProjectId && projects.some((project) => project.id === chosenProjectId)
+      ? chosenProjectId
+      : (projects[0]?.id ?? null);
 
   const sendText = useCallback(
     async (content: string): Promise<string> => {
@@ -154,6 +189,7 @@ export function useChatThread(
           profilePhotoUrl: currentUser.profilePhotoUrl,
         },
         isReadByRequester: true,
+        projectId: activeProjectId,
         isPending: true,
       };
       setMessages((current) => normalizeMessages([...current, optimistic]));
@@ -162,7 +198,11 @@ export function useChatThread(
         current.filter((message) => message.id !== temporaryId);
 
       try {
-        const result = await sendTextMessage(conversationId, content);
+        const result = await sendTextMessage(
+          conversationId,
+          content,
+          activeProjectId,
+        );
         if (!result.ok) {
           setMessages(withoutTemp);
           return result.error;
@@ -176,7 +216,7 @@ export function useChatThread(
         return CONNECTION_ERROR;
       }
     },
-    [conversationId, currentUser],
+    [conversationId, currentUser, activeProjectId],
   );
 
   return {
@@ -185,6 +225,10 @@ export function useChatThread(
     messages,
     isLoading,
     error,
+    projects,
+    activeProjectId,
+    setActiveProjectId: setChosenProjectId,
+    contactsHidden,
     sendText,
     addMessage,
   };

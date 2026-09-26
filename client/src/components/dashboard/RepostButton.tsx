@@ -5,7 +5,7 @@ import { Avatar } from "../Avatar";
 interface RepostAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
 }
 
@@ -15,6 +15,7 @@ interface RepostButtonProps {
   originalContent: string;
   originalImageUrl: string | null;
   variant?: "default" | "inline";
+  onReposted?: (repost: unknown) => void;
 }
 
 interface ErrorResponse {
@@ -37,6 +38,7 @@ export function RepostButton({
   originalContent,
   originalImageUrl,
   variant = "default",
+  onReposted,
 }: RepostButtonProps): ReactElement {
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [thoughts, setThoughts] = useState<string>("");
@@ -65,6 +67,7 @@ export function RepostButton({
       setSuccess(true);
       setIsOpen(false);
       setThoughts("");
+      onReposted?.(body);
     } catch {
       setError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -78,10 +81,9 @@ export function RepostButton({
     <div className="relative">
       <button
         type="button"
-        onClick={() => {
-          setIsOpen((open) => !open);
-          setSuccess(false);
-        }}
+        // One repost per post: once shared, the button says so and stays put.
+        disabled={success}
+        onClick={() => setIsOpen((open) => !open)}
         className={
           isInline
             ? "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/65 transition-colors duration-200 hover:bg-primary/10 hover:text-white"

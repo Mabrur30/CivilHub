@@ -8,6 +8,7 @@ import {
   createPost,
   deletePost,
   getFeed,
+  getPost,
   toggleLike,
   createRepost,
   type CreateRepostBody,
@@ -35,6 +36,9 @@ postRouter.post(
 
 postRouter.get("/feed", protect, (req, res, next) =>
   getFeed(req as AuthenticatedRequest, res, next),
+);
+postRouter.get("/:postId", protect, (req, res, next) =>
+  getPost(req as AuthenticatedRequest, res, next),
 );
 postRouter.get("/:postId/comments", protect, (req, res, next) =>
   getCommentsForPost(req as AuthenticatedRequest, res, next),

@@ -18,12 +18,14 @@ import {
 import { PostComposerModal } from "../components/dashboard/PostComposerModal";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
+import { canTakeProjects } from "../lib/dashboardPaths";
+import { isProviderRole } from "../lib/dashboardPaths";
 
 interface NetworkUser {
   id: string;
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   status: "pending";
   profilePhotoUrl: string | null;
 }
@@ -31,7 +33,7 @@ interface NetworkUser {
 interface ConnectionUser {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
@@ -40,6 +42,7 @@ interface ConnectionUser {
 interface EngineerSearchResult {
   id: string;
   name: string;
+  role?: "engineer" | "organisation";
   profilePhotoUrl: string | null;
   bio: string;
   location: string | null;
@@ -67,7 +70,7 @@ interface LikeResponse {
 interface SelfPublicProfile {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   bio: string;
   rating: number | null;
@@ -91,8 +94,8 @@ const DEFAULT_SEARCH_LIMIT = 20;
 const FEED_PAGE_LIMIT = 10;
 const MAX_CONTENT_LENGTH = 2000;
 
-const isRole = (value: unknown): value is "client" | "engineer" =>
-  value === "client" || value === "engineer";
+const isRole = (value: unknown): value is "client" | "engineer" | "organisation" =>
+  value === "client" || value === "engineer" || value === "organisation";
 
 const getErrorMessage = (value: unknown, fallback: string): string => {
   if (typeof value === "object" && value !== null) {
@@ -199,12 +202,12 @@ const isFeedPost = (value: unknown): value is FeedPost => {
   );
 };
 
+// One malformed post is dropped (see loadFeed) rather than failing the feed.
 const isFeedResponse = (value: unknown): value is FeedResponse => {
   if (typeof value !== "object" || value === null) return false;
   const body = value as Record<string, unknown>;
   return (
     Array.isArray(body.posts) &&
-    body.posts.every(isFeedPost) &&
     typeof body.page === "number" &&
     typeof body.limit === "number" &&
     typeof body.total === "number"
@@ -275,7 +278,6 @@ export function EngineerNetworkPage(): ReactElement {
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
     null,
   );
-  const [reloadKey, setReloadKey] = useState<number>(0);
 
   const [profile, setProfile] = useState<SelfPublicProfile | null>(null);
   const [projectCount, setProjectCount] = useState<number | null>(null);
@@ -307,8 +309,8 @@ export function EngineerNetworkPage(): ReactElement {
   const [searchActionError, setSearchActionError] = useState<string>("");
 
   const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [feedPage, setFeedPage] = useState<number>(1);
-  const [feedTotal, setFeedTotal] = useState<number>(0);
+  // Where the next "Load more" continues from; null when there's nothing more.
+  const [feedCursor, setFeedCursor] = useState<string | null>(null);
   const [isFeedLoading, setIsFeedLoading] = useState<boolean>(true);
   const [isFeedLoadingMore, setIsFeedLoadingMore] = useState<boolean>(false);
   const [feedError, setFeedError] = useState<string>("");
@@ -328,9 +330,9 @@ export function EngineerNetworkPage(): ReactElement {
   const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
 
-  const isEngineer = currentUser?.role === "engineer";
+  const isEngineer = isProviderRole(currentUser?.role);
 
-  const hasMoreFeed = posts.length < feedTotal;
+  const hasMoreFeed = feedCursor !== null;
   const remainingChars = MAX_CONTENT_LENGTH - content.length;
   const showRemainingCount = remainingChars <= 100;
   const composerFirstName = (profile?.name ?? currentUser?.name ?? "You")
@@ -354,11 +356,7 @@ export function EngineerNetworkPage(): ReactElement {
     });
   }, [browsePeople, connections, currentUser?.id, incoming, sent]);
 
-  const feedEmpty = !isFeedLoading && posts.length === 0;
-
-  const refreshAll = (): void => {
-    setReloadKey((key) => key + 1);
-  };
+  const feedEmpty = !isFeedLoading && !feedError && posts.length === 0;
 
   const loadNetwork = async (): Promise<void> => {
     setIsNetworkLoading(true);
@@ -451,17 +449,20 @@ export function EngineerNetworkPage(): ReactElement {
 
   const loadProjectCount = async (): Promise<void> => {
     if (!currentUser?.role) return;
+    if (currentUser.role === "organisation" && !canTakeProjects(currentUser)) {
+      return;
+    }
 
     try {
       const endpoint =
-        currentUser.role === "engineer"
-          ? `${API_BASE_URL}/api/dashboard/engineer/overview`
-          : `${API_BASE_URL}/api/dashboard/client/overview`;
+        currentUser.role === "client"
+          ? `${API_BASE_URL}/api/dashboard/client/overview`
+          : `${API_BASE_URL}/api/dashboard/engineer/overview`;
 
       const response = await fetch(endpoint, { credentials: "include" });
       const body: unknown = await response.json();
 
-      if (currentUser.role === "engineer") {
+      if (currentUser.role !== "client") {
         if (!response.ok || !isEngineerOverview(body)) return;
       } else if (!response.ok || !isClientOverview(body)) {
         return;
@@ -473,10 +474,7 @@ export function EngineerNetworkPage(): ReactElement {
     }
   };
 
-  const loadFeed = async (
-    targetPage: number,
-    append: boolean,
-  ): Promise<void> => {
+  const loadFeed = async (append: boolean): Promise<void> => {
     if (append) {
       setIsFeedLoadingMore(true);
     } else {
@@ -486,7 +484,9 @@ export function EngineerNetworkPage(): ReactElement {
 
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/posts/feed?page=${targetPage}&limit=${FEED_PAGE_LIMIT}`,
+        `${API_BASE_URL}/api/posts/feed?limit=${FEED_PAGE_LIMIT}${
+          append && feedCursor ? `&before=${encodeURIComponent(feedCursor)}` : ""
+        }`,
         { credentials: "include" },
       );
       const body: unknown = await response.json();
@@ -498,11 +498,14 @@ export function EngineerNetworkPage(): ReactElement {
         return;
       }
 
-      setPosts((current) =>
-        append ? [...current, ...body.posts] : body.posts,
-      );
-      setFeedPage(body.page);
-      setFeedTotal(body.total);
+      const valid = (body.posts as unknown[]).filter(isFeedPost);
+      setPosts((current) => {
+        if (!append) return valid;
+        const seen = new Set(current.map((post) => post.id));
+        return [...current, ...valid.filter((post) => !seen.has(post.id))];
+      });
+      const next = (body as { nextCursor?: unknown }).nextCursor;
+      setFeedCursor(typeof next === "string" ? next : null);
     } catch {
       setFeedError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -539,13 +542,13 @@ export function EngineerNetworkPage(): ReactElement {
         loadNetwork(),
         loadSelfProfile(),
         loadProjectCount(),
-        loadFeed(1, false),
+        loadFeed(false),
         loadBrowsePeople(),
       ]);
     };
 
     void run();
-  }, [reloadKey, currentUser?.id, currentUser?.role]);
+  }, [currentUser?.id, currentUser?.role]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -559,6 +562,8 @@ export function EngineerNetworkPage(): ReactElement {
   }, [searchQuery]);
 
   useEffect(() => {
+    // A slower, older search must not overwrite the results of a newer one.
+    const controller = new AbortController();
     const runSearch = async (): Promise<void> => {
       if (!searchExpanded || !debouncedQuery) {
         setSearchResults([]);
@@ -574,7 +579,7 @@ export function EngineerNetworkPage(): ReactElement {
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/engineers/search?q=${encodeURIComponent(debouncedQuery)}&page=${searchPage}&limit=${DEFAULT_SEARCH_LIMIT}`,
-          { credentials: "include" },
+          { credentials: "include", signal: controller.signal },
         );
         const body: unknown = await response.json();
 
@@ -589,14 +594,16 @@ export function EngineerNetworkPage(): ReactElement {
         setSearchLimit(body.limit);
         setSearchTotal(body.total);
       } catch {
+        if (controller.signal.aborted) return;
         setSearchError("Unable to connect to CivilHub. Please try again.");
         setSearchResults([]);
       } finally {
-        setIsSearchLoading(false);
+        if (!controller.signal.aborted) setIsSearchLoading(false);
       }
     };
 
     void runSearch();
+    return () => controller.abort();
   }, [debouncedQuery, searchExpanded, searchPage]);
 
   useEffect(() => {
@@ -668,7 +675,6 @@ export function EngineerNetworkPage(): ReactElement {
       }
 
       setPosts((current) => [body, ...current]);
-      setFeedTotal((current) => current + 1);
       setContent("");
       clearImage();
       setIsComposerOpen(false);
@@ -753,7 +759,6 @@ export function EngineerNetworkPage(): ReactElement {
       }
 
       setPosts((current) => current.filter((post) => post.id !== postId));
-      setFeedTotal((current) => Math.max(0, current - 1));
     } catch {
       setFeedError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -784,7 +789,22 @@ export function EngineerNetworkPage(): ReactElement {
         return;
       }
 
-      refreshAll();
+      // Update the lists in place so the feed, open comments and scroll stay put.
+      const request = incoming.find((item) => item.id === connectionId);
+      setIncoming((current) => current.filter((item) => item.id !== connectionId));
+      if (decision === "accept" && request) {
+        setConnections((current) => [
+          {
+            userId: request.userId,
+            name: request.name,
+            role: request.role,
+            profilePhotoUrl: request.profilePhotoUrl,
+            rating: null,
+            reviewCount: 0,
+          },
+          ...current.filter((item) => item.userId !== request.userId),
+        ]);
+      }
     } catch {
       setActionError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -813,7 +833,41 @@ export function EngineerNetworkPage(): ReactElement {
         return;
       }
 
-      refreshAll();
+      // Update the lists in place so the feed, open comments and scroll stay put.
+      const person = [...searchResults, ...browsePeople].find(
+        (item) => item.id === targetUserId,
+      );
+      const result = body as { id?: unknown; status?: unknown };
+      if (person && typeof result.id === "string") {
+        const role = person.role ?? "engineer";
+        if (result.status === "accepted") {
+          // They had already asked us, so connecting accepted their request.
+          setIncoming((current) => current.filter((item) => item.userId !== targetUserId));
+          setConnections((current) => [
+            {
+              userId: person.id,
+              name: person.name,
+              role,
+              profilePhotoUrl: person.profilePhotoUrl,
+              rating: null,
+              reviewCount: 0,
+            },
+            ...current,
+          ]);
+        } else {
+          setSent((current) => [
+            {
+              id: result.id as string,
+              userId: person.id,
+              name: person.name,
+              role,
+              status: "pending",
+              profilePhotoUrl: person.profilePhotoUrl,
+            },
+            ...current,
+          ]);
+        }
+      }
     } catch {
       setSearchActionError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -839,14 +893,14 @@ export function EngineerNetworkPage(): ReactElement {
     : connectableSuggestions;
 
   const selfAuthorMetrics = useMemo(() => {
-    if (!currentUser?.id || currentUser.role !== "engineer") {
+    if (!currentUser?.id || !isProviderRole(currentUser.role)) {
       return { rating: null as number | null, reviewCount: 0 };
     }
 
     const authored = posts.find(
       (post) =>
         post.author.userId === currentUser.id &&
-        post.author.role === "engineer",
+        isProviderRole(post.author.role),
     );
 
     return {
@@ -901,7 +955,7 @@ export function EngineerNetworkPage(): ReactElement {
                       {profile?.name ?? currentUser?.name}
                     </h2>
                   )}
-                  {selfRole === "engineer" && (
+                  {isProviderRole(selfRole) && (
                     <RatingBadge
                       rating={selfRating ?? null}
                       reviewCount={selfReviewCount ?? 0}
@@ -1100,6 +1154,14 @@ export function EngineerNetworkPage(): ReactElement {
                   isDeleting={deleteLoadingId === post.id}
                   onOpenImage={setLightboxImageUrl}
                   formatRelativeTime={formatRelativeTime}
+                  onReposted={(repost) => {
+                    if (!isFeedPost(repost)) return;
+                    setPosts((current) =>
+                      current.some((item) => item.id === repost.id)
+                        ? current
+                        : [repost, ...current],
+                    );
+                  }}
                 />
               ))}
 
@@ -1107,7 +1169,7 @@ export function EngineerNetworkPage(): ReactElement {
                 <div className="flex justify-center pt-2">
                   <button
                     type="button"
-                    onClick={() => void loadFeed(feedPage + 1, true)}
+                    onClick={() => void loadFeed(true)}
                     disabled={isFeedLoadingMore}
                     className="rounded-full border border-white/20 px-5 py-2.5 text-sm font-semibold text-white/75 transition-all duration-200 hover:border-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -1139,7 +1201,9 @@ export function EngineerNetworkPage(): ReactElement {
               ) : null}
             </div>
 
-            {incoming.length === 0 ? (
+            {isNetworkLoading ? (
+              <p className="mt-3 text-sm text-white/50">Loading…</p>
+            ) : incoming.length === 0 ? (
               <p className="mt-3 text-sm text-white/50">
                 No incoming requests.
               </p>
@@ -1242,7 +1306,7 @@ export function EngineerNetworkPage(): ReactElement {
 
             {!isBrowseLoading && !isSearchLoading ? (
               <div
-                className={`mt-4 space-y-3 overflow-hidden transition-all duration-200 ${
+                className={`mt-4 space-y-3 overflow-y-auto pr-1 ${
                   searchExpanded ? "max-h-[860px]" : "max-h-[420px]"
                 }`}
               >
@@ -1380,11 +1444,13 @@ export function EngineerNetworkPage(): ReactElement {
             </button>
 
             <div
-              className={`overflow-hidden transition-all duration-200 ${
-                sentExpanded ? "mt-4 max-h-[320px]" : "max-h-0"
-              }`}
+              className={
+                sentExpanded ? "mt-4 max-h-[320px] overflow-y-auto pr-1" : "hidden"
+              }
             >
-              {sent.length === 0 ? (
+              {isNetworkLoading ? (
+                <p className="text-sm text-white/50">Loading…</p>
+              ) : sent.length === 0 ? (
                 <p className="text-sm text-white/50">
                   No pending sent requests.
                 </p>
@@ -1468,7 +1534,7 @@ export function EngineerNetworkPage(): ReactElement {
                             <p className="text-sm font-semibold text-white">
                               {connection.name}
                             </p>
-                            {connection.role === "engineer" && (
+                            {isProviderRole(connection.role) && (
                               <RatingBadge
                                 rating={connection.rating ?? null}
                                 reviewCount={connection.reviewCount ?? 0}
@@ -1508,7 +1574,7 @@ export function EngineerNetworkPage(): ReactElement {
           <button
             type="button"
             onClick={() => setLightboxImageUrl(null)}
-            className="absolute right-5 top-5 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80 transition-colors duration-200 hover:border-primary hover:text-white"
+            className="absolute right-5 top-5 rounded-full border border-snow/30 px-3 py-1.5 text-xs font-semibold text-snow transition-colors duration-200 hover:border-primary"
           >
             Close
           </button>

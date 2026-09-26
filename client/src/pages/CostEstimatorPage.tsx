@@ -7,6 +7,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { BrandLogo } from "../components/BrandLogo";
 import { useAuth } from "../context/AuthContext";
+import { COST_ESTIMATOR_DISTRICTS } from "../lib/siteDetails";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
@@ -358,9 +359,20 @@ Estimated Duration: ~${prediction.timeline.estimatedMonths} months. Please submi
         category: "Residential",
         budgetMin: String(est.minCostBDT),
         budgetMax: String(est.maxCostBDT),
-        location: `${inData.location ? `${inData.location}, ` : ""}${
-          inData.city.charAt(0).toUpperCase() + inData.city.slice(1)
-        }`,
+        site: {
+          district: COST_ESTIMATOR_DISTRICTS[inData.city] ?? "",
+          area: inData.location ?? "",
+        },
+        requirements: {
+          buildingType:
+            inData.constructionType === "duplex"
+              ? "duplex"
+              : inData.constructionType === "independent_house"
+                ? "single_house"
+                : "apartment",
+          storeys: String(inData.floors),
+          floorArea: String(inData.totalBuiltArea),
+        },
       },
     });
   };

@@ -12,6 +12,7 @@ import {
   retryButtonClassName,
 } from "../ui/buttonStyles";
 import { ProgressBar } from "../ui/ProgressBar";
+import { useDashboardBase } from "../../../lib/dashboardPaths";
 
 interface UpNextProjectsProps {
   projects: ProjectProgress[];
@@ -23,13 +24,14 @@ interface UpNextProjectsProps {
 const VISIBLE_PROJECTS = 4;
 
 function ProjectRow({ project }: { project: ProjectProgress }): ReactElement {
+  const base = useDashboardBase();
   const due = getDueLabel(project);
   const hasMilestone = hasMilestonePlan(project);
 
   return (
     <li>
       <Link
-        to={`/dashboard/engineer/projects/${project.id}`}
+        to={`${base}/projects/${project.id}`}
         className="block px-5 py-5 transition-colors hover:bg-white/4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-glow sm:px-6"
       >
         <div className="flex items-start justify-between gap-4">
@@ -95,6 +97,7 @@ export function UpNextProjects({
   error,
   onRetry,
 }: UpNextProjectsProps): ReactElement {
+  const base = useDashboardBase();
   const visibleProjects = projects.slice(0, VISIBLE_PROJECTS);
   const showAllLink = !isLoading && !error && projects.length > 0;
 
@@ -112,7 +115,7 @@ export function UpNextProjects({
         </h2>
         {showAllLink ? (
           <Link
-            to="/dashboard/engineer/projects"
+            to={`${base}/projects`}
             className={quietLinkClassName}
           >
             All projects

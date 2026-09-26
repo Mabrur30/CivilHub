@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ClientProfileHeader, type ConnectionActions } from "./ClientProfileHeader";
+import { ClientProfileHeader } from "./ClientProfileHeader";
 import { ClientTrackRecord, TypicalWork } from "./ClientTrackRecord";
 import { CompletedWork } from "./CompletedWork";
 import { EditClientProfileDialog } from "./EditClientProfileDialog";
@@ -26,8 +26,7 @@ const IMAGE_LIMIT = 5 * 1024 * 1024;
 interface ClientProfileViewProps {
   profile: ClientPublicProfile;
   isSelf: boolean;
-  viewerRole: "client" | "engineer" | null;
-  connection: ConnectionActions;
+  viewerRole: "client" | "engineer" | "organisation" | null;
   actionError: string;
   onProfileChange: (
     update: (current: ClientPublicProfile) => ClientPublicProfile,
@@ -35,17 +34,19 @@ interface ClientProfileViewProps {
   onPhotoChanged: () => Promise<void>;
   /** The page's posts section; left out when there is nothing to show. */
   posts: ReactNode;
+  /** What engineers and owners said about this client. */
+  reviews: ReactNode;
 }
 
 export function ClientProfileView({
   profile,
   isSelf,
   viewerRole,
-  connection,
   actionError,
   onProfileChange,
   onPhotoChanged,
   posts,
+  reviews,
 }: ClientProfileViewProps): ReactElement {
   const [ownDetails, setOwnDetails] = useState<OwnClientDetails | null>(null);
   const [editField, setEditField] = useState<string | null>(null);
@@ -158,7 +159,7 @@ export function ClientProfileView({
 
   const viewer: BriefViewer = isSelf
     ? "owner"
-    : viewerRole === "engineer"
+    : viewerRole === "engineer" || viewerRole === "organisation"
       ? "engineer"
       : "other";
   const firstName = profile.name.trim().split(/\s+/)[0] || profile.name;
@@ -169,7 +170,6 @@ export function ClientProfileView({
       <ClientProfileHeader
         profile={profile}
         isSelf={isSelf}
-        connection={connection}
         onEditProfile={openEditor}
         photoInputRef={photoInputRef}
         isUploadingPhoto={isUploadingPhoto}
@@ -222,6 +222,7 @@ export function ClientProfileView({
             profilePath={profilePath}
             profileName={firstName}
           />
+          {reviews}
           {posts}
         </div>
         <div className="lg:sticky lg:top-8">

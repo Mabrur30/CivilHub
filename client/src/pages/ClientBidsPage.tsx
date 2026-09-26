@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { MessageButton } from "../components/messages/MessageButton";
 import { Avatar } from "../components/Avatar";
 import { useClientWorkspace } from "../components/dashboard/client/ClientWorkspace";
 import { getErrorMessage } from "../components/dashboard/client/clientData";
@@ -42,6 +43,8 @@ interface ClientBid {
   engineerRating: number | null;
   engineerReviewCount: number;
   engineerCompletedProjects: number;
+  /** The bid is from a company rather than an individual engineer. */
+  isCompany?: boolean;
 }
 
 interface ProjectBids {
@@ -205,6 +208,11 @@ function BidRow({ bid, project, onHire, onDecline }: BidRowProps): ReactElement 
               >
                 {bid.engineerName}
               </Link>
+              {bid.isCompany ? (
+                <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+                  Company
+                </span>
+              ) : null}
               {bid.engineerRating !== null ? (
                 <RatingBadge
                   rating={bid.engineerRating}
@@ -239,6 +247,11 @@ function BidRow({ bid, project, onHire, onDecline }: BidRowProps): ReactElement 
       <div className="pl-14">
         <BidMessage message={bid.message} />
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <MessageButton
+            userId={bid.engineerId}
+            projectId={project.projectId}
+            label={`Message ${firstName(bid.engineerName)}`}
+          />
           {canDecide ? (
             <>
               <button type="button" onClick={onHire} className={outlineButtonClassName}>

@@ -320,3 +320,62 @@ a {
     #f26a1b
   );
 }
+
+/* Site maps (Leaflet).
+   The map sits in its own stacking context so its panes and controls never
+   rise above the sticky dashboard header. Controls take the theme's grounds
+   and ink, and the pin and area circle take primary, so both themes match. */
+.site-map .leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+  background: var(--color-void);
+  font-family: var(--font-body);
+}
+
+/* OpenStreetMap only draws light tiles; in dark mode they are inverted and
+   hue-rotated back, which keeps water blue and parks green on a dark ground. */
+.site-map[data-theme-map="dark"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6);
+}
+
+.site-map .leaflet-bar {
+  border: 1px solid color-mix(in oklab, var(--color-white) 15%, transparent);
+  box-shadow: none;
+}
+
+.site-map .leaflet-bar a {
+  background: var(--color-surface);
+  color: var(--color-white);
+  border-bottom-color: color-mix(in oklab, var(--color-white) 12%, transparent);
+}
+
+.site-map .leaflet-bar a:hover {
+  background: var(--color-void);
+}
+
+.site-map .leaflet-control-attribution {
+  background: color-mix(in oklab, var(--color-surface) 85%, transparent);
+  color: color-mix(in oklab, var(--color-white) 60%, transparent);
+}
+
+.site-map .leaflet-control-attribution a {
+  color: color-mix(in oklab, var(--color-white) 80%, transparent);
+}
+
+.site-pin span {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--color-primary);
+  border: 3px solid var(--color-surface);
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+}
+
+.site-area {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  fill: var(--color-primary);
+  fill-opacity: 0.18;
+}

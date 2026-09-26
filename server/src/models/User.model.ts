@@ -1,6 +1,7 @@
 import { Document, Model, Schema, model } from "mongoose";
 
-export type UserRole = "client" | "engineer";
+/** Clients hire; engineers and organisations (companies) provide services. */
+export type UserRole = "client" | "engineer" | "organisation";
 
 export interface IUser extends Document {
   name: string;
@@ -30,7 +31,7 @@ const userSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ["client", "engineer"],
+      enum: ["client", "engineer", "organisation"],
       required: true,
       immutable: true,
     },

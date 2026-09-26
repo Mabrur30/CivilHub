@@ -3,17 +3,17 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Project, type IProject } from "../models/Project.model";
 import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Review } from "../models/Review.model";
-import { syncProjectCompletionStatus } from "./projectProgress.controller";
+import { type UserRole } from "../models/User.model";
 
 type HistoryProject = Omit<IProject, "client" | "assignedEngineer"> & {
-  client: { _id: string; name: string };
-  assignedEngineer: { _id: string; name: string };
+  client: { _id: string; name: string; role: UserRole };
+  assignedEngineer: { _id: string; name: string; role: UserRole };
 };
 
 interface ProjectHistoryItem {
   id: string;
   title: string;
-  otherParty: { id: string; name: string } | null;
+  otherParty: { id: string; name: string; role: UserRole } | null;
   completedAt: string;
   totalValuePaid: number;
   rating: number | null;
@@ -38,15 +38,14 @@ export const getMyProjectHistory = async (
         ? { client: req.user.userId }
         : { assignedEngineer: req.user.userId };
     const projects = await Project.find({ ...ownerFilter, status: "completed" })
-      .populate("client", "name")
-      .populate("assignedEngineer", "name")
+      .populate("client", "name role")
+      .populate("assignedEngineer", "name role")
       .sort({ completedAt: -1, updatedAt: -1 })
       .exec();
 
     const history = await Promise.all(
       projects.map(async (rawProject): Promise<ProjectHistoryItem> => {
         const project = toHistoryProject(rawProject);
-        await syncProjectCompletionStatus(rawProject);
         const phases = await ProjectPhase.find({ project: project._id }).exec();
         const review = await Review.findOne({ project: project._id }).exec();
         const otherParty =
@@ -62,7 +61,11 @@ export const getMyProjectHistory = async (
           id: project._id.toString(),
           title: project.title ?? project.name ?? "Untitled project",
           otherParty: otherParty
-            ? { id: otherParty._id.toString(), name: otherParty.name }
+            ? {
+                id: otherParty._id.toString(),
+                name: otherParty.name,
+                role: otherParty.role,
+              }
             : null,
           completedAt: (project.completedAt ?? project.updatedAt).toISOString(),
           totalValuePaid,

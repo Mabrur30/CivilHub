@@ -1,10 +1,11 @@
 import { type ReactElement } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ConversationList } from "../components/messages/ConversationList";
 import { InboxEmptyState } from "../components/messages/InboxEmptyState";
 import { ThreadView } from "../components/messages/ThreadView";
 import { useConversations } from "../components/messages/useConversations";
 import { useAuth } from "../context/AuthContext";
+import { dashboardBase } from "../lib/dashboardPaths";
 
 // One page for /messages and /messages/:targetId. On large screens the list
 // and the open thread sit side by side; on small screens the URL decides which
@@ -14,11 +15,11 @@ export function InboxPage(): ReactElement {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const inbox = useConversations();
+  // Set by "Message" buttons on briefs, bids and projects.
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get("project");
 
-  const networkPath =
-    currentUser?.role === "engineer"
-      ? "/dashboard/engineer/network"
-      : "/dashboard/client/network";
+  const networkPath = `${dashboardBase(currentUser?.role)}/network`;
 
   return (
     <>
@@ -45,6 +46,7 @@ export function InboxPage(): ReactElement {
             <ThreadView
               key={targetId}
               targetId={targetId}
+              projectId={projectId}
               currentUser={currentUser}
               inbox={inbox}
               onBack={() => navigate("/messages")}

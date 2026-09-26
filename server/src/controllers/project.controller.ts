@@ -28,6 +28,25 @@ import {
   getRemainingBalance,
 } from "../utils/phasePayments";
 import { budgetLabel, formatTaka } from "../utils/money";
+import { assertCanTakeProjects } from "../utils/roles";
+import { BD_DISTRICTS } from "../utils/bdLocations";
+import {
+  PROJECT_CRITERIA,
+  PROJECT_SERVICES,
+  findCategoryCriteria,
+  summariseRequirements,
+  validateRequirements,
+  type ProjectRequirements,
+} from "../utils/projectCriteria";
+import {
+  SITE_OPTIONS,
+  parseSiteInput,
+  siteLocationLabel,
+  toPrivateSite,
+  toPublicSite,
+  type PrivateSiteResponse,
+  type PublicSiteResponse,
+} from "../utils/projectSite";
 
 export interface CreateProjectRequestBody {
   title: string;
@@ -35,9 +54,14 @@ export interface CreateProjectRequestBody {
   category: string;
   budgetMin: number;
   budgetMax: number;
-  location: string;
+  location?: string;
   targetStartDate: string;
   targetCompletionDate: string;
+  servicesNeeded?: unknown;
+  /** Pin, district, area and access details; see parseSiteInput. */
+  site?: unknown;
+  /** Answers to the category's questions; see validateRequirements. */
+  requirements?: unknown;
 }
 
 interface ProjectResponse {
@@ -93,6 +117,19 @@ export interface OpenProjectResponse {
   location: string;
   postedDate: string;
   category: string;
+  district: string | null;
+  servicesNeeded: string[];
+  /** One line of the category's key facts, e.g. "Apartment · 5 katha". */
+  siteSummary: string | null;
+}
+
+/** A brief in full, for the engineer's project detail page. */
+export interface ProjectBriefResponse extends OpenProjectResponse {
+  status: IProject["status"];
+  requirements: ProjectRequirements | null;
+  /** Approximate area only, unless the viewer is the client or hired engineer. */
+  site: PublicSiteResponse | PrivateSiteResponse | null;
+  canSeeExactSite: boolean;
 }
 
 interface CreateProjectSuccessResponse {
@@ -129,6 +166,8 @@ interface NotificationFeedEntry {
   bidId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** The post the notification is about, for likes, comments and reposts. */
+  postId: string | null;
 }
 
 interface OwnBidFeedEntry {
@@ -194,6 +233,9 @@ const toOpenProjectResponse = (project: IProject): OpenProjectResponse => ({
   location: project.location ?? "Location to be confirmed",
   postedDate: (project.postedDate ?? project.createdAt).toISOString(),
   category: project.category ?? "Civil engineering",
+  district: project.site?.district ?? null,
+  servicesNeeded: project.servicesNeeded ?? [],
+  siteSummary: summariseRequirements(project.category, project.requirements),
 });
 
 const toClientPostedProjectResponse = (
@@ -236,6 +278,68 @@ const toClientPostedProjectResponse = (
   phasesAwaitingApproval: counts.phasesAwaitingApproval,
 });
 
+const parseServices = (input: unknown): string[] => {
+  if (input === undefined || input === null) return [];
+  const allowed = PROJECT_SERVICES.map((service) => service.value);
+  if (
+    !Array.isArray(input) ||
+    !input.every((value) => typeof value === "string" && allowed.includes(value))
+  ) {
+    throw createProjectError("Choose valid services", 400);
+  }
+  return [...new Set(input as string[])];
+};
+
+/** The questions each project type asks, the districts and site options. */
+export const getProjectCriteria = (_req: Request, res: Response): void => {
+  res.set("Cache-Control", "public, max-age=3600");
+  res.status(200).json({
+    categories: PROJECT_CRITERIA,
+    services: PROJECT_SERVICES,
+    districts: BD_DISTRICTS,
+    siteOptions: SITE_OPTIONS,
+  });
+};
+
+/**
+ * The full brief. Anyone signed in can read an open one, with the site shown
+ * as an approximate area; the client and the hired engineer also get the
+ * exact pin, address and directions.
+ */
+export const getProjectBrief = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const { projectId } = req.params as { projectId?: string };
+    if (!projectId || !Types.ObjectId.isValid(projectId)) {
+      throw createProjectError("Project not found", 404);
+    }
+    const project = await Project.findById(projectId).exec();
+    if (!project) throw createProjectError("Project not found", 404);
+
+    const viewerId = req.user.userId;
+    const isParty =
+      project.client?.toString() === viewerId ||
+      project.assignedEngineer?.toString() === viewerId;
+    if (!isParty && project.status !== "open_for_bids") {
+      throw createProjectError("Project not found", 404);
+    }
+
+    const response: ProjectBriefResponse = {
+      ...toOpenProjectResponse(project),
+      status: project.status,
+      requirements: project.requirements ?? null,
+      site: isParty ? toPrivateSite(project.site) : toPublicSite(project.site),
+      canSeeExactSite: isParty,
+    };
+    res.status(200).json(response);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
 export const createProject = async (
   req: AuthenticatedRequest<CreateProjectRequestBody>,
   res: Response,
@@ -252,7 +356,6 @@ export const createProject = async (
       category,
       budgetMin,
       budgetMax,
-      location,
       targetStartDate,
       targetCompletionDate,
     } = req.body;
@@ -261,12 +364,21 @@ export const createProject = async (
       !title?.trim() ||
       !description?.trim() ||
       !category?.trim() ||
-      !location?.trim() ||
       !targetStartDate ||
       !targetCompletionDate
     ) {
       throw createProjectError("All project fields are required", 400);
     }
+
+    if (!findCategoryCriteria(category.trim())) {
+      throw createProjectError("Choose a project category", 400);
+    }
+    const requirements = validateRequirements(
+      category.trim(),
+      req.body.requirements,
+    );
+    const site = parseSiteInput(req.body.site);
+    const servicesNeeded = parseServices(req.body.servicesNeeded);
 
     const parsedBudgetMin = Number(budgetMin);
     const parsedBudgetMax = Number(budgetMax);
@@ -312,7 +424,10 @@ export const createProject = async (
       budgetMin: parsedBudgetMin,
       budgetMax: parsedBudgetMax,
       budgetRange: `${formatTaka(parsedBudgetMin)} - ${formatTaka(parsedBudgetMax)}`,
-      location: location.trim(),
+      location: siteLocationLabel(site),
+      site,
+      requirements,
+      servicesNeeded,
       targetStartDate: startDate,
       targetCompletionDate: completionDate,
       assignedEngineer: null,
@@ -352,9 +467,7 @@ export const getMyProjects = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createProjectError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const projects = await Project.find({
       assignedEngineer: req.user.userId,
@@ -455,9 +568,7 @@ export const getEngineerOverview = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createProjectError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const engineerFilter = { assignedEngineer: req.user.userId };
     const [
@@ -520,6 +631,7 @@ export const getEngineerOverview = async (
         bidId: notification.bid?.toString() ?? null,
         conversationId: notification.conversation?.toString() ?? null,
         messageId: notification.messageRef?.toString() ?? null,
+        postId: notification.post?.toString() ?? null,
       }),
     );
 
@@ -689,9 +801,7 @@ export const createPhasePlan = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createProjectError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const { projectId } = req.params as unknown as { projectId?: string };
     if (!projectId) {
@@ -780,9 +890,7 @@ export const submitPhasePlanForApproval = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createProjectError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const { projectId } = req.params as unknown as { projectId?: string };
     if (!projectId) {

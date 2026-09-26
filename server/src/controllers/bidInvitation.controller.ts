@@ -5,6 +5,11 @@ import { createBidForProject } from "./bid.controller";
 import { BidInvitation } from "../models/BidInvitation.model";
 import { Project } from "../models/Project.model";
 import { User } from "../models/User.model";
+import {
+  PROVIDER_ROLES,
+  assertCanTakeProjects,
+  canUserTakeProjects,
+} from "../utils/roles";
 
 interface BidInvitationError extends Error {
   statusCode: number;
@@ -52,13 +57,10 @@ const requireClient = (req: AuthenticatedRequest): string => {
   return userId;
 };
 
-const requireEngineer = (req: AuthenticatedRequest): string => {
-  const userId = requireUser(req);
-  if (req.user.role !== "engineer") {
-    throw createBidInvitationError("Engineer access required", 403);
-  }
-  return userId;
-};
+// Invitations go to anyone who takes on project work: engineers, and
+// companies whose profile offers it.
+const requireEngineer = (req: AuthenticatedRequest): Promise<string> =>
+  assertCanTakeProjects(req.user);
 
 const getEngineerParams = (req: AuthenticatedRequest): EngineerParams =>
   req.params as unknown as EngineerParams;
@@ -74,10 +76,13 @@ const ensureEngineerUser = async (engineerId: string): Promise<void> => {
     throw createBidInvitationError("Engineer not found", 404);
   }
 
-  const engineer = await User.findOne({ _id: engineerId, role: "engineer" })
-    .select("_id")
+  const engineer = await User.findOne({
+    _id: engineerId,
+    role: { $in: PROVIDER_ROLES },
+  })
+    .select("_id role")
     .exec();
-  if (!engineer) {
+  if (!engineer || !(await canUserTakeProjects(engineerId, engineer.role))) {
     throw createBidInvitationError("Engineer not found", 404);
   }
 };
@@ -235,7 +240,7 @@ export const getMyPendingBidInvitations = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const engineerUserId = requireEngineer(req);
+    const engineerUserId = await requireEngineer(req);
 
     const invitations = await BidInvitation.find({
       engineer: engineerUserId,
@@ -284,7 +289,7 @@ export const acceptBidInvitation = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const engineerUserId = requireEngineer(req);
+    const engineerUserId = await requireEngineer(req);
     const { invitationId } = getInvitationParams(req);
 
     if (!invitationId) {
@@ -358,7 +363,7 @@ export const declineBidInvitation = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const engineerUserId = requireEngineer(req);
+    const engineerUserId = await requireEngineer(req);
     const { invitationId } = getInvitationParams(req);
 
     if (!invitationId) {

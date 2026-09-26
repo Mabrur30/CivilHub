@@ -1,6 +1,7 @@
 import { type ReactElement } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { canTakeProjects, dashboardBase } from "../../lib/dashboardPaths";
 import { BrandLogo } from "../BrandLogo";
 import { ThemeToggle } from "../ThemeToggle";
 import { TopNavAlerts } from "./TopNavAlerts";
@@ -8,15 +9,17 @@ import { UserMenu } from "./UserMenu";
 
 interface EngineerDashboardLayoutProps {}
 
-const tabs = [
-  { label: "Overview", to: "/dashboard/engineer/overview" },
-  { label: "My Projects", to: "/dashboard/engineer/projects" },
-  { label: "Project History", to: "/dashboard/engineer/history" },
-  { label: "Marketplace", to: "/dashboard/engineer/marketplace" },
-  { label: "Equipment", to: "/dashboard/engineer/equipment" },
-  { label: "Cost Estimator", to: "/dashboard/engineer/cost-estimator" },
-  { label: "My Bids", to: "/dashboard/engineer/bids" },
-  { label: "My Network", to: "/dashboard/engineer/network" },
+// Project tabs, the cost estimator included, only make sense for someone who
+// takes on project work; a rental-only company sees equipment and its network.
+const tabDefinitions = [
+  { label: "Overview", path: "overview", projects: true },
+  { label: "My Projects", path: "projects", projects: true },
+  { label: "Project History", path: "history", projects: true },
+  { label: "Marketplace", path: "marketplace", projects: true },
+  { label: "Equipment", path: "equipment", projects: false },
+  { label: "Cost Estimator", path: "cost-estimator", projects: true },
+  { label: "My Bids", path: "bids", projects: true },
+  { label: "My Network", path: "network", projects: false },
 ];
 
 // Fades the right edge of the tab row while it can still scroll on narrow
@@ -29,6 +32,12 @@ export function EngineerDashboardLayout(
 ): ReactElement {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
+  const base = dashboardBase(currentUser?.role);
+  const takesProjects = canTakeProjects(currentUser);
+  const tabs = tabDefinitions
+    .filter((tab) => takesProjects || !tab.projects)
+    .map((tab) => ({ label: tab.label, to: `${base}/${tab.path}` }));
+  const isCompany = currentUser?.role === "organisation";
 
   return (
     <div className="min-h-screen bg-void text-white">
@@ -37,7 +46,7 @@ export function EngineerDashboardLayout(
           <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
             <button
               type="button"
-              onClick={() => navigate("/dashboard/engineer")}
+              onClick={() => navigate(base)}
               className="flex items-center gap-3 rounded-full text-white transition-opacity duration-300 hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
             >
               <BrandLogo height={34} />
@@ -45,7 +54,7 @@ export function EngineerDashboardLayout(
 
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <TopNavAlerts role="engineer" />
+              <TopNavAlerts role={isCompany ? "organisation" : "engineer"} />
               {currentUser ? (
                 <UserMenu
                   name={currentUser.name}
@@ -60,7 +69,13 @@ export function EngineerDashboardLayout(
           </div>
         </header>
 
-        <nav aria-label="Engineer dashboard navigation">
+        <nav
+          aria-label={
+            isCompany
+              ? "Company dashboard navigation"
+              : "Engineer dashboard navigation"
+          }
+        >
           <div
             className={`scrollbar-hidden mx-auto flex max-w-7xl overflow-x-auto px-2 sm:px-4 lg:px-6 ${tabRowFade}`}
           >

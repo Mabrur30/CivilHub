@@ -8,6 +8,7 @@ import { Project, type IProject } from "../models/Project.model";
 import { Review } from "../models/Review.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
 import { budgetLabel } from "../utils/money";
+import { assertCanTakeProjects } from "../utils/roles";
 
 export interface SubmitBidRequestBody {
   projectId: string;
@@ -27,6 +28,8 @@ interface ClientBidResponse {
   id: string;
   engineerId: string;
   engineerName: string;
+  /** The bid comes from a company rather than an individual engineer. */
+  isCompany: boolean;
   amount: number;
   message: string;
   submittedDate: string;
@@ -133,9 +136,7 @@ export const submitBid = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createBidError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const { projectId, amount, message } = req.body;
     if (
@@ -185,7 +186,7 @@ export const getBidsForMyProjects = async (
       .exec();
     const projectIds = projects.map((project) => project._id);
     const bids = await Bid.find({ project: { $in: projectIds } })
-      .populate("engineer", "name")
+      .populate("engineer", "name role")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -232,7 +233,7 @@ export const getBidsForMyProjects = async (
 
     const bidsByProject = new Map<string, ClientBidResponse[]>();
     bids.forEach((bid) => {
-      const engineer = bid.engineer as unknown as { name?: string };
+      const engineer = bid.engineer as unknown as { name?: string; role?: string };
       const projectId = bid.project.toString();
       const projectBids = bidsByProject.get(projectId) ?? [];
       const engineerId = extractUserId(bid.engineer);
@@ -241,6 +242,7 @@ export const getBidsForMyProjects = async (
         id: bid._id.toString(),
         engineerId,
         engineerName: engineer.name ?? "Unknown engineer",
+        isCompany: engineer.role === "organisation",
         amount: bid.amount,
         message: bid.message,
         submittedDate: bid.createdAt.toISOString(),
@@ -277,9 +279,7 @@ export const getMyBids = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createBidError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const bids = await Bid.find({ engineer: req.user.userId })
       .populate({

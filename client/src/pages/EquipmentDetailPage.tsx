@@ -419,8 +419,13 @@ export function EquipmentDetailPage(): ReactElement {
                 size="md"
               />
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">
-                  {item.owner.name}
+                <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-white">
+                  <span className="truncate">{item.owner.name}</span>
+                  {item.owner.isCompany ? (
+                    <span className="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary">
+                      Company
+                    </span>
+                  ) : null}
                 </p>
                 <RatingBadge
                   rating={item.owner.rating ?? null}

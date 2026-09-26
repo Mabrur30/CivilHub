@@ -107,6 +107,18 @@ export function Hero(_props: HeroProps): ReactElement {
           ))}
         </div>
 
+        {/* Firms sit on the provider side too; one quiet line keeps the two
+            main paths as the hero while still showing companies a way in. */}
+        <p className="relative mt-2 text-center text-sm text-white/60 lg:mt-4">
+          Run a construction firm or plant-hire company?{" "}
+          <Link
+            to="/signup/company"
+            className="rounded font-semibold text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+          >
+            Sign up as a company
+          </Link>
+        </p>
+
         {/* The project both sides are working on, sitting across the seam. */}
         <div className="relative mx-auto mt-6 w-full max-w-sm lg:mt-2">
           <div className="rounded-[32px] border border-white/10 bg-white/5 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-md">

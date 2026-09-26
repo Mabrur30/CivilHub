@@ -68,6 +68,13 @@ export const messageAttachmentUpload = createUploader(
   MESSAGE_ATTACHMENT_MAX_BYTES,
 );
 
+// Files an engineer hands over with a phase: the same types as message
+// attachments (photos, PDFs, documents, spreadsheets), without voice notes.
+export const phaseDeliverableUpload = createUploader(
+  messageAttachmentTypes,
+  MESSAGE_ATTACHMENT_MAX_BYTES,
+);
+
 export const handleUploadError = (
   error: unknown,
   _req: Request,
@@ -77,8 +84,10 @@ export const handleUploadError = (
   if (error instanceof multer.MulterError) {
     const message =
       error.code === "LIMIT_FILE_SIZE"
-        ? "The uploaded file is too large. Images must be 5MB or smaller; certificate PDFs and message attachments must be 10MB or smaller."
-        : "The uploaded file could not be processed.";
+        ? "The uploaded file is too large. Images must be 5MB or smaller; certificate PDFs, message attachments and phase deliverables must be 10MB or smaller."
+        : error.code === "LIMIT_UNEXPECTED_FILE" || error.code === "LIMIT_FILE_COUNT"
+          ? "Too many files were attached."
+          : "The uploaded file could not be processed.";
     next(createUploadError(message));
     return;
   }

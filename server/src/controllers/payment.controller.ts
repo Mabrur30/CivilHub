@@ -8,6 +8,7 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
+import { Project } from "../models/Project.model";
 import {
   Payment,
   type IPayment,
@@ -404,9 +405,17 @@ export interface PaymentView {
   paidAt: string | null;
   createdAt: string;
   viewerRole: "payer" | "payee";
+  /** The project this payment was for, if any. */
+  projectId: string | null;
+  /** True when this project is now finished, e.g. after its final payment. */
+  projectCompleted: boolean;
 }
 
-export const toPaymentView = (payment: IPayment, viewerId: string): PaymentView => ({
+export const toPaymentView = (
+  payment: IPayment,
+  viewerId: string,
+  projectCompleted = false,
+): PaymentView => ({
   tranId: payment.tranId ?? "",
   status: payment.status,
   type: payment.type,
@@ -422,6 +431,8 @@ export const toPaymentView = (payment: IPayment, viewerId: string): PaymentView 
   paidAt: payment.paidAt ? payment.paidAt.toISOString() : null,
   createdAt: payment.createdAt.toISOString(),
   viewerRole: payment.paidBy.toString() === viewerId ? "payer" : "payee",
+  projectId: payment.project ? payment.project.toString() : null,
+  projectCompleted,
 });
 
 export const getPayment = async (
@@ -441,7 +452,11 @@ export const getPayment = async (
       throw createPaymentError("Payment not found", 404);
     }
     const payment = await reconcile(found);
-    res.status(200).json(toPaymentView(payment, viewerId));
+    const projectCompleted =
+      payment.status === "paid" && payment.project
+        ? (await Project.exists({ _id: payment.project, status: "completed" })) !== null
+        : false;
+    res.status(200).json(toPaymentView(payment, viewerId, projectCompleted));
   } catch (error: unknown) {
     next(error);
   }

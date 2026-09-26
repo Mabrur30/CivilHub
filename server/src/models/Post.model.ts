@@ -7,6 +7,8 @@ export interface IPost extends Document {
   imagePublicId?: string;
   likes: Types.ObjectId[];
   originalPost?: Types.ObjectId;
+  /** Set on a repost when the post it shared was deleted. */
+  originalRemoved?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,12 +45,19 @@ const postSchema = new Schema<IPost>(
       type: Schema.Types.ObjectId,
       ref: "Post",
       required: false,
+      index: true,
+    },
+    originalRemoved: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },
 );
 
 postSchema.index({ author: 1, createdAt: -1 });
+// The feed pages by (createdAt, _id) so new posts never shift later pages.
+postSchema.index({ author: 1, createdAt: -1, _id: -1 });
 
 export const Post: Model<IPost> = model<IPost>("Post", postSchema);
 export default Post;

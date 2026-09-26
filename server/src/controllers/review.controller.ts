@@ -7,6 +7,9 @@ import { Project } from "../models/Project.model";
 import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Review, type IReview } from "../models/Review.model";
 import { User } from "../models/User.model";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
+import { headlineOf, type RatingSummary } from "../utils/providerRatings";
+import { PROVIDER_ROLES, isProviderRole } from "../utils/roles";
 
 interface ReviewError extends Error {
   statusCode: number;
@@ -63,6 +66,23 @@ interface ReviewListResponse {
   reviews: ReviewView[];
   averageRating: number;
   totalReviews: number;
+}
+
+interface ProviderReviewView extends ReviewView {
+  kind: "project" | "equipment";
+  /** The listing a rental review was for. */
+  equipmentTitle: string | null;
+}
+
+interface ProviderReviewListResponse {
+  reviews: ProviderReviewView[];
+  /** The headline: project reviews, or rental reviews when there are none. */
+  averageRating: number;
+  totalReviews: number;
+  byKind: {
+    project: { averageRating: number; totalReviews: number };
+    equipment: { averageRating: number; totalReviews: number };
+  };
 }
 
 const createReviewError = (
@@ -213,7 +233,7 @@ export const canReviewProject = async (
   }
 };
 
-const isBookingCompleteAndDepositResolved = (booking: {
+export const isBookingCompleteAndDepositResolved = (booking: {
   status: string;
   depositResolution: string;
 }): boolean =>
@@ -451,8 +471,8 @@ export const replyToReview = async (
 ): Promise<void> => {
   try {
     const userId = getUserId(req);
-    if (req.user.role !== "engineer") {
-      throw createReviewError("Engineer access required", 403);
+    if (!isProviderRole(req.user.role)) {
+      throw createReviewError("Engineer or company access required", 403);
     }
 
     const { reviewId } = getParams(req);
@@ -568,9 +588,25 @@ export const getEquipmentReviews = async (
   }
 };
 
+const summarise = (reviews: IReview[]): RatingSummary => ({
+  rating:
+    reviews.length === 0
+      ? null
+      : Math.round(
+          (reviews.reduce((sum, review) => sum + review.rating, 0) /
+            reviews.length) *
+            10,
+        ) / 10,
+  count: reviews.length,
+});
+
+/**
+ * Every review an engineer or company received from the people they worked
+ * for: project clients and equipment renters, marked by kind.
+ */
 export const getEngineerReviews = async (
   req: AuthenticatedRequest,
-  res: Response<ReviewListResponse>,
+  res: Response<ProviderReviewListResponse>,
   next: NextFunction,
 ): Promise<void> => {
   try {
@@ -582,31 +618,62 @@ export const getEngineerReviews = async (
 
     const engineer = await User.findOne({
       _id: engineerUserId,
-      role: "engineer",
+      role: { $in: PROVIDER_ROLES },
     }).exec();
     if (!engineer) throw createReviewError("Engineer not found", 404);
 
-    const reviews = await Review.find({
-      engineer: engineer._id,
-      project: { $exists: true, $ne: null },
-    })
+    const reviews = await Review.find({ engineer: engineer._id })
       .populate("client", "name")
+      .populate({
+        path: "equipmentBooking",
+        select: "equipment",
+        populate: { path: "equipment", select: "title" },
+      })
       .sort({ createdAt: -1 })
       .exec();
-    const totalReviews = reviews.length;
-    const averageRating =
-      totalReviews === 0
-        ? 0
-        : Math.round(
-            (reviews.reduce((sum, review) => sum + review.rating, 0) /
-              totalReviews) *
-              10,
-          ) / 10;
+
+    const photos = await getProfilePhotoMap(
+      reviews.map((review) => {
+        const client = review.client as unknown as { _id: Types.ObjectId };
+        return client._id;
+      }),
+    );
+
+    const projectReviews = reviews.filter((review) => Boolean(review.project));
+    const equipmentReviews = reviews.filter((review) => !review.project);
+    const project = summarise(projectReviews);
+    const equipment = summarise(equipmentReviews);
+    const headline = headlineOf(project, equipment);
 
     res.json({
-      reviews: reviews.map(toReviewView),
-      averageRating,
-      totalReviews,
+      reviews: reviews.map((review) => {
+        const view = toReviewView(review);
+        const booking = review.equipmentBooking as unknown as
+          | { equipment?: { title?: string } | Types.ObjectId }
+          | undefined;
+        const listing =
+          booking?.equipment && !(booking.equipment instanceof Types.ObjectId)
+            ? booking.equipment
+            : null;
+        return {
+          ...view,
+          client: {
+            ...view.client,
+            profilePhotoUrl: photos.get(view.client.id) ?? null,
+          },
+          kind: review.project ? "project" : "equipment",
+          equipmentTitle: review.project ? null : (listing?.title ?? null),
+        };
+      }),
+      averageRating: headline.rating ?? 0,
+      totalReviews: headline.count,
+      byKind: {
+        project: { averageRating: project.rating ?? 0, totalReviews: project.count },
+        equipment: {
+          averageRating: equipment.rating ?? 0,
+          totalReviews: equipment.count,
+        },
+      },
     });
   } catch (error: unknown) {
     next(error);

@@ -7,6 +7,7 @@ import { Post } from "../models/Post.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
 import { getProfilePhotoUrl } from "../utils/profilePhotos";
+import { isProviderRole } from "../utils/roles";
 
 interface CommentError extends Error {
   statusCode: number;
@@ -96,7 +97,7 @@ const toCommentResponse = async (
 ): Promise<CommentResponse> => {
   const author = comment.author as unknown as CommentAuthor;
   const rating =
-    author.role === "engineer"
+    isProviderRole(author.role)
       ? await ratingForAuthor(author._id.toString())
       : { rating: null, reviewCount: 0 };
   return {
@@ -126,10 +127,14 @@ export const createComment = async (
     const userId = getUserId(req);
     const { postId, content, parentCommentId } = req.body;
     if (
-      !postId ||
+      typeof postId !== "string" ||
       !Types.ObjectId.isValid(postId) ||
-      !content?.trim() ||
-      content.length > 500
+      typeof content !== "string" ||
+      !content.trim() ||
+      content.length > 500 ||
+      (parentCommentId !== undefined &&
+        parentCommentId !== null &&
+        typeof parentCommentId !== "string")
     ) {
       throw createCommentError(
         "Valid post ID and comment content of 500 characters or fewer are required",
@@ -164,6 +169,7 @@ export const createComment = async (
       await Notification.create({
         recipient,
         type: "comment_received",
+        post: post._id,
         message: `${author?.name ?? "Someone"} commented on your post.`,
         project: undefined,
       });
@@ -190,11 +196,41 @@ export const getCommentsForPost = async (
       throw createCommentError("Post not found", 404);
     }
     // Return a flat array so the frontend can build the threaded tree without recursive API calls.
-    const comments = await Comment.find({ post: postId })
+    const query = req.query as { limit?: string; offset?: string };
+    const all = await Comment.find({ post: postId })
       .populate("author", "name role")
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: 1, _id: 1 })
       .exec();
-    res.json(await Promise.all(comments.map(toCommentResponse)));
+    // A deleted account leaves no author; skip rather than fail the thread.
+    const comments = all.filter((comment) => comment.author);
+
+    if (query.limit === undefined) {
+      res.json(await Promise.all(comments.map(toCommentResponse)));
+      return;
+    }
+    // ?limit=&offset= pages through top-level comments, each with all of its
+    // replies, so a long thread loads a screenful at a time.
+    const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit, 10) || 20));
+    const offset = Math.max(0, Number.parseInt(query.offset ?? "0", 10) || 0);
+    const parentOf = new Map(
+      comments.map((comment) => [
+        comment._id.toString(),
+        comment.parentComment ? comment.parentComment.toString() : null,
+      ]),
+    );
+    const rootOf = (id: string): string => {
+      let current = id;
+      for (let depth = 0; depth < 100; depth += 1) {
+        const parent = parentOf.get(current);
+        if (!parent || !parentOf.has(parent)) return current;
+        current = parent;
+      }
+      return current;
+    };
+    const roots = comments.filter((comment) => rootOf(comment._id.toString()) === comment._id.toString());
+    const pageRoots = new Set(roots.slice(offset, offset + limit).map((comment) => comment._id.toString()));
+    const page = comments.filter((comment) => pageRoots.has(rootOf(comment._id.toString())));
+    res.json(await Promise.all(page.map(toCommentResponse)));
   } catch (error: unknown) {
     next(error);
   }

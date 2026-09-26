@@ -102,19 +102,23 @@ describe("Client public profile", () => {
       assignedEngineer: otherEngineer._id,
       category: "Masonry",
     });
-    // Cancelled before anyone was hired, so it counts against the hire rate.
+    // Cancelled before anyone was hired: posted, but not hired on.
     await Project.create({
       title: "Rooftop garden",
       client: client._id,
       status: "cancelled",
     });
 
+    const daysAgo = (days: number) => new Date(Date.now() - days * 864e5);
+    const handover = (days: number) => [{ note: "Done", files: [], submittedAt: daysAgo(days) }];
     await ProjectPhase.create([
-      { project: completed._id, name: "Excavation", order: 0, price: 500, status: "completed", paymentStatus: "paid" },
-      { project: completed._id, name: "Pour", order: 1, price: 900, status: "completed", paymentStatus: "paid" },
-      { project: completed._id, name: "Cure", order: 2, price: 300, status: "awaiting_approval", paymentStatus: "unpaid" },
-      // Work not finished yet, so no payment is due and it is left out.
-      { project: completed._id, name: "Handover", order: 3, price: 100, status: "not_started", paymentStatus: "unpaid" },
+      // Approved 2 and 4 days after handover: the median is 3.
+      { project: completed._id, name: "Excavation", order: 0, price: 500, status: "completed", paymentStatus: "paid", submissions: handover(20), completedAt: daysAgo(18) },
+      { project: completed._id, name: "Pour", order: 1, price: 900, status: "completed", paymentStatus: "paid", submissions: handover(14), completedAt: daysAgo(10) },
+      // Handed over 9 days ago and still not reviewed.
+      { project: completed._id, name: "Cure", order: 2, price: 300, status: "awaiting_approval", paymentStatus: "unpaid", submissions: handover(9) },
+      // Approved before handovers were recorded, so it can't be timed.
+      { project: completed._id, name: "Handover", order: 3, price: 100, status: "completed", paymentStatus: "paid", completedAt: daysAgo(1) },
     ]);
 
     await Bid.create({ engineer: engineer._id, project: open._id, amount: 5000, message: "Bid", status: "pending" });
@@ -139,10 +143,9 @@ describe("Client public profile", () => {
       completedProjects: 1,
       openProjects: 1,
       hiredProjects: 2,
-      decidedProjects: 3,
-      hireRate: 67,
-      phasesDue: 3,
-      phasesPaid: 2,
+      approvalDaysMedian: 3,
+      approvalsMeasured: 2,
+      phasesWaitingOverWeek: 1,
       budgetMin: 2500,
       budgetMax: 12000,
       topCategories: ["Masonry", "Structural"],
@@ -166,7 +169,7 @@ describe("Client public profile", () => {
     ]);
   });
 
-  test("reports no hire rate for a client who has not decided on any brief yet", async () => {
+  test("a new client has no approval record yet", async () => {
     const app = createTestApp();
     const client = await createUser("New Client", "new@test.dev", "client");
     await Project.create({ title: "Only brief", client: client._id, status: "open_for_bids" });
@@ -176,8 +179,10 @@ describe("Client public profile", () => {
       .set("Cookie", authCookieForUser(client));
 
     expect(response.status).toBe(200);
-    expect(response.body.stats.hireRate).toBeNull();
-    expect(response.body.stats.phasesDue).toBe(0);
+    expect(response.body.stats).not.toHaveProperty("hireRate");
+    expect(response.body.stats.approvalDaysMedian).toBeNull();
+    expect(response.body.stats.phasesWaitingOverWeek).toBe(0);
+    expect(response.body.rating).toBeNull();
     expect(response.body.profilePhotoUrl).toBeNull();
     expect(response.body.openProjectsList[0].myBidStatus).toBeNull();
   });

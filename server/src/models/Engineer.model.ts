@@ -41,12 +41,33 @@ export interface EngineerExperienceEntry {
   description?: string;
 }
 
+/** What an engineer practises. Mirrored in client/src/lib/disciplines.ts. */
+export const ENGINEER_DISCIPLINES = [
+  "Structural",
+  "Civil & site works",
+  "Geotechnical",
+  "MEP",
+  "Architecture & design",
+  "Surveying",
+  "Project management",
+  "Quantity surveying",
+  "Water & drainage",
+  "Roads & transport",
+] as const;
+export type EngineerDiscipline = (typeof ENGINEER_DISCIPLINES)[number];
+export const DISCIPLINE_LIMIT = 3;
+
+export const isEngineerDiscipline = (value: unknown): value is EngineerDiscipline =>
+  typeof value === "string" &&
+  (ENGINEER_DISCIPLINES as readonly string[]).includes(value);
+
 export interface IEngineer extends Document {
   user: Types.ObjectId;
   bio?: string;
   startingRateMin?: number;
   startingRateMax?: number;
   location?: string;
+  disciplines: EngineerDiscipline[];
   education: Types.DocumentArray<EngineerEducationEntry>;
   experience: Types.DocumentArray<EngineerExperienceEntry>;
   profilePhoto?: EngineerProfilePhoto;
@@ -119,6 +140,14 @@ const engineerSchema = new Schema<IEngineer>(
       type: String,
       trim: true,
       maxlength: 160,
+    },
+    disciplines: {
+      type: [{ type: String, enum: ENGINEER_DISCIPLINES }],
+      default: [],
+      validate: {
+        validator: (value: string[]) => value.length <= DISCIPLINE_LIMIT,
+        message: `Choose at most ${DISCIPLINE_LIMIT} disciplines`,
+      },
     },
     education: {
       type: [engineerEducationSchema],

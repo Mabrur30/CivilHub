@@ -1,9 +1,11 @@
 import { type ReactElement, type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, type UserRole } from "../context/AuthContext";
+import { dashboardBase } from "../lib/dashboardPaths";
 
 interface ProtectedRouteProps {
-  allowedRole?: "client" | "engineer";
+  /** One role or several; anyone else is sent to their own dashboard. */
+  allowedRole?: UserRole | UserRole[];
   children: ReactNode;
 }
 
@@ -27,17 +29,15 @@ export function ProtectedRoute({
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRole && currentUser.role !== allowedRole) {
-    return (
-      <Navigate
-        to={
-          currentUser.role === "engineer"
-            ? "/dashboard/engineer"
-            : "/dashboard/client"
-        }
-        replace
-      />
-    );
+  const allowed =
+    allowedRole === undefined
+      ? true
+      : Array.isArray(allowedRole)
+        ? allowedRole.includes(currentUser.role)
+        : currentUser.role === allowedRole;
+
+  if (!allowed) {
+    return <Navigate to={dashboardBase(currentUser.role)} replace />;
   }
 
   return <>{children}</>;
