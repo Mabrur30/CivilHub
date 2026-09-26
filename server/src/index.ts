@@ -24,6 +24,8 @@ import equipmentBookingRouter from "./routes/equipmentBooking.routes";
 import paymentsRouter from "./routes/payments.routes";
 import organisationRouter from "./routes/organisation.routes";
 import geoRouter from "./routes/geo.routes";
+import { blocksRouter, reportsRouter } from "./routes/safety.routes";
+import { authLimiter, socialWriteLimiter } from "./middleware/rateLimit";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
@@ -56,6 +58,11 @@ app.get("/api/health", (_req: Request, res: Response) => {
   res.status(200).json({ status: "ok", message: "CivilHub API is running" });
 });
 
+app.use(["/api/auth/login", "/api/auth/signup"], authLimiter);
+app.use(
+  ["/api/network", "/api/posts", "/api/comments", "/api/conversations", "/api/reports", "/api/blocks"],
+  socialWriteLimiter,
+);
 app.use("/api/auth", authRouter);
 app.use("/api/clients", clientRouter);
 app.use("/api/projects", projectsRouter);
@@ -76,6 +83,8 @@ app.use("/api", equipmentBookingRouter);
 app.use("/api/payments", paymentsRouter);
 app.use("/api/organisations", organisationRouter);
 app.use("/api/geo", geoRouter);
+app.use("/api/blocks", blocksRouter);
+app.use("/api/reports", reportsRouter);
 app.use(errorHandler);
 
 const startServer = async (): Promise<void> => {

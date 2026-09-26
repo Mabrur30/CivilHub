@@ -35,8 +35,9 @@ export function PostBriefMockup(): ReactElement {
   return (
     <MockFrame eyebrow="New project" title="Project brief" status="Draft">
       <div className="space-y-2.5">
+        <FieldRow label="Type" value="Roads & transport" />
         <FieldRow label="Scope" value="Road widening, 4.2 km" />
-        <FieldRow label="Site" value="Northline corridor, Sector 7" />
+        <FieldRow label="Site" value="Mirpur, Dhaka · area only" />
         <FieldRow label="Timeline" value="Start November · 14 weeks" />
       </div>
 
@@ -45,7 +46,7 @@ export function PostBriefMockup(): ReactElement {
           Budget range
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {["Under $250k", "$250k–500k", "$500k+"].map((band, index) => (
+          {["Under ৳25 lakh", "৳25 lakh–1 crore", "৳1 crore+"].map((band, index) => (
             <span
               key={band}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
@@ -65,33 +66,34 @@ export function PostBriefMockup(): ReactElement {
 
 export function MatchingMockup(): ReactElement {
   return (
-    <MockFrame
-      eyebrow="Matching"
-      title="Suggested engineers"
-      status="6 matches"
-    >
+    <MockFrame eyebrow="Marketplace" title="Bids received" status="6 bids">
       <div className="space-y-2.5">
         <MatchRow
           name="Tanvir Rahman"
-          discipline="Structural · 11 yrs"
+          specialities={["Roads & transport", "Structural"]}
           rating={4.9}
           reviewCount={34}
-          matchPercent={96}
+          bidAmount="৳18.5 lakh"
         />
         <MatchRow
           name="Sadia Karim"
-          discipline="Geotechnical · 8 yrs"
+          specialities={["Geotechnical", "Civil & site works"]}
           rating={4.8}
           reviewCount={21}
-          matchPercent={91}
+          bidAmount="৳17.2 lakh"
         />
         <MatchRow
-          name="Imran Hossain"
-          discipline="Highway & drainage · 14 yrs"
+          name="Delta Earthworks Ltd."
+          specialities={["Civil & site works", "Water & drainage"]}
           rating={4.7}
           reviewCount={47}
-          matchPercent={88}
+          bidAmount="৳19.8 lakh"
         />
+      </div>
+
+      <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3 py-2 text-xs text-white/55">
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+        Phone numbers and emails stay hidden in chat until you hire.
       </div>
     </MockFrame>
   );
@@ -99,21 +101,30 @@ export function MatchingMockup(): ReactElement {
 
 export function ProgressMockup(): ReactElement {
   return (
-    <MockFrame eyebrow="In delivery" title="Site progress" status="On track">
-      <ProgressRow label="Package 2 — earthworks" percent={64} />
+    <MockFrame eyebrow="In delivery" title="Phase plan" status="On track">
+      <ProgressRow label="Phase 2 — earthworks" percent={64} />
 
       <div className="space-y-2.5">
-        <MilestoneRow label="Survey approval" state="done" stateLabel="Done" />
+        <MilestoneRow label="Phase 1 · Survey" state="done" stateLabel="Paid" />
         <MilestoneRow
-          label="Structural design review"
-          state="active"
-          stateLabel="In review"
+          label="Phase 2 · Earthworks"
+          state="awaiting"
+          stateLabel="Awaiting approval"
         />
         <MilestoneRow
-          label="Site mobilization"
+          label="Phase 3 · Paving"
           state="pending"
-          stateLabel="Pending"
+          stateLabel="Upcoming"
         />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/3 px-3.5 py-3 text-sm">
+        <span className="min-w-0 truncate text-white/65">
+          Handover note · 3 files
+        </span>
+        <span className="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-on-primary">
+          Approve &amp; pay
+        </span>
       </div>
     </MockFrame>
   );
@@ -129,25 +140,25 @@ export function HandoverMockup(): ReactElement {
     >
       <div className="space-y-2.5">
         <MilestoneRow
+          label="Phase files gathered"
+          state="done"
+          stateLabel="12 files"
+        />
+        <MilestoneRow
           label="As-built drawings"
           state="done"
           stateLabel="Filed"
         />
         <MilestoneRow
-          label="Compliance certificates"
+          label="Final phase payment"
           state="done"
-          stateLabel="Filed"
-        />
-        <MilestoneRow
-          label="Final inspection"
-          state="done"
-          stateLabel="Cleared"
+          stateLabel="Paid"
         />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <StatTile label="Delivered" value="On schedule" />
-        <StatTile label="Variance" value="+1.4%" />
+        <StatTile label="Reviews" value="Both sides" />
       </div>
     </MockFrame>
   );

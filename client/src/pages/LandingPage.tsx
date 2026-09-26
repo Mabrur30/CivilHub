@@ -1,12 +1,15 @@
 import { type ReactElement } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CTASection } from "../components/landing/CTASection";
+import { EquipmentBand } from "../components/landing/EquipmentBand";
 import { Footer } from "../components/landing/Footer";
 import { ForClientsForEngineers } from "../components/landing/ForClientsForEngineers";
 import { Hero } from "../components/landing/Hero";
 import { HowItWorks } from "../components/landing/HowItWorks";
 import { MissionSection } from "../components/landing/MissionSection";
 import { Navbar } from "../components/landing/Navbar";
+import { PlatformFeatures } from "../components/landing/PlatformFeatures";
+import { Pricing } from "../components/landing/Pricing";
 import { Testimonials } from "../components/landing/Testimonials";
 import { TrustStats } from "../components/landing/TrustStats";
 
@@ -30,10 +33,13 @@ export function LandingPage(): ReactElement {
       <Navbar />
       <Hero />
       <HowItWorks />
+      <EquipmentBand />
       <MissionSection />
       <TrustStats />
+      <PlatformFeatures />
       <Testimonials />
       <ForClientsForEngineers />
+      <Pricing />
       <CTASection />
       <Footer />
       {showRolePrompt ? (

@@ -10,6 +10,7 @@ import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Organisation } from "../models/Organisation.model";
 import { onlyDisciplines } from "../utils/disciplines";
+import { blockedUserIds, isBlockedEitherWay } from "../utils/blocks";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
@@ -144,6 +145,8 @@ export const sendConnectionRequest = async (
     const target = await User.findById(targetUserId).select("_id role").exec();
     if (!target) throw createNetworkError("User not found", 404);
     if (!isProviderRole(target.role)) throw createNetworkError(PROVIDERS_ONLY, 403);
+    if (await isBlockedEitherWay(userId, targetUserId))
+      throw createNetworkError("You can't connect with this person", 403);
 
     const existing = await Connection.findOne(
       connectionFilter(userId, targetUserId),
@@ -528,7 +531,7 @@ export const getSuggestions = async (
     })
       .select("requester recipient status")
       .exec();
-    const excluded = new Set<string>([userId]);
+    const excluded = new Set<string>([userId, ...(await blockedUserIds(userId))]);
     const myConnections = new Set<string>();
     for (const connection of mine) {
       const other =

@@ -14,6 +14,7 @@ export type NotificationType =
   | "equipment_deposit_released"
   | "equipment_deposit_claimed"
   | "connection_accepted"
+  | "connection_request"
   | "new_message"
   | "connection_post"
   | "post_liked"
@@ -44,6 +45,8 @@ export interface NotificationListItem {
   connectionId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** The post a like, comment, repost or new-post alert is about. */
+  postId?: string | null;
 }
 
 export interface NotificationListResponse {
@@ -67,6 +70,7 @@ const notificationTypes: NotificationType[] = [
   "equipment_deposit_released",
   "equipment_deposit_claimed",
   "connection_accepted",
+  "connection_request",
   "new_message",
   "connection_post",
   "post_liked",
@@ -149,7 +153,7 @@ export const mapNotificationTypeToActivityType = (
 ): string => {
   if (type === "bid_accepted" || type === "project_completed") return "success";
   if (type === "new_message") return "message";
-  if (type === "connection_accepted") return "milestone";
+  if (type === "connection_accepted" || type === "connection_request") return "milestone";
   if (type === "connection_post") return "review";
   if (type === "post_liked") return "bid";
   if (
@@ -192,6 +196,7 @@ export interface NotificationTargetRefs {
   bidId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  postId?: string | null;
 }
 
 export const getNotificationTargetPath = (
@@ -242,15 +247,21 @@ export const getNotificationTargetPath = (
     return `${dashboardBase(role)}/projects/${notification.projectId}`;
   }
 
-  if (notification.type === "connection_accepted") {
+  if (
+    notification.type === "connection_accepted" ||
+    notification.type === "connection_request"
+  ) {
     return `${dashboardBase(role)}/network`;
   }
 
+  // Post alerts open the post itself; older ones without a post go to the feed.
   if (
     notification.type === "connection_post" ||
-    notification.type === "post_liked"
+    notification.type === "post_liked" ||
+    notification.type === "comment_received" ||
+    notification.type === "post_reposted"
   ) {
-    return "/feed";
+    return notification.postId ? `/posts/${notification.postId}` : "/feed";
   }
 
   return null;

@@ -21,28 +21,28 @@ const steps: Step[] = [
     number: "01",
     title: "Post a project brief",
     description:
-      "Outline scope, location, deadlines, and technical requirements so the right engineering partners can respond with real fit and pricing.",
+      "Pick the project type, answer the questions engineers need to price that kind of work, and pin the site on a map. Only the district and area are public; the exact location waits until you hire.",
     mockup: PostBriefMockup,
   },
   {
     number: "02",
-    title: "Get matched fast",
+    title: "Compare bids and talk it through",
     description:
-      "Review pre-qualified client or contractor matches based on sector expertise, availability, and contract profile without the noise.",
+      "Engineers and companies in the right speciality send bids. Message any of them before you decide — contact details stay hidden until you hire, so nobody is chased off the platform.",
     mockup: MatchingMockup,
   },
   {
     number: "03",
-    title: "Track progress together",
+    title: "Approve and pay phase by phase",
     description:
-      "Keep approvals, drawings, RFIs, and milestones visible in one active project timeline that everyone can trust.",
+      "Each phase is submitted with a handover note and files. Review them, request changes, or approve and pay in one step through SSLCommerz.",
     mockup: ProgressMockup,
   },
   {
     number: "04",
-    title: "Deliver with clarity",
+    title: "Hand over with a full record",
     description:
-      "Close out handover, compliance, and final signoff from a shared record that reduces rework and delays.",
+      "Every phase's files are gathered into one handover record when the project closes, and both sides leave a review for the next job.",
     mockup: HandoverMockup,
   },
 ];

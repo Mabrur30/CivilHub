@@ -41,6 +41,7 @@ import {
   serviceLabels,
   websiteHref,
 } from "./organisationProfile";
+import { ProfileSafetyActions } from "../../safety/ProfileSafetyActions";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -303,7 +304,7 @@ export function OrganisationProfileView({
                   </button>
                 ) : (
                   <>
-                    {canMessage ? (
+                    {profile.blockedByMe ? null : canMessage ? (
                       <Link
                         to={`/messages/${profile.userId}`}
                         className={isClientViewer ? primaryButtonClassName : secondaryButtonClassName}
@@ -312,7 +313,7 @@ export function OrganisationProfileView({
                       </Link>
                     ) : null}
                     {/* Clients don't use connections; they message companies directly. */}
-                    {isClientViewer ? null : profile.connectionStatus === "not_connected" ? (
+                    {isClientViewer || profile.blockedByMe ? null : profile.connectionStatus === "not_connected" ? (
                       <button
                         type="button"
                         onClick={() => void connect()}
@@ -364,6 +365,17 @@ export function OrganisationProfileView({
                 {profile.connectionsCount === 1 ? "connection" : "connections"}
               </li>
             </ul>
+
+            {!isSelf ? (
+              <div className="mt-4">
+                <ProfileSafetyActions
+                  userId={profile.userId}
+                  name={profile.name}
+                  blockedByMe={Boolean(profile.blockedByMe)}
+                  onChanged={onChanged}
+                />
+              </div>
+            ) : null}
 
             {company?.about ? (
               <p className="mt-5 max-w-[65ch] whitespace-pre-line text-sm leading-6 text-white/70">

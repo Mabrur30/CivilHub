@@ -12,6 +12,7 @@ import { SignupPage, SignupRoute } from "./pages/SignupPage";
 import { EngineerDashboardLayout } from "./components/dashboard/EngineerDashboardLayout";
 import { EngineerMarketplacePage } from "./pages/EngineerMarketplacePage";
 import { MarketplaceBriefPage } from "./pages/MarketplaceBriefPage";
+import { PostPage } from "./pages/PostPage";
 import { EngineerBidsPage } from "./pages/EngineerBidsPage";
 import { EngineerOverviewPage } from "./pages/EngineerOverviewPage";
 import { EngineerProjectsPage } from "./pages/EngineerProjectsPage";
@@ -266,6 +267,7 @@ function App(): ReactElement {
         <Route path="/profile/:userId" element={<PublicProfilePage />} />
         <Route path="/users/:userId" element={<PublicProfilePage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/posts/:postId" element={<PostPage />} />
         <Route path="/messages" element={<InboxPage />} />
         <Route path="/messages/:targetId" element={<InboxPage />} />
         {/* SSLCommerz sends payers back here after checkout. */}

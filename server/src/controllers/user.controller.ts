@@ -1,6 +1,7 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { isBlockedByMe } from "../utils/blocks";
 import { Connection } from "../models/Connection.model";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
@@ -158,7 +159,23 @@ const getConnectionsCount = async (userId: string): Promise<number> =>
     status: "accepted",
   }).exec();
 
+interface ConnectionDetails {
+  status: ConnectionViewStatus;
+  connectionId: string | null;
+  /** The viewer has blocked this person; the profile offers Unblock. */
+  blockedByMe: boolean;
+}
+
 const getConnectionDetails = async (
+  requester: string,
+  target: string,
+): Promise<ConnectionDetails> => {
+  const blockedByMe = requester !== target && (await isBlockedByMe(requester, target));
+  const details = await getConnectionStatusFor(requester, target);
+  return { ...details, blockedByMe };
+};
+
+const getConnectionStatusFor = async (
   requester: string,
   target: string,
 ): Promise<{ status: ConnectionViewStatus; connectionId: string | null }> => {
@@ -248,7 +265,7 @@ const toDeliveredProject = (project: IProject) => ({
 const buildOrganisationPublicProfile = async (
   user: IUser,
   requesterId: string,
-  connection: { status: ConnectionViewStatus; connectionId: string | null },
+  connection: ConnectionDetails,
   connectionsCount: number,
 ) => {
   const userId = user._id.toString();
@@ -278,6 +295,7 @@ const buildOrganisationPublicProfile = async (
     connectionsCount,
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
+    blockedByMe: connection.blockedByMe,
     ...toRatingFields(ratings),
     company: profile,
     completedWork: completedWork.map(toDeliveredProject),
@@ -292,7 +310,7 @@ const buildOrganisationPublicProfile = async (
 const buildClientPublicProfile = async (
   user: IUser,
   requesterId: string,
-  connection: { status: ConnectionViewStatus; connectionId: string | null },
+  connection: ConnectionDetails,
   connectionsCount: number,
 ) => {
   const [client, projects] = await Promise.all([
@@ -415,6 +433,7 @@ const buildClientPublicProfile = async (
     completedProjects: completedProjects.length,
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
+    blockedByMe: connection.blockedByMe,
     connectionsCount,
     rating: customerRating.rating,
     reviewCount: customerRating.reviewCount,
@@ -534,6 +553,7 @@ export const getPublicProfile = async (
           })) ?? [],
         connectionStatus: connection.status,
         connectionId: connection.connectionId,
+    blockedByMe: connection.blockedByMe,
         ...toRatingFields(ratings),
         startingRateMin:
           typeof engineer?.startingRateMin === "number"

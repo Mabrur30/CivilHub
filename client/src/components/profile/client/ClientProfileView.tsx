@@ -18,6 +18,7 @@ import {
   isOwnClientDetails,
   type OwnClientDetails,
 } from "./clientProfile";
+import { ProfileSafetyActions } from "../../safety/ProfileSafetyActions";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -174,6 +175,22 @@ export function ClientProfileView({
         photoInputRef={photoInputRef}
         isUploadingPhoto={isUploadingPhoto}
       />
+
+      {!isSelf ? (
+        <ProfileSafetyActions
+          userId={profile.userId}
+          name={profile.name}
+          blockedByMe={Boolean(profile.blockedByMe)}
+          onChanged={() =>
+            onProfileChange((current) => ({
+              ...current,
+              blockedByMe: !current.blockedByMe,
+              connectionStatus: "not_connected",
+              connectionId: null,
+            }))
+          }
+        />
+      ) : null}
 
       {isSelf ? (
         <input

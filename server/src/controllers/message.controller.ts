@@ -26,6 +26,7 @@ import {
   needsContactMasking,
 } from "../utils/projectContact";
 import { type IConversation } from "../models/Conversation.model";
+import { isBlockedEitherWay } from "../utils/blocks";
 
 interface MessageError extends Error {
   statusCode: number;
@@ -359,6 +360,9 @@ export const getOrCreateConversation = async (
       .exec();
     if (!otherUser) {
       throw createMessageError("User not found", 404);
+    }
+    if (await isBlockedEitherWay(userId, otherUserId)) {
+      throw createMessageError("You can't message this person", 403);
     }
 
     const requestedProject =
@@ -735,6 +739,9 @@ export const sendMessage = async (
     const recipientId = conversation.participants
       .find((participant) => participant.toString() !== userId)
       ?.toString();
+    if (recipientId && (await isBlockedEitherWay(userId, recipientId))) {
+      throw createMessageError("You can't message this person", 403);
+    }
     const recipientUser = recipientId
       ? await User.findById(recipientId).select("role").exec()
       : null;

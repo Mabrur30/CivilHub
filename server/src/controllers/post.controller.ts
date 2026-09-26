@@ -115,6 +115,16 @@ const beforeCursor = (cursor: string | undefined): Record<string, unknown> => {
   };
 };
 
+/** Comment counts for many posts in one aggregate instead of a query each. */
+const getCommentCounts = async (posts: IPost[]): Promise<Map<string, number>> => {
+  if (posts.length === 0) return new Map();
+  const rows = await Comment.aggregate<{ _id: Types.ObjectId; count: number }>([
+    { $match: { post: { $in: posts.map((post) => post._id) } } },
+    { $group: { _id: "$post", count: { $sum: 1 } } },
+  ]).exec();
+  return new Map(rows.map((row) => [row._id.toString(), row.count]));
+};
+
 /** Drops posts whose author (or shared post's author) account no longer exists. */
 const hasLiveAuthor = (post: IPost): boolean => Boolean(post.author);
 
@@ -426,16 +436,15 @@ export const getFeed = async (
       Array.from(photoOwnerIds),
     );
 
+    const commentCounts = await getCommentCounts(posts);
     const response: FeedResponse = {
-      posts: await Promise.all(
-        posts.map(async (post) =>
-          toFeedPost(
-            post,
-            userId,
-            photoByUserId,
-            ratingByUserId,
-            await Comment.countDocuments({ post: post._id }),
-          ),
+      posts: posts.map((post) =>
+        toFeedPost(
+          post,
+          userId,
+          photoByUserId,
+          ratingByUserId,
+          commentCounts.get(post._id.toString()) ?? 0,
         ),
       ),
       page,
@@ -572,16 +581,15 @@ export const getUserPosts = async (
     const ratingByUserId = await getEngineerRatingMapByUserIds(
       Array.from(photoOwnerIds),
     );
+    const commentCounts = await getCommentCounts(posts);
     res.json({
-      posts: await Promise.all(
-        posts.map(async (post) =>
-          toFeedPost(
-            post,
-            viewerUserId,
-            photoByUserId,
-            ratingByUserId,
-            await Comment.countDocuments({ post: post._id }),
-          ),
+      posts: posts.map((post) =>
+        toFeedPost(
+          post,
+          viewerUserId,
+          photoByUserId,
+          ratingByUserId,
+          commentCounts.get(post._id.toString()) ?? 0,
         ),
       ),
       page,

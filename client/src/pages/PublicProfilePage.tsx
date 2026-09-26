@@ -46,6 +46,8 @@ import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
 import { dashboardBase } from "../lib/dashboardPaths";
+import { ProfileSafetyActions } from "../components/safety/ProfileSafetyActions";
+import { ImageLightbox } from "../components/dashboard/ImageLightbox";
 
 interface EngineerPortfolioItem {
   title: string;
@@ -144,6 +146,8 @@ interface BasePublicProfile {
   reviewCount: number;
   connectionStatus: ConnectionStatus;
   connectionId: string | null;
+  /** The viewer has blocked this person. */
+  blockedByMe?: boolean;
   connectionsCount: number;
 }
 
@@ -872,7 +876,12 @@ export function PublicProfilePage(): ReactElement {
     if (!profile || hasPlayedEntrance.current) return;
     hasPlayedEntrance.current = true;
     const frame = requestAnimationFrame(() => setIsEntranceVisible(true));
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      // If the profile updates again before the frame runs, let the next
+      // run schedule it; otherwise the page would stay invisible.
+      hasPlayedEntrance.current = false;
+    };
   }, [profile]);
 
   // Whose page this is: an engineer or client (profile) or a company.
@@ -2360,10 +2369,10 @@ export function PublicProfilePage(): ReactElement {
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
             <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
               <div
-                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)] ${entrance(0).className}`}
+                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-sm ${entrance(0).className}`}
                 style={entrance(0).style}
               >
-                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
+                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-primary/35 to-primary/10" />
                 <div className="p-5 pt-0">
                   <div className="-mt-10">
                     <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
@@ -2545,7 +2554,8 @@ export function PublicProfilePage(): ReactElement {
                     />
                   </div>
 
-                  {!isSelf ? (
+                  {/* Nothing to connect or message while you've blocked them. */}
+                  {!isSelf && !profile.blockedByMe ? (
                     isClientViewingEngineerProfile ? (
                       <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                         <Link
@@ -2603,13 +2613,24 @@ export function PublicProfilePage(): ReactElement {
                         {profile.connectionStatus === "connected" ? (
                           <Link
                             to={`/messages/${profile.userId}`}
-                            className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
+                            className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-on-primary"
                           >
                             Message
                           </Link>
                         ) : null}
                       </div>
                     )
+                  ) : null}
+
+                  {!isSelf ? (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <ProfileSafetyActions
+                        userId={profile.userId}
+                        name={profile.name}
+                        blockedByMe={Boolean(profile.blockedByMe)}
+                        onChanged={refreshProfile}
+                      />
+                    </div>
                   ) : null}
 
                   {avatarError ? (
@@ -3473,20 +3494,10 @@ export function PublicProfilePage(): ReactElement {
       </div>
 
       {lightboxImageUrl ? (
-        <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/80 p-4">
-          <button
-            type="button"
-            onClick={() => setLightboxImageUrl(null)}
-            className="absolute right-5 top-5 rounded-full border border-snow/30 px-3 py-1.5 text-xs font-semibold text-snow transition-colors duration-200 hover:border-primary"
-          >
-            Close
-          </button>
-          <img
-            src={lightboxImageUrl}
-            alt="Expanded post attachment"
-            className="max-h-[90vh] w-auto max-w-[95vw] rounded-xl border border-white/10"
-          />
-        </div>
+        <ImageLightbox
+          imageUrl={lightboxImageUrl}
+          onClose={() => setLightboxImageUrl(null)}
+        />
       ) : null}
     </div>
   );

@@ -137,7 +137,7 @@ export function PostComposerModal({
             </span>
             <label
               aria-label="Add a photo"
-              className="inline-flex cursor-pointer items-center justify-center rounded-full p-2 text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-primary"
+              className="inline-flex cursor-pointer items-center justify-center rounded-full p-2 text-white/70 transition-colors duration-200 hover:bg-white/10 hover:text-primary has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-glow"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -154,7 +154,11 @@ export function PostComposerModal({
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
-                onChange={onImageChange}
+                onChange={(event) => {
+                  onImageChange(event);
+                  // Lets the same photo be picked again after removing it.
+                  event.target.value = "";
+                }}
                 className="sr-only"
               />
             </label>
@@ -170,6 +174,7 @@ export function PostComposerModal({
               <button
                 type="button"
                 onClick={onClearImage}
+                aria-label="Remove photo"
                 className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-semibold text-snow transition-colors duration-200 hover:bg-primary hover:text-on-primary"
               >
                 X

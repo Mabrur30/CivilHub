@@ -84,19 +84,30 @@ export function RepostButton({
         // One repost per post: once shared, the button says so and stays put.
         disabled={success}
         onClick={() => setIsOpen((open) => !open)}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
         className={
           isInline
             ? "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/65 transition-colors duration-200 hover:bg-primary/10 hover:text-white"
-            : "inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-white/65 transition-all duration-200 hover:border-emerald-300/50 hover:text-emerald-200"
+            : "inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-white/65 transition-all duration-200 hover:border-primary/50 hover:text-white"
         }
       >
         <span aria-hidden="true">↻</span>
         {success ? "Reposted" : "Repost"}
       </button>
       {isOpen && (
-        <div className="absolute left-0 top-11 z-20 w-[min(22rem,calc(100vw-3rem))] rounded-xl border border-white/15 bg-surface p-4 shadow-2xl">
+        <div
+          role="dialog"
+          aria-label="Repost this update"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setIsOpen(false);
+          }}
+          className="absolute left-0 top-11 z-20 w-[min(22rem,calc(100vw-3rem))] rounded-xl border border-white/15 bg-surface p-4 shadow-2xl"
+        >
           <p className="text-sm font-semibold text-white">Repost this update</p>
           <textarea
+            aria-label="Your thoughts (optional)"
+            autoFocus
             value={thoughts}
             onChange={(event) => setThoughts(event.target.value.slice(0, 2000))}
             maxLength={2000}

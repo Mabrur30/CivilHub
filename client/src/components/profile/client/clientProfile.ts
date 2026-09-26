@@ -81,6 +81,8 @@ export interface ClientPublicProfile {
   reviewCount: number;
   connectionStatus: ConnectionStatus;
   connectionId: string | null;
+  /** The viewer has blocked this person. */
+  blockedByMe?: boolean;
   connectionsCount: number;
   companyName: string;
   clientType: ClientType | null;

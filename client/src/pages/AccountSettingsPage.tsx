@@ -7,6 +7,7 @@ import {
 import { FormField } from "../components/dashboard/ui/FormField";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { useAuth } from "../context/AuthContext";
+import { BlockedPeoplePanel } from "../components/safety/BlockedPeoplePanel";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PASSWORD_MIN = 8;
@@ -159,7 +160,7 @@ export function AccountSettingsPage(): ReactElement {
     <div className="mx-auto max-w-3xl space-y-8">
       <PageHeader
         title="Account settings"
-        summary="Your name, the email you sign in with, and your password."
+        summary="Your name, the email you sign in with, your password, and people you've blocked."
       />
 
       <SettingsPanel
@@ -276,6 +277,8 @@ export function AccountSettingsPage(): ReactElement {
           />
         </FormField>
       </SettingsPanel>
+
+      <BlockedPeoplePanel />
     </div>
   );
 }

@@ -1,8 +1,14 @@
+import {
+  BuildingsIcon,
+  HardHatIcon,
+  HouseIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { Reveal } from "./Reveal";
 
 interface RoleCardProps {
-  role: "Clients" | "Engineers";
+  role: "Clients" | "Engineers" | "Companies";
   title: string;
   description: string;
   bullets: string[];
@@ -11,6 +17,12 @@ interface RoleCardProps {
 
 interface ForClientsForEngineersProps {}
 
+const roleIcons: Record<RoleCardProps["role"], Icon> = {
+  Clients: HouseIcon,
+  Engineers: HardHatIcon,
+  Companies: BuildingsIcon,
+};
+
 function RoleCard({
   role,
   title,
@@ -18,6 +30,8 @@ function RoleCard({
   bullets,
   accent,
 }: RoleCardProps): ReactElement {
+  const RoleIcon = roleIcons[role];
+
   return (
     <div className="rounded-[28px] border border-white/10 bg-surface p-6 sm:p-8">
       <div className="flex items-center justify-between gap-4">
@@ -25,16 +39,19 @@ function RoleCard({
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
             For {role}
           </p>
-          <h3 className="mt-3 font-heading text-3xl font-bold text-white">
+          <h3 className="mt-3 text-balance font-heading text-3xl font-bold text-white">
             {title}
           </h3>
         </div>
         <div
-          className={`flex h-12 w-12 items-center justify-center rounded-full ${accent}`}
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${accent}`}
         >
-          <span className="text-lg font-bold text-white">
-            {role === "Clients" ? "C" : "E"}
-          </span>
+          <RoleIcon
+            size={22}
+            weight="bold"
+            className="text-on-primary"
+            aria-hidden="true"
+          />
         </div>
       </div>
 
@@ -65,35 +82,46 @@ export function ForClientsForEngineers(
       <div className="mx-auto max-w-7xl">
         <Reveal variant="head" className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-            Built for both sides
+            Built for every side of the site
           </p>
-          <h2 className="mt-4 font-heading text-4xl font-bold text-white sm:text-5xl">
-            Purpose-built collaboration for every stakeholder.
+          <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
+            One workspace for whoever is paying, designing or supplying.
           </h2>
         </Reveal>
 
-        <Reveal className="mt-12 grid gap-8 lg:grid-cols-2">
+        <Reveal className="mt-12 grid gap-8 lg:grid-cols-3">
           <RoleCard
             role="Clients"
-            title="Control quality and certainty"
-            description="Bring projects to life with visible scope, trusted partner matching, and streamlined approvals that help teams move from design intent to field-ready execution."
+            title="Know what you are paying for"
+            description="Homeowners and developers post a brief once, compare bids, and release money only as each phase is delivered and approved."
             bullets={[
-              "Shortlist engineers and contractors with verified credentials and relevant civil project experience.",
-              "Track approvals, packages, and milestone health in one shared delivery dashboard.",
-              "Reduce timeline risk with transparent status updates and slower-moving administrative friction.",
+              "Brief questions tailored to the project type, with your exact site kept private until you hire.",
+              "Compare bids, check reviews and message engineers before committing.",
+              "Approve & pay each phase after reviewing its handover note and files.",
             ]}
             accent="bg-primary/90"
           />
           <RoleCard
             role="Engineers"
-            title="Win the right work and deliver confidently"
-            description="Showcase capability, align with projects that match your expertise, and keep the entire delivery story clear for clients and stakeholders alike."
+            title="Win work that fits your speciality"
+            description="Show your main speciality and up to two more, bid on briefs you can price properly, and get paid as phases are approved."
             bullets={[
-              "Access fit-for-purpose project opportunities with clear technical briefs and client expectations.",
-              "Keep design, costing, and progress communication aligned across project stakeholders.",
-              "Protect your reputation with organized workflows, milestone reporting, and transparent collaboration.",
+              "Briefs arrive with the type-specific facts you need to price the job.",
+              "Hand over each phase with notes and files, kept as a record for both sides.",
+              "Build a profile with reviews, certificates, equipment and a professional network.",
             ]}
             accent="bg-glow/90"
+          />
+          <RoleCard
+            role="Companies"
+            title="Run projects and rent out your fleet"
+            description="Construction firms and plant-hire companies choose what they do — take on projects, rent out equipment, or both — and see only the tools they need."
+            bullets={[
+              "Bid on and deliver projects as a firm, phase by phase.",
+              "List plant with daily, weekly or monthly rates and a held security deposit.",
+              "Rent equipment yourself, and network and message with engineers.",
+            ]}
+            accent="bg-primary/70"
           />
         </Reveal>
       </div>

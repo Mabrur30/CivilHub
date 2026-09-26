@@ -25,6 +25,7 @@ export interface NotificationFeedEntry {
   bidId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  postId?: string | null;
 }
 
 export interface OwnBidFeedEntry {
@@ -109,6 +110,7 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   new_message: "messages",
 
   connection_accepted: "network",
+  connection_request: "network",
   connection_post: "network",
   post_liked: "network",
   comment_received: "network",

@@ -11,8 +11,8 @@ interface NavbarProps {}
 const navItems = [
   { label: "Home", targetId: "home" },
   { label: "How It Works", targetId: "how-it-works" },
-  { label: "For Engineers", targetId: "for-engineers-clients" },
-  { label: "For Clients", targetId: "for-engineers-clients" },
+  { label: "Equipment", targetId: "equipment" },
+  { label: "Who It's For", targetId: "for-engineers-clients" },
   { label: "Pricing", targetId: "pricing" },
 ];
 

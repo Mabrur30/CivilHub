@@ -1,3 +1,4 @@
+import { BulldozerIcon } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { Link } from "react-router-dom";
 
@@ -16,18 +17,18 @@ const personas: Persona[] = [
   {
     side: "client",
     label: "For clients",
-    headline: "Post a project, get matched with verified engineers",
+    headline: "Post a project, compare bids from engineers who fit",
     valueProp:
-      "Set out the scope once and review pre-qualified teams who can actually deliver it.",
+      "Set out the scope once, hear from engineers and firms in the right speciality, and pay only as each phase is approved.",
     cta: "I'm a Client",
     to: "/signup/client",
   },
   {
     side: "engineer",
     label: "For engineers",
-    headline: "Find the right projects, deliver with confidence",
+    headline: "Find briefs in your speciality, get paid phase by phase",
     valueProp:
-      "See briefs that match your discipline, and keep every approval in one shared record.",
+      "Bid on work you can price properly, hand over each phase with its files, and get paid as the client approves.",
     cta: "I'm an Engineer",
     to: "/signup/engineer",
   },
@@ -59,8 +60,9 @@ export function Hero(_props: HeroProps): ReactElement {
       </div>
 
       <h1 className="sr-only">
-        CivilHub — post a project and get matched with verified engineers, or
-        find the right projects and deliver with confidence.
+        CivilHub — post a project and compare bids from engineers who fit, find
+        briefs in your speciality and get paid phase by phase, or rent and list
+        construction equipment.
       </h1>
 
       <div className="relative mx-auto flex min-h-[calc(100vh-80px)] max-w-7xl flex-col justify-center px-4 pb-16 pt-12 sm:px-6 lg:px-8">
@@ -107,17 +109,38 @@ export function Hero(_props: HeroProps): ReactElement {
           ))}
         </div>
 
-        {/* Firms sit on the provider side too; one quiet line keeps the two
-            main paths as the hero while still showing companies a way in. */}
-        <p className="relative mt-2 text-center text-sm text-white/60 lg:mt-4">
-          Run a construction firm or plant-hire company?{" "}
-          <Link
-            to="/signup/company"
-            className="rounded font-semibold text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
-          >
-            Sign up as a company
-          </Link>
-        </p>
+        {/* Companies and plant hire sit across both sides of the seam: they bid
+            like engineers and rent equipment to everyone. A strip rather than a
+            third panel keeps the client | engineer split as the hero. */}
+        <div className="relative mx-auto mt-4 flex w-full max-w-3xl flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-center backdrop-blur-sm sm:flex-row sm:justify-between sm:text-left lg:mt-6">
+          <div className="flex items-center gap-3">
+            <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary sm:flex">
+              <BulldozerIcon size={22} weight="bold" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+                For companies &amp; plant hire
+              </p>
+              <p className="mt-1 text-sm text-white/75">
+                Rent excavators, cranes and rollers, or list your own fleet.
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-4 text-sm font-semibold">
+            <Link
+              to="/signup/company"
+              className="rounded text-primary underline decoration-primary/40 underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+            >
+              Join as a company
+            </Link>
+            <Link
+              to="/signup/client"
+              className="rounded text-white/70 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+            >
+              Rent equipment
+            </Link>
+          </div>
+        </div>
 
         {/* The project both sides are working on, sitting across the seam. */}
         <div className="relative mx-auto mt-6 w-full max-w-sm lg:mt-2">
@@ -154,7 +177,7 @@ export function Hero(_props: HeroProps): ReactElement {
                       Budget
                     </p>
                     <p className="mt-1.5 font-heading text-2xl text-white">
-                      $4.2M
+                      ৳4.2 crore
                     </p>
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-white/3 p-3.5">
@@ -170,10 +193,13 @@ export function Hero(_props: HeroProps): ReactElement {
                 {/* Milestone rows deliberately live in the How It Works
                     progress mockup rather than here, so the hero card stays a
                     project-at-a-glance and the two do not read as the same
-                    illustration twice. */}
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/3 px-3.5 py-3 text-sm">
-                  <span className="text-white/65">Open milestones</span>
-                  <span className="font-semibold text-primary">3</span>
+                    illustration twice. The one phase row shows the payment
+                    moment the client acts on. */}
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/3 px-3.5 py-3 text-sm">
+                  <span className="text-white/65">Phase 3 payment</span>
+                  <span className="rounded-full bg-violet-300/10 px-2.5 py-0.5 text-xs font-semibold text-violet-200">
+                    Awaiting approval
+                  </span>
                 </div>
               </div>
             </div>
@@ -181,11 +207,11 @@ export function Hero(_props: HeroProps): ReactElement {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-white/60">
-          <span>FIDIC-aligned workflows</span>
+          <span>Phase-by-phase payments</span>
           <span className="h-1 w-1 rounded-full bg-primary" />
-          <span>Verified partners</span>
+          <span>Contacts protected until hire</span>
           <span className="h-1 w-1 rounded-full bg-primary" />
-          <span>Project clarity</span>
+          <span>Handover on record</span>
         </div>
       </div>
     </section>

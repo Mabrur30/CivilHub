@@ -20,33 +20,16 @@ import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 import { canTakeProjects } from "../lib/dashboardPaths";
 import { isProviderRole } from "../lib/dashboardPaths";
+import { ImageLightbox } from "../components/dashboard/ImageLightbox";
+import { ConnectionsPanel } from "../components/network/ConnectionsPanel";
+import { IncomingRequestsPanel } from "../components/network/IncomingRequestsPanel";
+import { SentRequestsPanel } from "../components/network/SentRequestsPanel";
+import { SuggestionsPanel } from "../components/network/SuggestionsPanel";
+import { type ConnectionUser, type NetworkUser, type PersonResult } from "../components/network/types";
 
-interface NetworkUser {
-  id: string;
-  userId: string;
-  name: string;
-  role: "client" | "engineer" | "organisation";
-  status: "pending";
-  profilePhotoUrl: string | null;
-}
 
-interface ConnectionUser {
-  userId: string;
-  name: string;
-  role: "client" | "engineer" | "organisation";
-  profilePhotoUrl: string | null;
-  rating: number | null;
-  reviewCount: number;
-}
 
-interface EngineerSearchResult {
-  id: string;
-  name: string;
-  role?: "engineer" | "organisation";
-  profilePhotoUrl: string | null;
-  bio: string;
-  location: string | null;
-}
+type EngineerSearchResult = PersonResult;
 
 interface SearchEngineersResponse {
   engineers: EngineerSearchResult[];
@@ -75,7 +58,33 @@ interface SelfPublicProfile {
   bio: string;
   rating: number | null;
   reviewCount: number;
+  connectionsCount?: number;
 }
+
+/** A "People you may know" entry from /api/network/suggestions. */
+interface Suggestion {
+  userId: string;
+  name: string;
+  role: "engineer" | "organisation";
+  profilePhotoUrl: string | null;
+  specialty: string | null;
+  location: string | null;
+  reason: string;
+}
+
+const isSuggestion = (value: unknown): value is Suggestion => {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.userId === "string" &&
+    typeof item.name === "string" &&
+    typeof item.reason === "string" &&
+    (typeof item.profilePhotoUrl === "string" || item.profilePhotoUrl === null)
+  );
+};
+
+// Connections load a page at a time; the total comes from the profile.
+const CONNECTIONS_PAGE_SIZE = 30;
 
 interface EngineerOverviewResponse {
   activeProjects: number;
@@ -284,6 +293,10 @@ export function EngineerNetworkPage(): ReactElement {
 
   const [incomingExpanded, setIncomingExpanded] = useState<boolean>(false);
   const [sentExpanded, setSentExpanded] = useState<boolean>(false);
+  const [hasMoreConnections, setHasMoreConnections] = useState<boolean>(false);
+  const [isLoadingMoreConnections, setIsLoadingMoreConnections] = useState<boolean>(false);
+  // Accepts and removals since the profile's count was loaded.
+  const [connectionDelta, setConnectionDelta] = useState<number>(0);
   const [connectionsExpanded, setConnectionsExpanded] =
     useState<boolean>(false);
   const [searchExpanded, setSearchExpanded] = useState<boolean>(false);
@@ -357,6 +370,10 @@ export function EngineerNetworkPage(): ReactElement {
   }, [browsePeople, connections, currentUser?.id, incoming, sent]);
 
   const feedEmpty = !isFeedLoading && !feedError && posts.length === 0;
+  const connectionTotal = Math.max(
+    connections.length,
+    (profile?.connectionsCount ?? connections.length) + connectionDelta,
+  );
 
   const loadNetwork = async (): Promise<void> => {
     setIsNetworkLoading(true);
@@ -370,9 +387,10 @@ export function EngineerNetworkPage(): ReactElement {
             credentials: "include",
           }),
           fetch(`${API_BASE_URL}/api/network/sent`, { credentials: "include" }),
-          fetch(`${API_BASE_URL}/api/network/connections`, {
-            credentials: "include",
-          }),
+          fetch(
+            `${API_BASE_URL}/api/network/connections?limit=${CONNECTIONS_PAGE_SIZE}&offset=0`,
+            { credentials: "include" },
+          ),
         ]);
 
       const [incomingBody, sentBody, connectionsBody]: [
@@ -421,6 +439,7 @@ export function EngineerNetworkPage(): ReactElement {
       setIncoming(incomingBody);
       setSent(sentBody);
       setConnections(connectionsBody);
+      setHasMoreConnections(connectionsBody.length === CONNECTIONS_PAGE_SIZE);
     } catch {
       setNetworkError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -519,16 +538,30 @@ export function EngineerNetworkPage(): ReactElement {
     setBrowseError("");
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/engineers/search?page=1&limit=12`,
+        `${API_BASE_URL}/api/network/suggestions?limit=12`,
         { credentials: "include" },
       );
       const body: unknown = await response.json();
-      if (!response.ok || !isSearchEngineersResponse(body)) {
+      if (!response.ok || !Array.isArray(body)) {
         setBrowseError(getErrorMessage(body, "Unable to load suggestions."));
         return;
       }
 
-      setBrowsePeople(body.engineers);
+      // Shown like search results; the line under the name says why.
+      setBrowsePeople(
+        body.filter(isSuggestion).map((person) => ({
+          id: person.userId,
+          name: person.name,
+          role: person.role,
+          profilePhotoUrl: person.profilePhotoUrl,
+          // "Also Structural" already names the speciality; don't say it twice.
+          bio:
+            person.specialty && !person.reason.includes(person.specialty)
+              ? `${person.specialty} · ${person.reason}`
+              : person.reason,
+          location: person.location,
+        })),
+      );
     } catch {
       setBrowseError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -767,6 +800,69 @@ export function EngineerNetworkPage(): ReactElement {
     }
   };
 
+  const loadMoreConnections = async (): Promise<void> => {
+    setIsLoadingMoreConnections(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/network/connections?limit=${CONNECTIONS_PAGE_SIZE}&offset=${connections.length}`,
+        { credentials: "include" },
+      );
+      const body: unknown = await response.json();
+      if (!response.ok || !Array.isArray(body) || !body.every(isConnectionUser)) {
+        setActionError(getErrorMessage(body, "Unable to load more connections."));
+        return;
+      }
+      setConnections((current) => {
+        const seen = new Set(current.map((item) => item.userId));
+        return [...current, ...body.filter((item) => !seen.has(item.userId))];
+      });
+      setHasMoreConnections(body.length === CONNECTIONS_PAGE_SIZE);
+    } catch {
+      setActionError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setIsLoadingMoreConnections(false);
+    }
+  };
+
+  /** Withdraws a sent request or removes a connection, then updates in place. */
+  const removeConnection = async (
+    connectionId: string,
+    kind: "withdraw" | "remove",
+    name: string,
+  ): Promise<void> => {
+    if (kind === "remove" && !window.confirm(`Remove ${name} from your connections?`)) {
+      return;
+    }
+    setActiveConnectionId(connectionId);
+    setActionError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/network/${connectionId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        setActionError(
+          getErrorMessage(
+            body,
+            kind === "withdraw" ? "Unable to withdraw this request." : "Unable to remove this connection.",
+          ),
+        );
+        return;
+      }
+      if (kind === "withdraw") {
+        setSent((current) => current.filter((item) => item.id !== connectionId));
+      } else {
+        setConnections((current) => current.filter((item) => item.connectionId !== connectionId));
+        setConnectionDelta((delta) => delta - 1);
+      }
+    } catch {
+      setActionError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setActiveConnectionId(null);
+    }
+  };
+
   const respond = async (
     connectionId: string,
     decision: "accept" | "decline",
@@ -793,6 +889,7 @@ export function EngineerNetworkPage(): ReactElement {
       const request = incoming.find((item) => item.id === connectionId);
       setIncoming((current) => current.filter((item) => item.id !== connectionId));
       if (decision === "accept" && request) {
+        setConnectionDelta((delta) => delta + 1);
         setConnections((current) => [
           {
             userId: request.userId,
@@ -843,6 +940,7 @@ export function EngineerNetworkPage(): ReactElement {
         if (result.status === "accepted") {
           // They had already asked us, so connecting accepted their request.
           setIncoming((current) => current.filter((item) => item.userId !== targetUserId));
+          setConnectionDelta((delta) => delta + 1);
           setConnections((current) => [
             {
               userId: person.id,
@@ -918,8 +1016,8 @@ export function EngineerNetworkPage(): ReactElement {
     <div className="mx-auto w-full max-w-[1240px] space-y-6 pb-6">
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_2.2fr_1fr]">
         <aside className="order-1 space-y-4 lg:self-start lg:sticky lg:top-20">
-          <section className="overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
-            <div className="h-16 w-full bg-gradient-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
+          <section className="overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-sm">
+            <div className="h-16 w-full bg-gradient-to-r from-primary/70 via-primary/35 to-primary/10" />
             <div className="p-5 pt-0">
               <div className="-mt-10">
                 {selfProfileLink ? (
@@ -975,7 +1073,7 @@ export function EngineerNetworkPage(): ReactElement {
                 <div className="flex items-center justify-between text-white/65">
                   <span>Connections</span>
                   <span className="font-semibold text-primary">
-                    {connections.length}
+                    {connectionTotal}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-white/65">
@@ -996,7 +1094,7 @@ export function EngineerNetworkPage(): ReactElement {
               <div className="flex items-center justify-between rounded-lg border border-white/10 bg-void/40 px-3 py-2">
                 <span className="text-white/60">Connections</span>
                 <span className="font-semibold text-white">
-                  {connections.length}
+                  {connectionTotal}
                 </span>
               </div>
               <button
@@ -1028,7 +1126,7 @@ export function EngineerNetworkPage(): ReactElement {
 
         <section className="order-2 w-full space-y-4">
           {isEngineer ? (
-            <div className="w-full rounded-2xl border border-white/10 bg-surface p-4 shadow-[0_14px_36px_rgba(0,0,0,0.2)] transition-all duration-200 hover:border-primary/30">
+            <div className="w-full rounded-2xl border border-white/10 bg-surface p-4 shadow-sm transition-all duration-200 hover:border-primary/30">
               <div className="flex items-center gap-3">
                 <Avatar
                   name={profile?.name ?? currentUser?.name ?? "You"}
@@ -1182,384 +1280,73 @@ export function EngineerNetworkPage(): ReactElement {
         </section>
 
         <aside className="order-3 space-y-4 lg:self-start lg:sticky lg:top-20">
-          <section
-            ref={incomingRef}
-            className="rounded-2xl border border-white/10 bg-surface p-5 transition-all duration-200 hover:border-primary/25"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="font-heading text-xl font-bold text-white">
-                Incoming Requests
-              </h3>
-              {incoming.length > 3 ? (
-                <button
-                  type="button"
-                  onClick={() => setIncomingExpanded((open) => !open)}
-                  className="text-xs font-semibold text-primary transition-colors duration-200 hover:text-glow"
-                >
-                  {incomingExpanded ? "Show less" : "View all"}
-                </button>
-              ) : null}
-            </div>
+          <IncomingRequestsPanel
+            incoming={incoming}
+            isLoading={isNetworkLoading}
+            expanded={incomingExpanded}
+            onToggleExpanded={() => setIncomingExpanded((open) => !open)}
+            activeConnectionId={activeConnectionId}
+            onRespond={(connectionId, decision) => void respond(connectionId, decision)}
+            sectionRef={incomingRef}
+          />
 
-            {isNetworkLoading ? (
-              <p className="mt-3 text-sm text-white/50">Loading…</p>
-            ) : incoming.length === 0 ? (
-              <p className="mt-3 text-sm text-white/50">
-                No incoming requests.
-              </p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {(incomingExpanded ? incoming : incoming.slice(0, 3)).map(
-                  (request) => {
-                    const isActing = activeConnectionId === request.id;
-                    return (
-                      <article
-                        key={request.id}
-                        className="rounded-xl border border-white/10 bg-void/45 p-3"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            name={request.name}
-                            photoUrl={request.profilePhotoUrl}
-                            size="sm"
-                          />
-                          <div>
-                            <p className="text-sm font-semibold text-white">
-                              {request.name}
-                            </p>
-                            <p className="text-[11px] capitalize text-white/45">
-                              {request.role}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void respond(request.id, "accept")}
-                            disabled={isActing}
-                            className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
-                          >
-                            {isActing ? "..." : "Accept"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void respond(request.id, "decline")}
-                            disabled={isActing}
-                            className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-rose-300 hover:text-rose-200 disabled:opacity-60"
-                          >
-                            Decline
-                          </button>
-                          <Link
-                            to={`/profile/${request.userId}`}
-                            className="rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/70 transition-colors duration-200 hover:border-primary hover:text-white"
-                          >
-                            View
-                          </Link>
-                        </div>
-                      </article>
-                    );
-                  },
-                )}
-              </div>
-            )}
-          </section>
+          <SuggestionsPanel
+            people={searchExpanded ? expandedPeopleList : compactSuggestions}
+            expanded={searchExpanded}
+            onToggleExpanded={() => setSearchExpanded((open) => !open)}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            isLoading={isBrowseLoading || isSearchLoading}
+            error={browseError || searchError || searchActionError}
+            emptyMessage={
+              searchExpanded
+                ? debouncedQuery && expandedPeopleList.length === 0
+                  ? "No results for this search."
+                  : null
+                : compactSuggestions.length === 0
+                  ? "No new suggestions yet."
+                  : null
+            }
+            statusOf={(userId) =>
+              currentUser?.id === userId
+                ? "self"
+                : isPersonConnected(userId)
+                  ? "connected"
+                  : isPersonPendingIncoming(userId)
+                    ? "received"
+                    : isPersonPendingSent(userId)
+                      ? "sent"
+                      : "none"
+            }
+            activeUserId={activeSearchUserId}
+            onConnect={(userId) => void sendConnectionRequest(userId)}
+            pager={
+              searchExpanded && debouncedQuery && searchTotal > searchLimit
+                ? { page: searchPage, totalPages: searchTotalPages, onPageChange: setSearchPage }
+                : null
+            }
+          />
 
-          <section className="rounded-2xl border border-white/10 bg-surface p-5 transition-all duration-200 hover:border-primary/25">
-            <div className="flex items-center justify-between">
-              <h3 className="font-heading text-xl font-bold text-white">
-                People You May Know
-              </h3>
-              <button
-                type="button"
-                onClick={() => setSearchExpanded((open) => !open)}
-                className="text-xs font-semibold text-primary transition-colors duration-200 hover:text-glow"
-              >
-                {searchExpanded ? "Collapse" : "See more"}
-              </button>
-            </div>
+          <SentRequestsPanel
+            sent={sent}
+            isLoading={isNetworkLoading}
+            expanded={sentExpanded}
+            onToggleExpanded={() => setSentExpanded((open) => !open)}
+            activeConnectionId={activeConnectionId}
+            onWithdraw={(connectionId, name) => void removeConnection(connectionId, "withdraw", name)}
+          />
 
-            {searchExpanded ? (
-              <div className="mt-3 space-y-3">
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                    setSearchQuery(event.target.value)
-                  }
-                  placeholder="Search by name or bio"
-                  className="form-input"
-                />
-              </div>
-            ) : null}
-
-            {isBrowseLoading || isSearchLoading ? (
-              <p className="mt-3 text-sm text-white/50">
-                Loading suggestions...
-              </p>
-            ) : null}
-
-            {browseError || searchError || searchActionError ? (
-              <p className="mt-3 text-sm text-rose-300" role="alert">
-                {browseError || searchError || searchActionError}
-              </p>
-            ) : null}
-
-            {!isBrowseLoading && !isSearchLoading ? (
-              <div
-                className={`mt-4 space-y-3 overflow-y-auto pr-1 ${
-                  searchExpanded ? "max-h-[860px]" : "max-h-[420px]"
-                }`}
-              >
-                {(searchExpanded ? expandedPeopleList : compactSuggestions).map(
-                  (person) => {
-                    const isSelf = currentUser?.id === person.id;
-                    const isConnected = isPersonConnected(person.id);
-                    const pendingIncoming = isPersonPendingIncoming(person.id);
-                    const pendingSent = isPersonPendingSent(person.id);
-
-                    return (
-                      <article
-                        key={person.id}
-                        className="rounded-xl border border-white/10 bg-void/45 p-3"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Avatar
-                            name={person.name}
-                            photoUrl={person.profilePhotoUrl}
-                            size="sm"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-white">
-                              {person.name}
-                            </p>
-                            <p className="truncate text-[11px] text-white/50">
-                              {person.bio || "No bio provided"}
-                            </p>
-                          </div>
-                          <Link
-                            to={`/profile/${person.id}`}
-                            className="text-[11px] font-semibold text-primary transition-colors duration-200 hover:text-glow"
-                          >
-                            View
-                          </Link>
-                        </div>
-                        <div className="mt-3">
-                          {isConnected ? (
-                            <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200">
-                              Connected
-                            </span>
-                          ) : isSelf ? (
-                            <span className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/60">
-                              You
-                            </span>
-                          ) : pendingIncoming ? (
-                            <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
-                              Request received
-                            </span>
-                          ) : pendingSent ? (
-                            <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
-                              Request sent
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void sendConnectionRequest(person.id)
-                              }
-                              disabled={activeSearchUserId === person.id}
-                              className="rounded-full bg-primary px-3 py-1.5 text-[11px] font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
-                            >
-                              {activeSearchUserId === person.id
-                                ? "Sending..."
-                                : "Connect"}
-                            </button>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  },
-                )}
-
-                {searchExpanded &&
-                debouncedQuery &&
-                searchTotal > searchLimit ? (
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-void/45 p-3 text-xs text-white/65">
-                    <span>
-                      Page {searchPage} of {searchTotalPages}
-                    </span>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSearchPage((p) => Math.max(1, p - 1))}
-                        disabled={searchPage <= 1}
-                        className="rounded-full border border-white/20 px-3 py-1 transition-colors duration-200 hover:border-primary disabled:opacity-50"
-                      >
-                        Prev
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSearchPage((p) =>
-                            Math.min(searchTotalPages, p + 1),
-                          )
-                        }
-                        disabled={searchPage >= searchTotalPages}
-                        className="rounded-full border border-white/20 px-3 py-1 transition-colors duration-200 hover:border-primary disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {!searchExpanded && compactSuggestions.length === 0 ? (
-                  <p className="text-sm text-white/50">
-                    No new suggestions yet.
-                  </p>
-                ) : null}
-
-                {searchExpanded &&
-                debouncedQuery &&
-                expandedPeopleList.length === 0 ? (
-                  <p className="text-sm text-white/50">
-                    No results for this search.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-
-          <section className="rounded-2xl border border-white/10 bg-surface p-5 transition-all duration-200 hover:border-primary/25">
-            <button
-              type="button"
-              onClick={() => setSentExpanded((open) => !open)}
-              className="flex w-full items-center justify-between"
-            >
-              <h3 className="font-heading text-xl font-bold text-white">
-                Sent Requests
-              </h3>
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-semibold text-white/70">
-                {sent.length}
-              </span>
-            </button>
-
-            <div
-              className={
-                sentExpanded ? "mt-4 max-h-[320px] overflow-y-auto pr-1" : "hidden"
-              }
-            >
-              {isNetworkLoading ? (
-                <p className="text-sm text-white/50">Loading…</p>
-              ) : sent.length === 0 ? (
-                <p className="text-sm text-white/50">
-                  No pending sent requests.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {sent.map((request) => (
-                    <article
-                      key={request.id}
-                      className="rounded-xl border border-white/10 bg-void/45 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Avatar
-                            name={request.name}
-                            photoUrl={request.profilePhotoUrl}
-                            size="sm"
-                          />
-                          <div>
-                            <p className="text-sm font-semibold text-white">
-                              {request.name}
-                            </p>
-                            <p className="text-[11px] capitalize text-white/45">
-                              {request.role}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2 py-0.5 text-[11px] font-semibold text-violet-200">
-                          Pending
-                        </span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-white/10 bg-surface p-5 transition-all duration-200 hover:border-primary/25">
-            <div className="flex items-center justify-between">
-              <h3 className="font-heading text-xl font-bold text-white">
-                Your Connections
-              </h3>
-              {connections.length > 4 ? (
-                <button
-                  type="button"
-                  onClick={() => setConnectionsExpanded((open) => !open)}
-                  className="text-xs font-semibold text-primary transition-colors duration-200 hover:text-glow"
-                >
-                  {connectionsExpanded ? "Show less" : "View all"}
-                </button>
-              ) : null}
-            </div>
-
-            {isNetworkLoading ? (
-              <p className="mt-3 text-sm text-white/50">
-                Loading connections...
-              </p>
-            ) : connections.length === 0 ? (
-              <p className="mt-3 text-sm text-white/50">
-                No accepted connections yet.
-              </p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {(connectionsExpanded
-                  ? connections
-                  : connections.slice(0, 4)
-                ).map((connection) => (
-                  <article
-                    key={connection.userId}
-                    className="rounded-xl border border-white/10 bg-void/45 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar
-                          name={connection.name}
-                          photoUrl={connection.profilePhotoUrl}
-                          size="sm"
-                        />
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-sm font-semibold text-white">
-                              {connection.name}
-                            </p>
-                            {isProviderRole(connection.role) && (
-                              <RatingBadge
-                                rating={connection.rating ?? null}
-                                reviewCount={connection.reviewCount ?? 0}
-                                size="sm"
-                              />
-                            )}
-                          </div>
-                          <p className="text-[11px] capitalize text-white/45">
-                            {connection.role}
-                          </p>
-                        </div>
-                      </div>
-                      <Link
-                        to={`/messages/${connection.userId}`}
-                        className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 transition-colors duration-200 hover:bg-emerald-300/20"
-                        aria-label={`Message ${connection.name}`}
-                      >
-                        Message
-                      </Link>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+          <ConnectionsPanel
+            connections={connections}
+            isLoading={isNetworkLoading}
+            expanded={connectionsExpanded}
+            onToggleExpanded={() => setConnectionsExpanded((open) => !open)}
+            hasMore={hasMoreConnections}
+            isLoadingMore={isLoadingMoreConnections}
+            onLoadMore={() => void loadMoreConnections()}
+            activeConnectionId={activeConnectionId}
+            onRemove={(connectionId, name) => void removeConnection(connectionId, "remove", name)}
+          />
 
           {networkError || actionError ? (
             <p className="text-sm text-rose-300" role="alert">
@@ -1570,20 +1357,10 @@ export function EngineerNetworkPage(): ReactElement {
       </div>
 
       {lightboxImageUrl ? (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-4">
-          <button
-            type="button"
-            onClick={() => setLightboxImageUrl(null)}
-            className="absolute right-5 top-5 rounded-full border border-snow/30 px-3 py-1.5 text-xs font-semibold text-snow transition-colors duration-200 hover:border-primary"
-          >
-            Close
-          </button>
-          <img
-            src={lightboxImageUrl}
-            alt="Expanded post attachment"
-            className="max-h-[90vh] w-auto max-w-[95vw] rounded-xl border border-white/10"
-          />
-        </div>
+        <ImageLightbox
+          imageUrl={lightboxImageUrl}
+          onClose={() => setLightboxImageUrl(null)}
+        />
       ) : null}
     </div>
   );

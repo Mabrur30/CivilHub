@@ -50,6 +50,8 @@ export interface CompanyPublicProfile {
   connectionsCount: number;
   connectionStatus: ConnectionStatus;
   connectionId: string | null;
+  /** The viewer has blocked this person. */
+  blockedByMe?: boolean;
   rating: number | null;
   reviewCount: number;
   /** Which reviews the headline rating comes from. */

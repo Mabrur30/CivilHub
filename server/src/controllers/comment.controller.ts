@@ -6,8 +6,9 @@ import { Comment, type IComment } from "../models/Comment.model";
 import { Post } from "../models/Post.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
-import { getProfilePhotoUrl } from "../utils/profilePhotos";
+import { getProfilePhotoMap } from "../utils/profilePhotos";
 import { isProviderRole } from "../utils/roles";
+import { blockedUserIds, isBlockedEitherWay } from "../utils/blocks";
 
 interface CommentError extends Error {
   statusCode: number;
@@ -59,64 +60,72 @@ const getUserId = (req: AuthenticatedRequest): string => {
 const getParams = (req: AuthenticatedRequest): CommentParams =>
   req.params as unknown as CommentParams;
 
-const photoForAuthor = (authorId: string): Promise<string | null> =>
-  getProfilePhotoUrl(authorId);
+/**
+ * Builds responses for a batch of comments with one photo lookup and one
+ * rating aggregate for all their authors, instead of several queries each.
+ */
+const toCommentResponses = async (
+  comments: IComment[],
+): Promise<CommentResponse[]> => {
+  const authors = comments.map((comment) => comment.author as unknown as CommentAuthor);
+  const authorIds = [...new Set(authors.map((author) => author._id.toString()))];
+  const providerIds = [
+    ...new Set(
+      authors.filter((author) => isProviderRole(author.role)).map((author) => author._id.toString()),
+    ),
+  ];
+  const [photoByUser, ratingRows] = await Promise.all([
+    getProfilePhotoMap(authorIds.map((id) => new Types.ObjectId(id))),
+    providerIds.length
+      ? Review.aggregate<{ _id: Types.ObjectId; averageRating: number; reviewCount: number }>([
+          {
+            $match: {
+              engineer: { $in: providerIds.map((id) => new Types.ObjectId(id)) },
+              project: { $exists: true, $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: "$engineer",
+              averageRating: { $avg: "$rating" },
+              reviewCount: { $sum: 1 },
+            },
+          },
+        ]).exec()
+      : Promise.resolve([]),
+  ]);
+  const ratingByUser = new Map(
+    ratingRows.map((row) => [
+      row._id.toString(),
+      { rating: Math.round(row.averageRating * 10) / 10, reviewCount: row.reviewCount },
+    ]),
+  );
 
-const ratingForAuthor = async (
-  authorId: string,
-): Promise<{ rating: number | null; reviewCount: number }> => {
-  const result = await Review.aggregate<{
-    averageRating: number;
-    reviewCount: number;
-  }>([
-    {
-      $match: {
-        engineer: new Types.ObjectId(authorId),
-        project: { $exists: true, $ne: null },
+  return comments.map((comment) => {
+    const author = comment.author as unknown as CommentAuthor;
+    const authorId = author._id.toString();
+    const rating = isProviderRole(author.role) ? ratingByUser.get(authorId) : undefined;
+    return {
+      id: comment._id.toString(),
+      postId: comment.post.toString(),
+      author: {
+        userId: authorId,
+        name: author.name,
+        role: author.role,
+        profilePhotoUrl: photoByUser.get(authorId) ?? null,
       },
-    },
-    {
-      $group: {
-        _id: "$engineer",
-        averageRating: { $avg: "$rating" },
-        reviewCount: { $sum: 1 },
-      },
-    },
-  ]).exec();
-  const aggregate = result[0];
-  return aggregate
-    ? {
-        rating: Math.round(aggregate.averageRating * 10) / 10,
-        reviewCount: aggregate.reviewCount,
-      }
-    : { rating: null, reviewCount: 0 };
+      rating: rating?.rating ?? null,
+      reviewCount: rating?.reviewCount ?? 0,
+      content: comment.content,
+      parentCommentId: comment.parentComment?.toString() ?? null,
+      createdAt: comment.createdAt.toISOString(),
+      updatedAt: comment.updatedAt.toISOString(),
+    };
+  });
 };
 
-const toCommentResponse = async (
-  comment: IComment,
-): Promise<CommentResponse> => {
-  const author = comment.author as unknown as CommentAuthor;
-  const rating =
-    isProviderRole(author.role)
-      ? await ratingForAuthor(author._id.toString())
-      : { rating: null, reviewCount: 0 };
-  return {
-    id: comment._id.toString(),
-    postId: comment.post.toString(),
-    author: {
-      userId: author._id.toString(),
-      name: author.name,
-      role: author.role,
-      profilePhotoUrl: await photoForAuthor(author._id.toString()),
-    },
-    rating: rating.rating,
-    reviewCount: rating.reviewCount,
-    content: comment.content,
-    parentCommentId: comment.parentComment?.toString() ?? null,
-    createdAt: comment.createdAt.toISOString(),
-    updatedAt: comment.updatedAt.toISOString(),
-  };
-};
+const toCommentResponse = async (comment: IComment): Promise<CommentResponse> =>
+  (await toCommentResponses([comment]))[0];
 
 export const createComment = async (
   req: AuthenticatedRequest<CreateCommentBody>,
@@ -143,6 +152,9 @@ export const createComment = async (
     }
     const post = await Post.findById(postId).exec();
     if (!post) throw createCommentError("Post not found", 404);
+    if (await isBlockedEitherWay(userId, post.author.toString())) {
+      throw createCommentError("You can't comment on this post", 403);
+    }
     let parent: IComment | null = null;
     if (parentCommentId) {
       if (!Types.ObjectId.isValid(parentCommentId))
@@ -186,7 +198,7 @@ export const getCommentsForPost = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    getUserId(req);
+    const viewerId = getUserId(req);
     const { postId } = getParams(req);
     if (
       !postId ||
@@ -201,11 +213,17 @@ export const getCommentsForPost = async (
       .populate("author", "name role")
       .sort({ createdAt: 1, _id: 1 })
       .exec();
-    // A deleted account leaves no author; skip rather than fail the thread.
-    const comments = all.filter((comment) => comment.author);
+    // A deleted account leaves no author; people you've blocked (or who
+    // blocked you) are hidden. Either way the rest of the thread still loads.
+    const hidden = await blockedUserIds(viewerId);
+    const comments = all.filter(
+      (comment) =>
+        comment.author &&
+        !hidden.has((comment.author as unknown as CommentAuthor)._id.toString()),
+    );
 
     if (query.limit === undefined) {
-      res.json(await Promise.all(comments.map(toCommentResponse)));
+      res.json(await toCommentResponses(comments));
       return;
     }
     // ?limit=&offset= pages through top-level comments, each with all of its
@@ -230,7 +248,7 @@ export const getCommentsForPost = async (
     const roots = comments.filter((comment) => rootOf(comment._id.toString()) === comment._id.toString());
     const pageRoots = new Set(roots.slice(offset, offset + limit).map((comment) => comment._id.toString()));
     const page = comments.filter((comment) => pageRoots.has(rootOf(comment._id.toString())));
-    res.json(await Promise.all(page.map(toCommentResponse)));
+    res.json(await toCommentResponses(page));
   } catch (error: unknown) {
     next(error);
   }

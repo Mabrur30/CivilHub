@@ -5,8 +5,9 @@ import type { NavigateFunction } from "react-router-dom";
  * caller is on another page. Shared by the navbar and the footer so the two
  * cannot drift apart.
  *
- * The section ids this resolves ("home", "how-it-works", "for-engineers-clients",
- * "pricing", "testimonials") live on the landing sections themselves — renaming
+ * The section ids this resolves ("home", "how-it-works", "equipment",
+ * "features", "testimonials", "for-engineers-clients", "pricing",
+ * "get-started") live on the landing sections themselves — renaming
  * one there means renaming it in both link lists.
  */
 export function scrollToSection(
