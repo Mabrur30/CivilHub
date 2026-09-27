@@ -293,6 +293,8 @@ describe("Messaging and discovery", () => {
       company: { services: ["equipment"], teamSize: "11-50", yearFounded: 2012, phone: "" },
     });
     expect(profile.body.equipment).toHaveLength(1);
+    // Same shape as engineers and clients, so shared profile cards accept it.
+    expect(profile.body.bio).toBe(profile.body.company.about);
   });
 
   test("a client can invite a project company to bid, but not a rental-only one", async () => {

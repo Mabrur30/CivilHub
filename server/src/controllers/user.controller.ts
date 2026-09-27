@@ -292,6 +292,7 @@ const buildOrganisationPublicProfile = async (
     role: user.role,
     memberSince: user.createdAt.toISOString(),
     profilePhotoUrl: profile?.logoUrl ?? null,
+    bio: profile?.about ?? "",
     connectionsCount,
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
