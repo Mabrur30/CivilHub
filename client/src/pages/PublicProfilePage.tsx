@@ -18,16 +18,36 @@ import {
 } from "../components/dashboard/FeedPostCard";
 import { PostComposerModal } from "../components/dashboard/PostComposerModal";
 import { ClientProfileView } from "../components/profile/client/ClientProfileView";
+import { OrganisationProfileView } from "../components/profile/organisation/OrganisationProfileView";
+import {
+  type CompanyPublicProfile,
+  isCompanyPublicProfile,
+} from "../components/profile/organisation/organisationProfile";
 import {
   type ClientPublicProfile,
   hasClientProfileFields,
 } from "../components/profile/client/clientProfile";
 import { RatingBadge } from "../components/RatingBadge";
+import { DeliveredProjects } from "../components/profile/shared/DeliveredProjects";
+import { DisciplinePicker } from "../components/profile/shared/DisciplinePicker";
+import { ProfileEquipment } from "../components/profile/shared/ProfileEquipment";
+import { ProfileReviews } from "../components/profile/shared/ProfileReviews";
+import {
+  type CustomerReviewsResponse,
+  type ProfileListing,
+  type ProviderReviewsResponse,
+  formatMonthYear,
+  isCustomerReviewsResponse,
+  isProviderReviewsResponse,
+} from "../components/profile/shared/profileTypes";
 import { useAuth } from "../context/AuthContext";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
+import { dashboardBase } from "../lib/dashboardPaths";
+import { ProfileSafetyActions } from "../components/safety/ProfileSafetyActions";
+import { ImageLightbox } from "../components/dashboard/ImageLightbox";
 
 interface EngineerPortfolioItem {
   title: string;
@@ -39,6 +59,8 @@ interface EngineerPortfolioItem {
 interface EngineerCertificateItem {
   title: string;
   uploadedAt: string;
+  /** Anyone signed in can open it; CivilHub doesn't verify it yet. */
+  fileUrl?: string;
 }
 
 interface CompletedWorkItem {
@@ -47,7 +69,6 @@ interface CompletedWorkItem {
   category: string;
   location: string | null;
   completedAt: string;
-  contractValue: number | null;
 }
 
 interface EngineerEducationItem {
@@ -109,27 +130,6 @@ interface OwnEngineerData {
   portfolio: OwnEngineerPortfolioItem[];
 }
 
-interface EngineerReview {
-  id: string;
-  projectId: string;
-  client: {
-    id: string;
-    name: string;
-    profilePhotoUrl: string | null;
-  };
-  rating: number;
-  reviewText: string;
-  engineerReply: string | null;
-  engineerRepliedAt: string | null;
-  createdAt: string;
-}
-
-interface EngineerReviewsResponse {
-  reviews: EngineerReview[];
-  averageRating: number;
-  totalReviews: number;
-}
-
 type ConnectionStatus =
   | "not_connected"
   | "pending_sent"
@@ -139,13 +139,15 @@ type ConnectionStatus =
 interface BasePublicProfile {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   bio: string;
   rating: number | null;
   reviewCount: number;
   connectionStatus: ConnectionStatus;
   connectionId: string | null;
+  /** The viewer has blocked this person. */
+  blockedByMe?: boolean;
   connectionsCount: number;
 }
 
@@ -165,6 +167,11 @@ interface EngineerPublicProfile extends BasePublicProfile {
   portfolio: EngineerPortfolioItem[];
   certificates: EngineerCertificateItem[];
   completedWork: CompletedWorkItem[];
+  memberSince?: string;
+  disciplines?: string[];
+  equipment?: ProfileListing[];
+  /** Which reviews the headline rating comes from. */
+  ratingKind?: "project" | "equipment" | null;
 }
 
 type PublicProfile = EngineerPublicProfile | ClientPublicProfile;
@@ -226,7 +233,7 @@ const isBaseProfile = (value: unknown): value is BasePublicProfile => {
   return (
     typeof profile.userId === "string" &&
     typeof profile.name === "string" &&
-    (profile.role === "client" || profile.role === "engineer") &&
+    (profile.role === "client" || profile.role === "engineer" || profile.role === "organisation") &&
     (typeof profile.profilePhotoUrl === "string" ||
       profile.profilePhotoUrl === null) &&
     typeof profile.bio === "string" &&
@@ -269,7 +276,7 @@ const isCompletedWorkItem = (value: unknown): value is CompletedWorkItem => {
     typeof item.category === "string" &&
     (typeof item.location === "string" || item.location === null) &&
     typeof item.completedAt === "string" &&
-    (typeof item.contractValue === "number" || item.contractValue === null)
+    typeof item.completedAt === "string"
   );
 };
 
@@ -442,40 +449,6 @@ const isPortfolioResponse = (
   );
 };
 
-const isEngineerReview = (value: unknown): value is EngineerReview => {
-  if (typeof value !== "object" || value === null) return false;
-  const review = value as Record<string, unknown>;
-  const client = review.client as Record<string, unknown> | undefined;
-  return (
-    typeof review.id === "string" &&
-    typeof review.projectId === "string" &&
-    typeof client?.id === "string" &&
-    typeof client.name === "string" &&
-    (typeof client.profilePhotoUrl === "string" ||
-      client.profilePhotoUrl === null) &&
-    typeof review.rating === "number" &&
-    typeof review.reviewText === "string" &&
-    (typeof review.engineerReply === "string" ||
-      review.engineerReply === null) &&
-    (typeof review.engineerRepliedAt === "string" ||
-      review.engineerRepliedAt === null) &&
-    typeof review.createdAt === "string"
-  );
-};
-
-const isEngineerReviewsResponse = (
-  value: unknown,
-): value is EngineerReviewsResponse => {
-  if (typeof value !== "object" || value === null) return false;
-  const response = value as Record<string, unknown>;
-  return (
-    Array.isArray(response.reviews) &&
-    response.reviews.every(isEngineerReview) &&
-    typeof response.averageRating === "number" &&
-    typeof response.totalReviews === "number"
-  );
-};
-
 const isPublicProfile = (value: unknown): value is PublicProfile => {
   if (!isBaseProfile(value)) return false;
   const profile = value as unknown as Record<string, unknown>;
@@ -517,7 +490,7 @@ const isFeedAuthor = (value: unknown): value is FeedAuthor => {
   return (
     typeof author.userId === "string" &&
     typeof author.name === "string" &&
-    (author.role === "client" || author.role === "engineer") &&
+    (author.role === "client" || author.role === "engineer" || author.role === "organisation") &&
     (typeof author.profilePhotoUrl === "string" ||
       author.profilePhotoUrl === null) &&
     (typeof author.rating === "number" || author.rating === null) &&
@@ -668,6 +641,29 @@ const certificateIcon = (
   </svg>
 );
 
+const pinIcon = (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z" />
+    <circle cx="12" cy="9.5" r="2.5" />
+  </svg>
+);
+
+const calendarIcon = (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3.5" y="5" width="17" height="15" rx="2" />
+    <path d="M3.5 10h17M8 3v4M16 3v4" />
+  </svg>
+);
+
+const formatRateRange = (min: number | null, max: number | null): string =>
+  typeof min === "number" && typeof max === "number"
+    ? min === max
+      ? formatCurrency(min)
+      : `${formatCurrency(min)} to ${formatCurrency(max)}`
+    : typeof min === "number"
+      ? `From ${formatCurrency(min)}`
+      : `Up to ${formatCurrency(max ?? 0)}`;
+
 function DetailRow({
   icon,
   label,
@@ -692,16 +688,21 @@ export function PublicProfilePage(): ReactElement {
   const { currentUser, refetchUser } = useAuth();
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
+  // Company profiles have their own shape and view.
+  const [companyProfile, setCompanyProfile] =
+    useState<CompanyPublicProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
   const [actionError, setActionError] = useState<string>("");
   const [isActioning, setIsActioning] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
-  const [reviews, setReviews] = useState<EngineerReviewsResponse | null>(null);
+  // Reloads of the profile already on screen (after Connect, Accept, edits)
+  // happen quietly instead of flashing the whole-page skeleton.
+  const shownUserIdRef = useRef<string | null>(null);
+  const [reviews, setReviews] = useState<ProviderReviewsResponse | null>(null);
+  const [customerReviews, setCustomerReviews] =
+    useState<CustomerReviewsResponse | null>(null);
   const [reviewsError, setReviewsError] = useState<string>("");
-  const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState<string>("");
-  const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
   const [inviteProjects, setInviteProjects] = useState<InviteProjectView[]>([]);
   const [isInviteProjectsLoading, setIsInviteProjectsLoading] =
     useState<boolean>(false);
@@ -802,7 +803,7 @@ export function PublicProfilePage(): ReactElement {
         return;
       }
 
-      setIsLoading(true);
+      if (shownUserIdRef.current !== userId) setIsLoading(true);
       setError("");
       setActionError("");
 
@@ -815,12 +816,21 @@ export function PublicProfilePage(): ReactElement {
         );
         const body: unknown = await response.json();
 
+        if (response.ok && isCompanyPublicProfile(body)) {
+          setCompanyProfile(body);
+          setProfile(null);
+          shownUserIdRef.current = userId;
+          return;
+        }
+        setCompanyProfile(null);
+
         if (!response.ok || !isPublicProfile(body)) {
           setError(getErrorMessage(body));
           return;
         }
 
         setProfile(body);
+        shownUserIdRef.current = userId;
       } catch {
         setError("Unable to connect to CivilHub. Please try again.");
       } finally {
@@ -866,11 +876,22 @@ export function PublicProfilePage(): ReactElement {
     if (!profile || hasPlayedEntrance.current) return;
     hasPlayedEntrance.current = true;
     const frame = requestAnimationFrame(() => setIsEntranceVisible(true));
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      // If the profile updates again before the frame runs, let the next
+      // run schedule it; otherwise the page would stay invisible.
+      hasPlayedEntrance.current = false;
+    };
   }, [profile]);
 
+  // Whose page this is: an engineer or client (profile) or a company.
+  const subjectId = profile?.userId ?? companyProfile?.userId ?? null;
+  const subjectRole = profile?.role ?? companyProfile?.role ?? null;
+  const companyTakesProjects =
+    companyProfile?.company?.services.includes("projects") ?? false;
+
   useEffect(() => {
-    if (!profile || profile.role !== "engineer") {
+    if (!subjectId || (subjectRole !== "engineer" && subjectRole !== "organisation")) {
       setReviews(null);
       return;
     }
@@ -879,11 +900,11 @@ export function PublicProfilePage(): ReactElement {
       setReviewsError("");
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/engineers/${profile.userId}/reviews`,
+          `${API_BASE_URL}/api/engineers/${subjectId}/reviews`,
           { credentials: "include" },
         );
         const body: unknown = await response.json();
-        if (!response.ok || !isEngineerReviewsResponse(body)) {
+        if (!response.ok || !isProviderReviewsResponse(body)) {
           setReviewsError(getErrorMessage(body));
           return;
         }
@@ -894,10 +915,37 @@ export function PublicProfilePage(): ReactElement {
     };
 
     void loadReviews();
-  }, [profile]);
+  }, [subjectId, subjectRole, reloadKey]);
+
+  // What engineers and equipment owners said about this person as a customer.
+  useEffect(() => {
+    if (!subjectId) {
+      setCustomerReviews(null);
+      return;
+    }
+    let isActive = true;
+    const loadCustomerReviews = async (): Promise<void> => {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/users/${subjectId}/customer-reviews`,
+          { credentials: "include" },
+        );
+        const body: unknown = await response.json();
+        if (isActive && response.ok && isCustomerReviewsResponse(body)) {
+          setCustomerReviews(body);
+        }
+      } catch {
+        // The rest of the profile still shows; this section just stays empty.
+      }
+    };
+    void loadCustomerReviews();
+    return () => {
+      isActive = false;
+    };
+  }, [subjectId, reloadKey]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!subjectId) return;
 
     let isActive = true;
 
@@ -911,7 +959,7 @@ export function PublicProfilePage(): ReactElement {
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/users/${profile.userId}/posts?page=${postsPage}&limit=${PROFILE_POSTS_PAGE_LIMIT}`,
+          `${API_BASE_URL}/api/users/${subjectId}/posts?page=${postsPage}&limit=${PROFILE_POSTS_PAGE_LIMIT}`,
           { credentials: "include" },
         );
         const body: unknown = await response.json();
@@ -948,14 +996,17 @@ export function PublicProfilePage(): ReactElement {
     return () => {
       isActive = false;
     };
-  }, [currentUser?.id, currentUser?.role, postsPage, profile]);
+  }, [currentUser?.id, currentUser?.role, postsPage, subjectId]);
 
   useEffect(() => {
+    const canBeInvited =
+      subjectRole === "engineer" ||
+      (subjectRole === "organisation" && companyTakesProjects);
     if (
-      !profile ||
-      profile.role !== "engineer" ||
+      !subjectId ||
+      !canBeInvited ||
       currentUser?.role !== "client" ||
-      currentUser.id === profile.userId
+      currentUser.id === subjectId
     ) {
       setInviteProjects([]);
       setInviteError("");
@@ -968,7 +1019,7 @@ export function PublicProfilePage(): ReactElement {
       setInviteError("");
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/bid-invitations/client/engineers/${profile.userId}/projects`,
+          `${API_BASE_URL}/api/bid-invitations/client/engineers/${subjectId}/projects`,
           { credentials: "include" },
         );
         const body: unknown = await response.json();
@@ -990,7 +1041,7 @@ export function PublicProfilePage(): ReactElement {
     };
 
     void loadInviteProjects();
-  }, [currentUser?.id, currentUser?.role, profile, reloadKey]);
+  }, [companyTakesProjects, currentUser?.id, currentUser?.role, reloadKey, subjectId, subjectRole]);
 
   useEffect(() => {
     if (
@@ -1086,7 +1137,7 @@ export function PublicProfilePage(): ReactElement {
   };
 
   const sendBidInvitation = async (projectId: string): Promise<void> => {
-    if (!profile || profile.role !== "engineer") {
+    if (!subjectId) {
       return;
     }
 
@@ -1100,7 +1151,7 @@ export function PublicProfilePage(): ReactElement {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          engineerId: profile.userId,
+          engineerId: subjectId,
         }),
       });
       const body: unknown = await response.json();
@@ -1112,7 +1163,11 @@ export function PublicProfilePage(): ReactElement {
         return;
       }
 
-      setInviteSuccess("Invitation sent. Waiting for engineer response.");
+      setInviteSuccess(
+        subjectRole === "organisation"
+          ? "Invitation sent. Waiting for the company to respond."
+          : "Invitation sent. Waiting for the engineer to respond.",
+      );
       refreshProfile();
     } catch {
       setInviteError("Unable to connect to CivilHub. Please try again.");
@@ -1121,48 +1176,20 @@ export function PublicProfilePage(): ReactElement {
     }
   };
 
-  const submitReply = async (reviewId: string): Promise<void> => {
-    if (!replyText.trim()) return;
-    setIsSubmittingReply(true);
-    setReviewsError("");
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/reviews/${reviewId}/reply`,
-        {
-          method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reply: replyText.trim() }),
-        },
-      );
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setReviewsError(getErrorMessage(body));
-        return;
-      }
-      setReviews((current) =>
-        current
-          ? {
-              ...current,
-              reviews: current.reviews.map((review) =>
-                review.id === reviewId
-                  ? {
-                      ...review,
-                      engineerReply: replyText.trim(),
-                      engineerRepliedAt: new Date().toISOString(),
-                    }
-                  : review,
-              ),
-            }
-          : current,
-      );
-      setReplyText("");
-      setReplyingReviewId(null);
-    } catch {
-      setReviewsError("Unable to submit reply.");
-    } finally {
-      setIsSubmittingReply(false);
-    }
+  // ProfileReviews sends the reply; this keeps the loaded list in step.
+  const handleReplied = (reviewId: string, reply: string): void => {
+    setReviews((current) =>
+      current
+        ? {
+            ...current,
+            reviews: current.reviews.map((review) =>
+              review.id === reviewId
+                ? { ...review, engineerReply: reply, engineerRepliedAt: new Date().toISOString() }
+                : review,
+            ),
+          }
+        : current,
+    );
   };
 
   const handleAvatarChange = async (
@@ -1887,87 +1914,15 @@ export function PublicProfilePage(): ReactElement {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl animate-pulse rounded-2xl border border-white/10 bg-surface p-8">
+      <div>
+        <div className="animate-pulse rounded-2xl border border-white/10 bg-surface p-8">
           <div className="h-6 w-1/3 rounded bg-white/10" />
           <div className="mt-4 h-4 w-1/4 rounded bg-white/10" />
           <div className="mt-8 h-40 rounded bg-white/10" />
         </div>
-      </main>
+      </div>
     );
   }
-
-  if (error || !profile) {
-    return (
-      <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-        <section className="mx-auto max-w-3xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-8 text-center">
-          <p className="text-sm text-rose-200">
-            {error || "Profile not found."}
-          </p>
-          <button
-            type="button"
-            onClick={() => refreshProfile()}
-            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-on-primary"
-          >
-            Try again
-          </button>
-        </section>
-      </main>
-    );
-  }
-
-  const isSelf = currentUser?.id === profile.userId;
-  const isEngineerProfile = profile.role === "engineer";
-  const engineerProfile = profile.role === "engineer" ? profile : null;
-  const isClientViewingEngineerProfile =
-    currentUser?.role === "client" && isEngineerProfile && !isSelf;
-  const composerFirstName = profile.name.trim().split(/\s+/)[0] || profile.name;
-  const rawBackState =
-    location.state && typeof location.state === "object"
-      ? (location.state as ProfileBackState)
-      : null;
-
-  const backDestination =
-    typeof rawBackState?.backTo === "string" && rawBackState.backTo.length > 0
-      ? rawBackState.backTo
-      : isSelf && currentUser?.role
-        ? `/dashboard/${currentUser.role}/overview`
-        : currentUser?.role === "client"
-          ? "/dashboard/client/network"
-          : currentUser?.role === "engineer"
-            ? "/dashboard/engineer/network"
-            : "/search/engineers";
-
-  const backLabel =
-    typeof rawBackState?.backLabel === "string" &&
-    rawBackState.backLabel.length > 0
-      ? rawBackState.backLabel
-      : isSelf
-        ? "Back to Overview"
-        : currentUser?.role === "client"
-          ? "Back to Engineer Directory"
-          : currentUser?.role === "engineer"
-            ? "Back to My Network"
-            : "Back to Engineer Directory";
-
-  const reviewBreakdown = [5, 4, 3, 2, 1].map((stars) => {
-    const count =
-      reviews?.reviews.filter((review) => review.rating === stars).length ?? 0;
-    const total = reviews?.totalReviews ?? 0;
-    const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-    return { stars, count, percent };
-  });
-
-  const entrance = (
-    order: number,
-  ): { className: string; style: CSSProperties } => ({
-    className: `transition-all duration-[350ms] ease-out ${
-      isEntranceVisible
-        ? "translate-y-0 opacity-100"
-        : "translate-y-2 opacity-0"
-    }`,
-    style: { transitionDelay: `${order * 80}ms` },
-  });
 
   const hasMorePosts = posts.length < postsTotal;
 
@@ -1979,29 +1934,11 @@ export function PublicProfilePage(): ReactElement {
     setPostsPage((current) => current + 1);
   };
 
-  const hasSelfDeclaredRateOrLocation =
-    engineerProfile !== null &&
-    (typeof engineerProfile.startingRateMin === "number" ||
-      typeof engineerProfile.startingRateMax === "number" ||
-      Boolean(engineerProfile.location));
-  const hasDerivedRateOrLocation =
-    engineerProfile !== null &&
-    (typeof engineerProfile.typicalRate === "number" ||
-      Boolean(engineerProfile.derivedLocation));
-
-  const hasAboutSection =
-    isEngineerProfile && (Boolean(profile.bio.trim()) || isSelf);
-  const hasRateLocationSection =
-    isEngineerProfile &&
-    (hasSelfDeclaredRateOrLocation || hasDerivedRateOrLocation || isSelf);
-  const hasExperienceSection =
-    isEngineerProfile &&
-    ((engineerProfile?.experience.length ?? 0) > 0 || isSelf);
-  const hasEducationSection =
-    isEngineerProfile &&
-    ((engineerProfile?.education.length ?? 0) > 0 || isSelf);
-
-  const renderPostsSection = (showComposer: boolean): ReactElement => (
+  // The posts list, shared by engineer, client and company pages.
+  const renderPostsSection = (
+    showComposer: boolean,
+    author: { name: string; photoUrl: string | null; role: "client" | "engineer" | "organisation" },
+  ): ReactElement => (
     <article className="space-y-4 rounded-2xl border border-white/10 bg-surface p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-heading text-2xl font-bold text-white">Posts</h2>
@@ -2015,8 +1952,8 @@ export function PublicProfilePage(): ReactElement {
           <div className="w-full rounded-2xl border border-white/10 bg-void/40 p-4 transition-colors duration-200 hover:border-primary/30">
             <div className="flex items-center gap-3">
               <Avatar
-                name={profile.name}
-                photoUrl={profile.profilePhotoUrl}
+                name={author.name}
+                photoUrl={author.photoUrl}
                 size="sm"
               />
               <button
@@ -2024,16 +1961,16 @@ export function PublicProfilePage(): ReactElement {
                 onClick={() => setIsComposerOpen(true)}
                 className="w-full rounded-full border border-white/20 bg-void/60 px-4 py-2.5 text-left text-sm font-semibold text-white/50 transition-colors duration-200 hover:border-primary hover:text-white/70"
               >
-                What's on your mind, {composerFirstName}?
+                What's on your mind, {author.name.trim().split(/\s+/)[0] || author.name}?
               </button>
             </div>
           </div>
           <PostComposerModal
             isOpen={isComposerOpen}
             onClose={() => setIsComposerOpen(false)}
-            authorName={profile.name}
-            authorPhotoUrl={profile.profilePhotoUrl}
-            authorRole={profile.role}
+            authorName={author.name}
+            authorPhotoUrl={author.photoUrl}
+            authorRole={author.role}
             content={content}
             onContentChange={(value) => {
               setContent(value);
@@ -2111,224 +2048,10 @@ export function PublicProfilePage(): ReactElement {
     </article>
   );
 
-  const portfolioCount = isSelf
-    ? (ownEngineerData?.portfolio.length ?? 0)
-    : isEngineerProfile
-      ? profile.portfolio.length
-      : 0;
-  const certificateCount = isSelf
-    ? (ownEngineerData?.certificates.length ?? 0)
-    : isEngineerProfile
-      ? profile.certificates.length
-      : 0;
 
-  const engineerPortfolioItems: Array<
-    OwnEngineerPortfolioItem | EngineerPortfolioItem
-  > = engineerProfile
-    ? isSelf
-      ? (ownEngineerData?.portfolio ?? [])
-      : engineerProfile.portfolio
-    : [];
-  const engineerCertificateItems: Array<
-    OwnEngineerCertificate | EngineerCertificateItem
-  > = engineerProfile
-    ? isSelf
-      ? (ownEngineerData?.certificates ?? [])
-      : engineerProfile.certificates
-    : [];
-
-  return (
-    <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <BackButton to={backDestination} label={backLabel} className="mb-5" />
-
-        {profile.role === "client" ? (
-          <ClientProfileView
-            key={profile.userId}
-            profile={profile}
-            isSelf={isSelf}
-            viewerRole={currentUser?.role ?? null}
-            connection={{
-              isActioning,
-              onConnect: () => void sendRequest(),
-              onRespond: (decision) => void respondRequest(decision),
-            }}
-            actionError={actionError}
-            onProfileChange={(update) =>
-              setProfile((current) =>
-                current?.role === "client" ? update(current) : current,
-              )
-            }
-            onPhotoChanged={refetchUser}
-            posts={postsTotal > 0 ? renderPostsSection(false) : null}
-          />
-        ) : (
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-            <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
-              <div
-                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.22)] ${entrance(0).className}`}
-                style={entrance(0).style}
-              >
-                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-sky-400/40 to-emerald-300/35" />
-                <div className="p-5 pt-0">
-                  <div className="-mt-10">
-                    <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
-                      <Avatar
-                        name={profile.name}
-                        photoUrl={profile.profilePhotoUrl}
-                        size="lg"
-                      />
-                      {isSelf && isEngineerProfile ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => avatarInputRef.current?.click()}
-                            disabled={isUploadingAvatar}
-                            aria-label="Change profile photo"
-                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-snow backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
-                              isUploadingAvatar
-                                ? "opacity-100"
-                                : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
-                            }`}
-                          >
-                            {isUploadingAvatar ? (
-                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                            ) : (
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                aria-hidden="true"
-                              >
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
-                            )}
-                          </button>
-                          <input
-                            ref={avatarInputRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={(event) => void handleAvatarChange(event)}
-                            className="sr-only"
-                          />
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="mt-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h1 className="font-heading text-2xl font-bold text-white">
-                        {profile.name}
-                      </h1>
-                      {isEngineerProfile &&
-                      reviews &&
-                      reviews.totalReviews > 0 ? (
-                        <span className="inline-flex items-center">
-                          <RatingBadge
-                            rating={reviews.averageRating}
-                            reviewCount={reviews.totalReviews}
-                            size="sm"
-                          />
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
-                      {profile.role}
-                    </span>
-                  </div>
-
-                  <div className="mt-4">
-                    {isEditingBio ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={bioDraft}
-                          onChange={(event) => {
-                            setBioDraft(event.target.value.slice(0, 500));
-                            setBioSaveError("");
-                          }}
-                          maxLength={500}
-                          rows={4}
-                          className="form-input"
-                          placeholder="Add a short introduction for your public profile"
-                        />
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-xs text-white/45">
-                            {bioDraft.length}/500
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void saveBio()}
-                            disabled={isSavingBio}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {isSavingBio ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditingBio}
-                            className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                        {bioSaveError ? (
-                          <p className="text-xs text-rose-300" role="alert">
-                            {bioSaveError}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="flex-1 text-sm leading-6 text-white/65">
-                          {profile.bio.trim() ||
-                            "This user has not added a bio yet."}
-                        </p>
-                        {isSelf ? (
-                          <button
-                            type="button"
-                            onClick={startEditingBio}
-                            aria-label="Edit bio"
-                            className="shrink-0 text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
-                    <DetailRow
-                      icon={usersIcon}
-                      label="Connections"
-                      value={profile.connectionsCount}
-                    />
-                    <DetailRow
-                      icon={briefcaseIcon}
-                      label="Portfolio items"
-                      value={portfolioCount}
-                    />
-                    <DetailRow
-                      icon={certificateIcon}
-                      label="Certificates"
-                      value={certificateCount}
-                    />
-                  </div>
-
-                  {!isSelf ? (
-                    isClientViewingEngineerProfile ? (
-                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
-                        <Link
-                          to={`/messages/${profile.userId}`}
-                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary"
-                        >
-                          Message
-                        </Link>
-
+  // "Invite to bid" for a client looking at an engineer or a company.
+  const renderInvitePanel = (): ReactElement => (
+    <div className="space-y-3">
                         <div className="rounded-xl border border-white/10 bg-void/40 p-3">
                           <h3 className="text-sm font-semibold text-white">
                             Invite to Bid
@@ -2425,6 +2148,424 @@ export function PublicProfilePage(): ReactElement {
                             {inviteError}
                           </p>
                         ) : null}
+    </div>
+  );
+
+  const renderReviewsSection = (
+    customerLabel: string,
+    emptyText: string,
+  ): ReactElement => (
+    <ProfileReviews
+      providerReviews={reviews}
+      customerReviews={customerReviews}
+      customerLabel={customerLabel}
+      isLoading={
+        subjectRole !== "client" && reviews === null && !reviewsError
+      }
+      error={reviewsError}
+      canReply={currentUser?.id === subjectId}
+      onReplied={handleReplied}
+      emptyText={emptyText}
+    />
+  );
+
+  if (companyProfile && !error) {
+    const companyBackState =
+      location.state && typeof location.state === "object"
+        ? (location.state as ProfileBackState)
+        : null;
+    return (
+      <div>
+        <div>
+          <BackButton
+            to={
+              typeof companyBackState?.backTo === "string" &&
+              companyBackState.backTo
+                ? companyBackState.backTo
+                : dashboardBase(currentUser?.role)
+            }
+            label={
+              typeof companyBackState?.backLabel === "string" &&
+              companyBackState.backLabel
+                ? companyBackState.backLabel
+                : "Back to dashboard"
+            }
+            className="mb-5"
+          />
+          <OrganisationProfileView
+            key={companyProfile.userId}
+            profile={companyProfile}
+            isSelf={currentUser?.id === companyProfile.userId}
+            onChanged={refreshProfile}
+            reviewsSection={renderReviewsSection(
+              "As a renter",
+              "No reviews yet. They appear here after projects and rentals are finished.",
+            )}
+            postsSection={
+              postsTotal > 0 || currentUser?.id === companyProfile.userId
+                ? renderPostsSection(currentUser?.id === companyProfile.userId, {
+                    name: companyProfile.name,
+                    photoUrl: companyProfile.profilePhotoUrl,
+                    role: "organisation",
+                  })
+                : null
+            }
+            inviteSection={
+              currentUser?.role === "client" && companyTakesProjects ? (
+                <div className="rounded-2xl border border-white/10 bg-surface p-5">
+                  {renderInvitePanel()}
+                </div>
+              ) : null
+            }
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !profile) {
+    return (
+      <div>
+        <section className="mx-auto max-w-3xl rounded-2xl border border-rose-400/20 bg-rose-400/5 p-8 text-center">
+          <p className="text-sm text-rose-200">
+            {error || "Profile not found."}
+          </p>
+          <button
+            type="button"
+            onClick={() => refreshProfile()}
+            className="mt-5 rounded-full border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-on-primary"
+          >
+            Try again
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  const isSelf = currentUser?.id === profile.userId;
+  const isEngineerProfile = profile.role === "engineer";
+  const engineerProfile = profile.role === "engineer" ? profile : null;
+  const isClientViewingEngineerProfile =
+    currentUser?.role === "client" && isEngineerProfile && !isSelf;
+  const rawBackState =
+    location.state && typeof location.state === "object"
+      ? (location.state as ProfileBackState)
+      : null;
+
+  const backDestination =
+    typeof rawBackState?.backTo === "string" && rawBackState.backTo.length > 0
+      ? rawBackState.backTo
+      : isSelf && currentUser?.role
+        ? dashboardBase(currentUser.role)
+        : currentUser?.role
+          ? `${dashboardBase(currentUser.role)}/network`
+          : "/search/engineers";
+
+  const backLabel =
+    typeof rawBackState?.backLabel === "string" &&
+    rawBackState.backLabel.length > 0
+      ? rawBackState.backLabel
+      : isSelf
+        ? "Back to dashboard"
+        : currentUser?.role === "client"
+          ? "Back to Engineer Directory"
+          : currentUser?.role === "engineer"
+            ? "Back to My Network"
+            : "Back to Engineer Directory";
+
+  const entrance = (
+    order: number,
+  ): { className: string; style: CSSProperties } => ({
+    className: `transition-all duration-[350ms] ease-out ${
+      isEntranceVisible
+        ? "translate-y-0 opacity-100"
+        : "translate-y-2 opacity-0"
+    }`,
+    style: { transitionDelay: `${order * 80}ms` },
+  });
+
+  const hasSelfDeclaredRateOrLocation =
+    engineerProfile !== null &&
+    (typeof engineerProfile.startingRateMin === "number" ||
+      typeof engineerProfile.startingRateMax === "number" ||
+      Boolean(engineerProfile.location));
+  const hasDerivedRateOrLocation =
+    engineerProfile !== null &&
+    (typeof engineerProfile.typicalRate === "number" ||
+      Boolean(engineerProfile.derivedLocation));
+
+  const hasAboutSection =
+    isEngineerProfile && (Boolean(profile.bio.trim()) || isSelf);
+  const hasRateLocationSection =
+    isEngineerProfile &&
+    (hasSelfDeclaredRateOrLocation || hasDerivedRateOrLocation || isSelf);
+  const hasExperienceSection =
+    isEngineerProfile &&
+    ((engineerProfile?.experience.length ?? 0) > 0 || isSelf);
+  const hasEducationSection =
+    isEngineerProfile &&
+    ((engineerProfile?.education.length ?? 0) > 0 || isSelf);
+
+  const portfolioCount = isSelf
+    ? (ownEngineerData?.portfolio.length ?? 0)
+    : isEngineerProfile
+      ? profile.portfolio.length
+      : 0;
+  const certificateCount = isSelf
+    ? (ownEngineerData?.certificates.length ?? 0)
+    : isEngineerProfile
+      ? profile.certificates.length
+      : 0;
+
+  const engineerPortfolioItems: Array<
+    OwnEngineerPortfolioItem | EngineerPortfolioItem
+  > = engineerProfile
+    ? isSelf
+      ? (ownEngineerData?.portfolio ?? [])
+      : engineerProfile.portfolio
+    : [];
+  const engineerCertificateItems: Array<
+    OwnEngineerCertificate | EngineerCertificateItem
+  > = engineerProfile
+    ? isSelf
+      ? (ownEngineerData?.certificates ?? [])
+      : engineerProfile.certificates
+    : [];
+
+  return (
+    <div>
+      <div>
+        <BackButton to={backDestination} label={backLabel} className="mb-5" />
+
+        {profile.role === "client" ? (
+          <ClientProfileView
+            key={profile.userId}
+            profile={profile}
+            isSelf={isSelf}
+            viewerRole={currentUser?.role ?? null}
+            actionError={actionError}
+            onProfileChange={(update) =>
+              setProfile((current) =>
+                current?.role === "client" ? update(current) : current,
+              )
+            }
+            onPhotoChanged={refetchUser}
+            posts={
+              postsTotal > 0
+                ? renderPostsSection(false, {
+                    name: profile.name,
+                    photoUrl: profile.profilePhotoUrl,
+                    role: profile.role,
+                  })
+                : null
+            }
+            reviews={
+              (customerReviews?.totalReviews ?? 0) > 0
+                ? renderReviewsSection("From engineers and owners", "")
+                : null
+            }
+          />
+        ) : (
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
+              <div
+                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-sm ${entrance(0).className}`}
+                style={entrance(0).style}
+              >
+                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-primary/35 to-primary/10" />
+                <div className="p-5 pt-0">
+                  <div className="-mt-10">
+                    <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
+                      <Avatar
+                        name={profile.name}
+                        photoUrl={profile.profilePhotoUrl}
+                        size="lg"
+                      />
+                      {isSelf && isEngineerProfile ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => avatarInputRef.current?.click()}
+                            disabled={isUploadingAvatar}
+                            aria-label="Change profile photo"
+                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-snow backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
+                              isUploadingAvatar
+                                ? "opacity-100"
+                                : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
+                            }`}
+                          >
+                            {isUploadingAvatar ? (
+                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                            ) : (
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                aria-hidden="true"
+                              >
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            )}
+                          </button>
+                          <input
+                            ref={avatarInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(event) => void handleAvatarChange(event)}
+                            className="sr-only"
+                          />
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h1 className="font-heading text-2xl font-bold text-white">
+                        {profile.name}
+                      </h1>
+                      {isEngineerProfile && profile.reviewCount > 0 ? (
+                        <span className="inline-flex items-center">
+                          <RatingBadge
+                            rating={profile.rating}
+                            reviewCount={profile.reviewCount}
+                            size="sm"
+                          />
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
+                      {profile.role}
+                    </span>
+                    {engineerProfile ? (
+                      <DisciplinePicker
+                        key={(engineerProfile.disciplines ?? []).join("|")}
+                        disciplines={engineerProfile.disciplines ?? []}
+                        isOwner={isSelf}
+                        onSaved={refreshProfile}
+                      />
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4">
+                    {isEditingBio ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={bioDraft}
+                          onChange={(event) => {
+                            setBioDraft(event.target.value.slice(0, 500));
+                            setBioSaveError("");
+                          }}
+                          maxLength={500}
+                          rows={4}
+                          className="form-input"
+                          placeholder="Add a short introduction for your public profile"
+                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xs text-white/45">
+                            {bioDraft.length}/500
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void saveBio()}
+                            disabled={isSavingBio}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            {isSavingBio ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditingBio}
+                            className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        {bioSaveError ? (
+                          <p className="text-xs text-rose-300" role="alert">
+                            {bioSaveError}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="flex-1 text-sm leading-6 text-white/65">
+                          {profile.bio.trim() ||
+                            "This user has not added a bio yet."}
+                        </p>
+                        {isSelf ? (
+                          <button
+                            type="button"
+                            onClick={startEditingBio}
+                            aria-label="Edit bio"
+                            className="shrink-0 text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
+                    {engineerProfile?.location ? (
+                      <DetailRow
+                        icon={pinIcon}
+                        label="Based in"
+                        value={engineerProfile.location}
+                      />
+                    ) : null}
+                    {engineerProfile &&
+                    (typeof engineerProfile.startingRateMin === "number" ||
+                      typeof engineerProfile.startingRateMax === "number") ? (
+                      <DetailRow
+                        icon={briefcaseIcon}
+                        label="Starting rate"
+                        value={formatRateRange(
+                          engineerProfile.startingRateMin,
+                          engineerProfile.startingRateMax,
+                        )}
+                      />
+                    ) : null}
+                    {engineerProfile?.memberSince ? (
+                      <DetailRow
+                        icon={calendarIcon}
+                        label="On CivilHub since"
+                        value={formatMonthYear(engineerProfile.memberSince)}
+                      />
+                    ) : null}
+                    <DetailRow
+                      icon={usersIcon}
+                      label="Connections"
+                      value={profile.connectionsCount}
+                    />
+                    <DetailRow
+                      icon={briefcaseIcon}
+                      label="Portfolio items"
+                      value={portfolioCount}
+                    />
+                    <DetailRow
+                      icon={certificateIcon}
+                      label="Certificates"
+                      value={certificateCount}
+                    />
+                  </div>
+
+                  {/* Nothing to connect or message while you've blocked them. */}
+                  {!isSelf && !profile.blockedByMe ? (
+                    isClientViewingEngineerProfile ? (
+                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                        <Link
+                          to={`/messages/${profile.userId}`}
+                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary"
+                        >
+                          Message
+                        </Link>
+
+                        {renderInvitePanel()}
                       </div>
                     ) : (
                       <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
@@ -2472,13 +2613,24 @@ export function PublicProfilePage(): ReactElement {
                         {profile.connectionStatus === "connected" ? (
                           <Link
                             to={`/messages/${profile.userId}`}
-                            className="block w-full rounded-full border border-emerald-300/40 bg-emerald-300/10 px-4 py-2.5 text-center text-sm font-semibold text-emerald-200 transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-300/20"
+                            className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-on-primary"
                           >
                             Message
                           </Link>
                         ) : null}
                       </div>
                     )
+                  ) : null}
+
+                  {!isSelf ? (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <ProfileSafetyActions
+                        userId={profile.userId}
+                        name={profile.name}
+                        blockedByMe={Boolean(profile.blockedByMe)}
+                        onChanged={refreshProfile}
+                      />
+                    </div>
                   ) : null}
 
                   {avatarError ? (
@@ -3028,6 +3180,23 @@ export function PublicProfilePage(): ReactElement {
                     </article>
                   ) : null}
 
+                  {engineerProfile &&
+                  (engineerProfile.completedWork.length > 0 || isSelf) ? (
+                    <DeliveredProjects
+                      projects={engineerProfile.completedWork}
+                      headingId="engineer-work"
+                      emptyText="Projects you finish on CivilHub appear here."
+                    />
+                  ) : null}
+
+                  {engineerProfile && (engineerProfile.equipment ?? []).length > 0 ? (
+                    <ProfileEquipment
+                      listings={engineerProfile.equipment ?? []}
+                      headingId="engineer-equipment"
+                      emptyText=""
+                    />
+                  ) : null}
+
                   {engineerPortfolioItems.length > 0 || isSelf ? (
                     <article className="rounded-2xl border border-white/10 bg-surface p-6">
                       <div className="flex items-center justify-between gap-3">
@@ -3260,8 +3429,13 @@ export function PublicProfilePage(): ReactElement {
                             ref={certificateFileInputRef}
                             type="file"
                             accept="image/jpeg,image/png,image/webp,application/pdf"
+                            aria-describedby="certificate-visibility"
                             className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-on-primary"
                           />
+                          <p id="certificate-visibility" className="text-xs text-white/45">
+                            Signed-in CivilHub users can open this file to check it,
+                            so leave out anything you wouldn't share.
+                          </p>
                           <div className="flex items-center gap-3">
                             <button
                               type="submit"
@@ -3290,166 +3464,14 @@ export function PublicProfilePage(): ReactElement {
                     </article>
                   ) : null}
 
-                  {(reviews?.reviews.length ?? 0) > 0 || isSelf ? (
-                    <article
-                      id="engineer-reviews"
-                      className="rounded-2xl border border-white/10 bg-surface p-6"
-                    >
-                      <div className="flex items-end justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                            Client perspectives
-                          </p>
-                          <h2 className="mt-1 font-heading text-2xl font-bold text-white">
-                            Reviews
-                          </h2>
-                        </div>
-                        {reviews && reviews.totalReviews > 0 ? (
-                          <span className="text-sm font-semibold text-amber-300">
-                            {reviews.averageRating.toFixed(1)} ★
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {reviewsError ? (
-                        <p className="mt-4 text-sm text-rose-200">
-                          {reviewsError}
-                        </p>
-                      ) : !reviews ? (
-                        <p className="mt-4 text-sm text-white/50">
-                          Loading reviews...
-                        </p>
-                      ) : reviews.reviews.length === 0 ? (
-                        <p className="mt-4 text-sm text-white/55">
-                          No reviews yet.
-                        </p>
-                      ) : (
-                        <div className="mt-5 space-y-4">
-                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                            <p className="text-xs font-semibold text-white/60">
-                              Rating breakdown
-                            </p>
-                            <div className="mt-3 space-y-2">
-                              {reviewBreakdown.map((row) => (
-                                <div
-                                  key={row.stars}
-                                  className="grid grid-cols-[30px_1fr_38px] items-center gap-2"
-                                >
-                                  <span className="text-xs text-white/65">
-                                    {row.stars}★
-                                  </span>
-                                  <div className="h-2 rounded-full bg-white/10">
-                                    <div
-                                      className="h-2 rounded-full bg-primary"
-                                      style={{ width: `${row.percent}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-right text-xs text-white/60">
-                                    {row.count}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {reviews.reviews.map((review) => (
-                            <div
-                              key={review.id}
-                              className="rounded-xl border border-white/10 bg-void/40 p-4"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                  <Avatar
-                                    name={review.client.name}
-                                    photoUrl={review.client.profilePhotoUrl}
-                                    size="sm"
-                                  />
-                                  <div>
-                                    <p className="text-sm font-semibold text-white">
-                                      {review.client.name}
-                                    </p>
-                                    <p className="text-xs text-white/40">
-                                      Client
-                                    </p>
-                                  </div>
-                                </div>
-                                <span className="text-sm tracking-wide text-amber-300">
-                                  {Array.from({ length: 5 }, (_, index) =>
-                                    index < review.rating ? "★" : "☆",
-                                  ).join("")}
-                                </span>
-                              </div>
-                              <p className="mt-4 text-sm leading-6 text-white/75">
-                                {review.reviewText}
-                              </p>
-                              {review.engineerReply ? (
-                                <div className="mt-4 border-l-2 border-primary/50 pl-4">
-                                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-                                    Engineer reply
-                                  </p>
-                                  <p className="mt-1 text-sm leading-6 text-white/65">
-                                    {review.engineerReply}
-                                  </p>
-                                </div>
-                              ) : isSelf && currentUser?.role === "engineer" ? (
-                                <div className="mt-4">
-                                  {replyingReviewId === review.id ? (
-                                    <>
-                                      <textarea
-                                        value={replyText}
-                                        onChange={(event) =>
-                                          setReplyText(
-                                            event.target.value.slice(0, 500),
-                                          )
-                                        }
-                                        maxLength={500}
-                                        rows={3}
-                                        placeholder="Write a thoughtful reply..."
-                                        className="w-full rounded-lg border border-white/15 bg-void/60 px-3 py-2 text-sm text-white placeholder-white/35 outline-none focus:border-primary/60"
-                                      />
-                                      <div className="mt-2 flex justify-end gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setReplyingReviewId(null)
-                                          }
-                                          className="rounded-lg px-3 py-2 text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            void submitReply(review.id)
-                                          }
-                                          disabled={isSubmittingReply}
-                                          className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-50"
-                                        >
-                                          {isSubmittingReply
-                                            ? "Sending..."
-                                            : "Send reply"}
-                                        </button>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setReplyingReviewId(review.id)
-                                      }
-                                      className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                                    >
-                                      Reply
-                                    </button>
-                                  )}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  ) : null}
+                  <div id="engineer-reviews">
+                    {renderReviewsSection(
+                      "As a renter",
+                      isSelf
+                        ? "Reviews from clients and renters appear here once work is finished."
+                        : "No reviews yet.",
+                    )}
+                  </div>
 
                   <div
                     className={entrance(3).className}
@@ -3457,6 +3479,11 @@ export function PublicProfilePage(): ReactElement {
                   >
                     {renderPostsSection(
                       isSelf && currentUser?.role === "engineer",
+                      {
+                        name: profile.name,
+                        photoUrl: profile.profilePhotoUrl,
+                        role: profile.role,
+                      },
                     )}
                   </div>
                 </>
@@ -3467,21 +3494,11 @@ export function PublicProfilePage(): ReactElement {
       </div>
 
       {lightboxImageUrl ? (
-        <div className="fixed inset-0 z-90 flex items-center justify-center bg-black/80 p-4">
-          <button
-            type="button"
-            onClick={() => setLightboxImageUrl(null)}
-            className="absolute right-5 top-5 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/80 transition-colors duration-200 hover:border-primary hover:text-white"
-          >
-            Close
-          </button>
-          <img
-            src={lightboxImageUrl}
-            alt="Expanded post attachment"
-            className="max-h-[90vh] w-auto max-w-[95vw] rounded-xl border border-white/10"
-          />
-        </div>
+        <ImageLightbox
+          imageUrl={lightboxImageUrl}
+          onClose={() => setLightboxImageUrl(null)}
+        />
       ) : null}
-    </main>
+    </div>
   );
 }

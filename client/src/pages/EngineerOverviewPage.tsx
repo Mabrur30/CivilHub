@@ -20,11 +20,13 @@ import {
 } from "../components/dashboard/ui/buttonStyles";
 import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { SpecialityPrompt } from "../components/dashboard/SpecialityPrompt";
 import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { countOf } from "../lib/format";
 import { isProjectProgress, type ProjectProgress } from "../lib/projectProgress";
 import { getGreeting } from "../lib/greeting";
+import { useDashboardBase } from "../lib/dashboardPaths";
 
 interface EngineerOverview {
   activeProjects: number;
@@ -35,7 +37,6 @@ interface EngineerOverview {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
-const MARKETPLACE_ROUTE = "/dashboard/engineer/marketplace";
 const ACTIVITY_SKELETON_ROWS = 4;
 
 const activityFilterTabs: { key: ActivityCategory; label: string }[] = [
@@ -93,14 +94,14 @@ const getSummary = (overview: EngineerOverview | null): string => {
     : "Nothing needs your attention right now.";
 };
 
-const getStats = (overview: EngineerOverview): BandStat[] => [
+const getStats = (overview: EngineerOverview, base: string): BandStat[] => [
   {
     label: "Active projects",
     value: overview.activeProjects,
     route:
       overview.activeProjects === 0
-        ? MARKETPLACE_ROUTE
-        : "/dashboard/engineer/projects",
+        ? `${base}/marketplace`
+        : `${base}/projects`,
     detail:
       overview.activeProjects === 0
         ? "Browse the marketplace for open briefs"
@@ -109,7 +110,7 @@ const getStats = (overview: EngineerOverview): BandStat[] => [
   {
     label: "Pending bids",
     value: overview.pendingBids,
-    route: "/dashboard/engineer/bids",
+    route: `${base}/bids`,
     detail:
       overview.pendingBids === 0 ? "No bids pending" : "Awaiting client review",
   },
@@ -125,7 +126,7 @@ const getStats = (overview: EngineerOverview): BandStat[] => [
   {
     label: "Milestones ahead",
     value: overview.upcomingMilestones,
-    route: "/dashboard/engineer/projects",
+    route: `${base}/projects`,
     detail:
       overview.upcomingMilestones === 0
         ? "No upcoming deadlines"
@@ -163,6 +164,7 @@ export function EngineerOverviewPage(): ReactElement {
   const [projectsRetryKey, setProjectsRetryKey] = useState<number>(0);
   const [activityFilter, setActivityFilter] = useState<ActivityCategory>("all");
   const { currentUser } = useAuth();
+  const base = useDashboardBase();
 
   useEffect(() => {
     const loadOverview = async (): Promise<void> => {
@@ -238,12 +240,14 @@ export function EngineerOverviewPage(): ReactElement {
         title={`${getGreeting(new Date())}, ${firstName}.`}
         summary={getSummary(isLoading ? null : overview)}
         action={
-          <Link to={MARKETPLACE_ROUTE} className={primaryButtonClassName}>
+          <Link to={`${base}/marketplace`} className={primaryButtonClassName}>
             <MagnifyingGlassIcon className="h-4 w-4" aria-hidden="true" />
             Find projects
           </Link>
         }
       />
+
+      <SpecialityPrompt />
 
       {error ? (
         <ErrorPanel
@@ -252,7 +256,7 @@ export function EngineerOverviewPage(): ReactElement {
         />
       ) : (
         <StatBand
-          stats={overview ? getStats(overview) : []}
+          stats={overview ? getStats(overview, base) : []}
           isLoading={isLoading}
         />
       )}

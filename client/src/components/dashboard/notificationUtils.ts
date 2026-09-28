@@ -1,4 +1,6 @@
 import { equipmentPathsFor } from "./equipment/paths";
+import { type UserRole } from "../../context/AuthContext";
+import { dashboardBase } from "../../lib/dashboardPaths";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
@@ -12,6 +14,7 @@ export type NotificationType =
   | "equipment_deposit_released"
   | "equipment_deposit_claimed"
   | "connection_accepted"
+  | "connection_request"
   | "new_message"
   | "connection_post"
   | "post_liked"
@@ -26,7 +29,9 @@ export type NotificationType =
   | "review_reply"
   | "comment_received"
   | "post_reposted"
-  | "payment_refund_due";
+  | "payment_refund_due"
+  | "project_completed"
+  | "customer_review_received";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -40,6 +45,8 @@ export interface NotificationListItem {
   connectionId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** The post a like, comment, repost or new-post alert is about. */
+  postId?: string | null;
 }
 
 export interface NotificationListResponse {
@@ -63,6 +70,7 @@ const notificationTypes: NotificationType[] = [
   "equipment_deposit_released",
   "equipment_deposit_claimed",
   "connection_accepted",
+  "connection_request",
   "new_message",
   "connection_post",
   "post_liked",
@@ -78,6 +86,8 @@ const notificationTypes: NotificationType[] = [
   "comment_received",
   "post_reposted",
   "payment_refund_due",
+  "project_completed",
+  "customer_review_received",
 ];
 
 export const isNotificationType = (value: unknown): value is NotificationType =>
@@ -141,9 +151,9 @@ const activityColors: Record<string, string> = {
 export const mapNotificationTypeToActivityType = (
   type: NotificationType,
 ): string => {
-  if (type === "bid_accepted") return "success";
+  if (type === "bid_accepted" || type === "project_completed") return "success";
   if (type === "new_message") return "message";
-  if (type === "connection_accepted") return "milestone";
+  if (type === "connection_accepted" || type === "connection_request") return "milestone";
   if (type === "connection_post") return "review";
   if (type === "post_liked") return "bid";
   if (
@@ -186,11 +196,12 @@ export interface NotificationTargetRefs {
   bidId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  postId?: string | null;
 }
 
 export const getNotificationTargetPath = (
   notification: NotificationTargetRefs,
-  role: "client" | "engineer",
+  role: UserRole,
 ): string | null => {
   if (notification.type === "new_message" && notification.conversationId) {
     return `/messages/${notification.conversationId}`;
@@ -200,7 +211,8 @@ export const getNotificationTargetPath = (
   // the renter can view, inside the reader's own dashboard (clients rent too).
   if (
     notification.type.startsWith("equipment_") ||
-    (notification.type === "payment_refund_due" &&
+    ((notification.type === "payment_refund_due" ||
+      notification.type === "customer_review_received") &&
       notification.equipmentBookingId)
   ) {
     const equipment = equipmentPathsFor(role);
@@ -209,7 +221,7 @@ export const getNotificationTargetPath = (
     }
     if (notification.equipmentId) {
       return notification.type === "equipment_booking_request" &&
-        role === "engineer"
+        role !== "client"
         ? equipment.mine
         : equipment.bookings;
     }
@@ -227,21 +239,29 @@ export const getNotificationTargetPath = (
       notification.type === "full_payment_received" ||
       notification.type === "payment_refund_due" ||
       notification.type === "review_received" ||
-      notification.type === "review_reply") &&
+      notification.type === "review_reply" ||
+      notification.type === "project_completed" ||
+      notification.type === "customer_review_received") &&
     notification.projectId
   ) {
-    return `/dashboard/${role}/projects/${notification.projectId}`;
-  }
-
-  if (notification.type === "connection_accepted") {
-    return `/dashboard/${role}/network`;
+    return `${dashboardBase(role)}/projects/${notification.projectId}`;
   }
 
   if (
-    notification.type === "connection_post" ||
-    notification.type === "post_liked"
+    notification.type === "connection_accepted" ||
+    notification.type === "connection_request"
   ) {
-    return "/feed";
+    return `${dashboardBase(role)}/network`;
+  }
+
+  // Post alerts open the post itself; older ones without a post go to the feed.
+  if (
+    notification.type === "connection_post" ||
+    notification.type === "post_liked" ||
+    notification.type === "comment_received" ||
+    notification.type === "post_reposted"
+  ) {
+    return notification.postId ? `/posts/${notification.postId}` : "/feed";
   }
 
   return null;

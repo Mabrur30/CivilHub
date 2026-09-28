@@ -5,6 +5,7 @@ const GROUP_GAP_MS = 5 * 60 * 1000;
 
 export type ThreadItem =
   | { kind: "day"; key: string; label: string }
+  | { kind: "project"; key: string; title: string }
   | {
       kind: "group";
       key: string;
@@ -30,12 +31,19 @@ const dayLabel = (date: Date): string => {
   });
 };
 
-/** Splits a sorted thread into day dividers and runs of one sender's messages. */
+/**
+ * Splits a sorted thread into day dividers and runs of one sender's messages.
+ * When a pair talks about more than one project, a divider marks where the
+ * conversation moves to another project.
+ */
 export const groupMessages = (
   messages: OptimisticMessage[],
   currentUserId: string | undefined,
+  projectTitles: Map<string, string> = new Map(),
 ): ThreadItem[] => {
   const items: ThreadItem[] = [];
+  const markProjects = projectTitles.size > 1;
+  let lastProject: string | null = null;
   let lastDay = "";
   let current: Extract<ThreadItem, { kind: "group" }> | null = null;
   let lastTime = 0;
@@ -46,6 +54,19 @@ export const groupMessages = (
     if (key !== lastDay) {
       items.push({ kind: "day", key: `day-${key}`, label: dayLabel(date) });
       lastDay = key;
+      current = null;
+    }
+
+    const projectTitle = message.projectId
+      ? projectTitles.get(message.projectId)
+      : undefined;
+    if (markProjects && projectTitle && message.projectId !== lastProject) {
+      items.push({
+        kind: "project",
+        key: `project-${message.id}`,
+        title: projectTitle,
+      });
+      lastProject = message.projectId ?? null;
       current = null;
     }
 

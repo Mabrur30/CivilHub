@@ -5,15 +5,27 @@ import {
   useEffect,
   useState,
 } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { EnvelopeIcon, LockIcon, UserIcon } from "@phosphor-icons/react";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import {
+  BuildingsIcon,
+  CheckIcon,
+  EnvelopeIcon,
+  LockIcon,
+  UserIcon,
+} from "@phosphor-icons/react";
 import { AuthShell } from "../components/auth/AuthShell";
 import { GlassField } from "../components/auth/GlassField";
 import { GlassSubmitButton } from "../components/auth/GlassSubmitButton";
-import { useAuth } from "../context/AuthContext";
+import {
+  useAuth,
+  type CompanyService,
+  type UserRole,
+} from "../context/AuthContext";
+import { dashboardBase } from "../lib/dashboardPaths";
+import { SpecialityChooser } from "../components/profile/shared/SpecialityChooser";
 
 interface SignupPageProps {
-  role: "client" | "engineer";
+  role: UserRole;
 }
 
 interface SignupForm {
@@ -43,7 +55,26 @@ const getErrorMessage = (value: unknown): string => {
 const roleLabelMap: Record<SignupPageProps["role"], string> = {
   client: "Client",
   engineer: "Engineer",
+  organisation: "Company",
 };
+
+// What a company does decides which tools it gets; it can change this later.
+const companyServices: Array<{
+  value: CompanyService;
+  title: string;
+  hint: string;
+}> = [
+  {
+    value: "equipment",
+    title: "Rent out equipment",
+    hint: "List machines such as excavators, cranes and mixers for hire.",
+  },
+  {
+    value: "projects",
+    title: "Take on projects",
+    hint: "Bid on client projects and deliver them phase by phase.",
+  },
+];
 
 export function SignupPage({ role }: SignupPageProps): ReactElement {
   const [form, setForm] = useState<SignupForm>({
@@ -52,6 +83,8 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
     password: "",
     confirmPassword: "",
   });
+  const [services, setServices] = useState<CompanyService[]>([]);
+  const [disciplines, setDisciplines] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { refetchUser } = useAuth();
@@ -68,6 +101,19 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
     setForm((current) => ({ ...current, [name]: value }));
   };
 
+  const isCompany = role === "organisation";
+  // Engineers always have a speciality; a company only if it takes on projects.
+  const asksSpeciality =
+    role === "engineer" || (isCompany && services.includes("projects"));
+
+  const toggleService = (service: CompanyService): void => {
+    setServices((current) =>
+      current.includes(service)
+        ? current.filter((item) => item !== service)
+        : [...current, service],
+    );
+  };
+
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>,
   ): Promise<void> => {
@@ -76,6 +122,18 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
 
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match.");
+      return;
+    }
+    if (isCompany && services.length === 0) {
+      setError("Choose what your company does: rent out equipment, take on projects, or both.");
+      return;
+    }
+    if (asksSpeciality && disciplines.length === 0) {
+      setError(
+        isCompany
+          ? "Choose what your company specialises in."
+          : "Choose your main speciality.",
+      );
       return;
     }
 
@@ -90,6 +148,8 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
           email: form.email,
           password: form.password,
           role,
+          ...(isCompany ? { services } : {}),
+          ...(asksSpeciality ? { disciplines } : {}),
         }),
       });
       const body: unknown = await response.json();
@@ -100,7 +160,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
       }
 
       await refetchUser();
-      navigate(`/dashboard/${role}`);
+      navigate(dashboardBase(role));
     } catch {
       setError("Unable to connect to CivilHub. Please try again.");
     } finally {
@@ -123,18 +183,101 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
       <div className="mt-5 inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
         Signing up as: {roleLabelMap[role]}
       </div>
+      <p className="mt-3 text-sm text-white/55">
+        {isCompany ? (
+          <>
+            Signing up for yourself?{" "}
+            <Link to="/signup/engineer" className="font-semibold text-primary hover:underline">
+              Engineer
+            </Link>{" "}
+            or{" "}
+            <Link to="/signup/client" className="font-semibold text-primary hover:underline">
+              client
+            </Link>
+          </>
+        ) : (
+          <>
+            Signing up a firm or plant-hire company?{" "}
+            <Link to="/signup/company" className="font-semibold text-primary hover:underline">
+              Create a company account
+            </Link>
+          </>
+        )}
+      </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left">
         <GlassField
           id="fullName"
           name="fullName"
-          label="Full name"
-          icon={UserIcon}
+          label={isCompany ? "Company name" : "Full name"}
+          icon={isCompany ? BuildingsIcon : UserIcon}
           type="text"
           value={form.fullName}
           onChange={handleChange}
-          placeholder="Your name"
+          placeholder={isCompany ? "e.g. Rahman Plant Hire Ltd" : "Your name"}
         />
+
+        {isCompany ? (
+          <fieldset>
+            <legend className="mb-2 block text-sm font-semibold text-white/80">
+              What does your company do?
+            </legend>
+            <p className="mb-3 text-xs text-white/50">
+              Choose one or both. You can change this later in your company
+              profile.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {companyServices.map((service) => {
+                const isChosen = services.includes(service.value);
+                return (
+                  <label
+                    key={service.value}
+                    className={`glass-field flex cursor-pointer items-start gap-3 rounded-2xl p-4 transition-colors ${
+                      isChosen ? "ring-1 ring-primary" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={isChosen}
+                      onChange={() => toggleService(service.value)}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-glow ${
+                        isChosen
+                          ? "border-primary bg-primary text-on-primary"
+                          : "border-white/30"
+                      }`}
+                    >
+                      {isChosen ? <CheckIcon size={12} weight="bold" /> : null}
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold text-white">
+                        {service.title}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-white/55">
+                        {service.hint}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
+
+        {asksSpeciality ? (
+          <SpecialityChooser
+            value={disciplines}
+            onChange={(next) => {
+              setDisciplines(next);
+              setError("");
+            }}
+            legend={isCompany ? "What does your company specialise in?" : "What's your speciality?"}
+            hint="Pick your main speciality first, then up to 2 more. Clients find and filter engineers by these, and you can change them later."
+          />
+        ) : null}
 
         <GlassField
           id="email"
@@ -193,6 +336,10 @@ export function SignupRoute(): ReactElement {
 
   if (role === "engineer") {
     return <SignupPage role="engineer" />;
+  }
+
+  if (role === "company" || role === "organisation") {
+    return <SignupPage role="organisation" />;
   }
 
   return <Navigate to="/" replace />;

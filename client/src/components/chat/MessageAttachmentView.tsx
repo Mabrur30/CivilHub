@@ -6,6 +6,7 @@ import {
   FilePdfIcon,
   FileTextIcon,
   FileXlsIcon,
+  ImageIcon,
   WaveformIcon,
 } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
@@ -29,6 +30,9 @@ export const FileTypeIcon = ({
   mimeType: string;
   className: string;
 }): ReactElement => {
+  if (mimeType.startsWith("image/")) {
+    return <ImageIcon className={className} aria-hidden="true" />;
+  }
   if (mimeType === "application/pdf") {
     return <FilePdfIcon className={className} aria-hidden="true" />;
   }

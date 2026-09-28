@@ -21,6 +21,19 @@ export function DayDivider({ label }: { label: string }): ReactElement {
   );
 }
 
+/** Marks where the conversation turns to another project. */
+export function ProjectDivider({ title }: { title: string }): ReactElement {
+  return (
+    <div className="flex items-center gap-3 px-5 py-2" role="separator">
+      <span className="h-px flex-1 bg-white/10" />
+      <span className="max-w-[70%] truncate rounded-full bg-white/5 px-3 py-1 text-[11px] font-semibold text-white/60">
+        About {title}
+      </span>
+      <span className="h-px flex-1 bg-white/10" />
+    </div>
+  );
+}
+
 // Fiverr-style flat rows: one avatar and name per run, each message below it,
 // all left-aligned. Your own messages are marked by "Me", not by colour.
 export function MessageGroup({
@@ -70,6 +83,11 @@ export function MessageGroup({
                 {message.content ? (
                   <p className="max-w-[68ch] whitespace-pre-wrap break-words text-[15px] leading-relaxed text-white/85">
                     {message.content}
+                  </p>
+                ) : null}
+                {message.contactHidden ? (
+                  <p className="mt-0.5 text-[11px] text-white/45">
+                    Contact details are hidden until a hire.
                   </p>
                 ) : null}
                 {message.isPending ? (

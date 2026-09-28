@@ -49,6 +49,8 @@ interface NotificationFeedEntry {
   bidId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** The post the notification is about, for likes, comments and reposts. */
+  postId: string | null;
 }
 
 export interface ClientOverviewResponse {
@@ -305,6 +307,7 @@ export const getClientOverview = async (
         bidId: notification.bid?.toString() ?? null,
         conversationId: notification.conversation?.toString() ?? null,
         messageId: notification.messageRef?.toString() ?? null,
+        postId: notification.post?.toString() ?? null,
       })),
     });
   } catch (error: unknown) {

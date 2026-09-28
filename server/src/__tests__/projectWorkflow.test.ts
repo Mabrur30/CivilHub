@@ -13,6 +13,11 @@ import { type IUser, User } from "../models/User.model";
 import paymentsRouter from "../routes/payments.routes";
 import projectsRouter from "../routes/projects.routes";
 import {
+  backfillCompletedProjectStatuses,
+  syncProjectCompletionStatus,
+} from "../controllers/projectProgress.controller";
+import { uploadBuffer } from "../utils/cloudinaryUpload";
+import {
   installFakeGateway,
   payViaGateway,
   type FakeGateway,
@@ -20,6 +25,13 @@ import {
 } from "./helpers/fakeGateway";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
+
+// Deliverables would go to Cloudinary; the tests only need an upload result.
+jest.mock("../utils/cloudinaryUpload", () => ({
+  uploadBuffer: jest.fn(),
+  deleteCloudinaryAsset: jest.fn().mockResolvedValue(undefined),
+}));
+const uploadMock = uploadBuffer as jest.Mock;
 
 let memoryServer: MongoMemoryServer;
 let app: Express;
@@ -100,9 +112,28 @@ const payAdvance = (projectId: string) => pay({ purpose: "advance", projectId })
 const payPhase = (projectId: string, phaseId: string) =>
   pay({ purpose: "phase", projectId, phaseId });
 
+/** Hands the phase over for approval, with a note and any files. */
+const handOver = (
+  projectId: string,
+  phaseId: string,
+  note = "Work done, see the attached report",
+  files: Array<{ name: string; type: string }> = [],
+) => {
+  let req = asEngineer(
+    request(app).post(`/api/projects/${projectId}/phases/${phaseId}/submit`),
+  ).field("note", note);
+  for (const file of files) {
+    req = req.attach("files", Buffer.from("file body"), {
+      filename: file.name,
+      contentType: file.type,
+    });
+  }
+  return req;
+};
+
 const submitPhase = async (projectId: string, phaseId: string) => {
   expect((await setStatus(projectId, phaseId, "in_progress")).status).toBe(200);
-  expect((await setStatus(projectId, phaseId, "awaiting_approval")).status).toBe(200);
+  expect((await handOver(projectId, phaseId)).status).toBe(200);
 };
 
 const phaseStatus = async (phaseId: string) =>
@@ -138,6 +169,13 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  uploadMock.mockReset();
+  uploadMock.mockImplementation((_buffer: Buffer, options: { resource_type?: string }) =>
+    Promise.resolve({
+      secure_url: `https://res.cloudinary.com/demo/${options.resource_type ?? "image"}/upload/file-${uploadMock.mock.calls.length}`,
+      public_id: `civilhub/project-deliverables/file-${uploadMock.mock.calls.length}`,
+    }),
+  );
   await Promise.all([
     Notification.deleteMany({}),
     Payment.deleteMany({}),
@@ -339,7 +377,7 @@ describe("Phase status rules", () => {
     expect((await setStatus(id, phaseIds[0], "delayed")).status).toBe(200);
     expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(200);
     expect((await setStatus(id, phaseIds[0], "delayed")).status).toBe(200);
-    expect((await setStatus(id, phaseIds[0], "awaiting_approval")).status).toBe(200);
+    expect((await handOver(id, phaseIds[0])).status).toBe(200);
   });
 
   test("requesting changes sends the phase back with the note, and it can be resubmitted", async () => {
@@ -361,7 +399,7 @@ describe("Phase status rules", () => {
     expect(progress.body.phases[0].changeRequest.note).toBe("Soil report is missing");
     expect(await Payment.countDocuments({ project: id, type: "phase" })).toBe(0);
 
-    expect((await setStatus(id, phaseIds[0], "awaiting_approval")).status).toBe(200);
+    expect((await handOver(id, phaseIds[0], "Soil report added")).status).toBe(200);
     expectPaid(await payPhase(id, phaseIds[0]));
     const after = await asEngineer(request(app).get(`/api/projects/${id}/progress`));
     expect(after.body.phases[0].changeRequest).toBeNull();
@@ -478,5 +516,196 @@ describe("Phase plan feedback", () => {
       phases: [{ title: "Build", description: "All of it", price: 1000, estimatedDueDate: "next tuesday-ish", order: 0 }],
     });
     expect(response.status).toBe(400);
+  });
+});
+
+describe("Handing a phase over", () => {
+  let id: string;
+  let phaseIds: string[];
+
+  beforeEach(async () => {
+    const created = await createApprovedProject(
+      3000,
+      [
+        { title: "Survey", price: 1000 },
+        { title: "Build", price: 2000 },
+      ],
+      "phase_by_phase",
+    );
+    id = created.project._id.toString();
+    phaseIds = created.phaseIds;
+    expectPaid(await payAdvance(id));
+    expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(200);
+  });
+
+  test("submitting needs a handover note, not just a status change", async () => {
+    const patched = await setStatus(id, phaseIds[0], "awaiting_approval");
+    expect(patched.status).toBe(409);
+    expect(patched.body.message).toMatch(/handover note/);
+
+    const empty = await handOver(id, phaseIds[0], "   ");
+    expect(empty.status).toBe(400);
+    expect(await phaseStatus(phaseIds[0])).toBe("in_progress");
+  });
+
+  test("files are uploaded and shown to the client with the note", async () => {
+    const response = await handOver(id, phaseIds[0], "Survey drawings and site photos", [
+      { name: "site-plan.pdf", type: "application/pdf" },
+      { name: "north-wall.jpg", type: "image/jpeg" },
+    ]);
+    expect(response.status).toBe(200);
+    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(uploadMock.mock.calls[0][1]).toMatchObject({
+      folder: "civilhub/project-deliverables",
+      resource_type: "raw",
+      filename_override: "site-plan.pdf",
+    });
+    expect(uploadMock.mock.calls[1][1]).toMatchObject({ resource_type: "image" });
+
+    const progress = await asClient(request(app).get(`/api/projects/${id}/progress`));
+    const [submission] = progress.body.phases[0].submissions;
+    expect(progress.body.phases[0].status).toBe("awaiting_approval");
+    expect(submission.note).toBe("Survey drawings and site photos");
+    expect(submission.files).toEqual([
+      expect.objectContaining({ name: "site-plan.pdf", mimeType: "application/pdf", resourceType: "raw" }),
+      expect.objectContaining({ name: "north-wall.jpg", mimeType: "image/jpeg", resourceType: "image" }),
+    ]);
+    expect(submission.files[0]).not.toHaveProperty("publicId");
+
+    const notice = await Notification.findOne({ recipient: client._id, type: "project_phase_updated" })
+      .sort({ createdAt: -1 })
+      .exec();
+    expect(notice?.message).toMatch(/2 files attached/);
+  });
+
+  test("unsupported files and too many files are refused", async () => {
+    const zip = await handOver(id, phaseIds[0], "Everything", [{ name: "all.zip", type: "application/zip" }]);
+    expect(zip.status).toBe(400);
+
+    const six = await handOver(
+      id,
+      phaseIds[0],
+      "Everything",
+      Array.from({ length: 6 }, (_, index) => ({ name: `photo-${index}.png`, type: "image/png" })),
+    );
+    expect(six.status).toBe(400);
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(await phaseStatus(phaseIds[0])).toBe("in_progress");
+  });
+
+  test("a resubmission after a change request keeps the earlier handover", async () => {
+    expect((await handOver(id, phaseIds[0], "First pass")).status).toBe(200);
+    expect((await handOver(id, phaseIds[0], "Twice")).status).toBe(409);
+    await asClient(request(app).post(`/api/projects/${id}/phases/${phaseIds[0]}/request-changes`)).send({
+      note: "Soil report is missing",
+    });
+    expect((await handOver(id, phaseIds[0], "Soil report added")).status).toBe(200);
+
+    const progress = await asClient(request(app).get(`/api/projects/${id}/progress`));
+    expect(progress.body.phases[0].submissions.map((item: { note: string }) => item.note)).toEqual([
+      "First pass",
+      "Soil report added",
+    ]);
+  });
+
+  test("only the assigned engineer can hand a phase over", async () => {
+    const byClient = await asClient(
+      request(app).post(`/api/projects/${id}/phases/${phaseIds[0]}/submit`),
+    ).field("note", "Looks done");
+    expect(byClient.status).toBe(403);
+  });
+});
+
+describe("Finishing a project", () => {
+  const finishProject = async (): Promise<{ id: string; lastTranId: string }> => {
+    const { project, phaseIds } = await createApprovedProject(
+      3000,
+      [
+        { title: "Survey", price: 1000 },
+        { title: "Build", price: 2000 },
+      ],
+      "phase_by_phase",
+    );
+    const id = project._id.toString();
+    expectPaid(await payAdvance(id));
+    let lastTranId = "";
+    for (const phaseId of phaseIds) {
+      await submitPhase(id, phaseId);
+      const paid = await payPhase(id, phaseId);
+      expectPaid(paid);
+      lastTranId = paid.tranId;
+    }
+    return { id, lastTranId };
+  };
+
+  const completedNotices = (recipient: IUser) =>
+    Notification.countDocuments({ recipient: recipient._id, type: "project_completed" });
+
+  test("both sides hear once that the project is complete", async () => {
+    const { id } = await finishProject();
+    expect((await Project.findById(id).exec())?.status).toBe("completed");
+    expect(await completedNotices(client)).toBe(1);
+    expect(await completedNotices(engineer)).toBe(1);
+    const toClient = await Notification.findOne({ recipient: client._id, type: "project_completed" }).exec();
+    expect(toClient?.message).toMatch(/Leave a review for Tanvir Alam/);
+    const newest = await Notification.findOne({ recipient: engineer._id }).sort({ _id: -1 }).exec();
+    expect(newest?.type).toBe("project_completed");
+  });
+
+  test("two requests completing the project at once notify only once", async () => {
+    const { id } = await finishProject();
+    await Notification.deleteMany({});
+    await Project.updateOne({ _id: id }, { $set: { status: "in-progress" }, $unset: { completedAt: 1 } });
+
+    const [first, second] = await Promise.all([
+      Project.findById(id).exec(),
+      Project.findById(id).exec(),
+    ]);
+    await Promise.all([
+      syncProjectCompletionStatus(first as IProject, { notify: true }),
+      syncProjectCompletionStatus(second as IProject, { notify: true }),
+    ]);
+    expect(await completedNotices(client)).toBe(1);
+    expect(await completedNotices(engineer)).toBe(1);
+    expect((await Project.findById(id).exec())?.completedAt).toBeInstanceOf(Date);
+  });
+
+  test("the startup backfill completes old projects without notifying", async () => {
+    const { id } = await finishProject();
+    await Notification.deleteMany({});
+    await Project.updateOne({ _id: id }, { $set: { status: "in-progress" } });
+
+    await backfillCompletedProjectStatuses();
+    expect((await Project.findById(id).exec())?.status).toBe("completed");
+    expect(await Notification.countDocuments({ type: "project_completed" })).toBe(0);
+  });
+
+  test("the progress page carries the closing summary for both sides", async () => {
+    const { id } = await finishProject();
+    const asClientView = await asClient(request(app).get(`/api/projects/${id}/progress`));
+    expect(asClientView.body.completion).toMatchObject({
+      totalPaid: 3000,
+      phaseCount: 2,
+      review: null,
+    });
+    expect(asClientView.body.completion.startedAt).toEqual(expect.any(String));
+    expect(asClientView.body.provider).toMatchObject({ name: "Tanvir Alam", role: "engineer" });
+    expect(asClientView.body.client).toMatchObject({ name: "Nusrat Jahan", role: "client" });
+
+    const asEngineerView = await asEngineer(request(app).get(`/api/projects/${id}/progress`));
+    expect(asEngineerView.body.completion.totalPaid).toBe(3000);
+  });
+
+  test("an unfinished project has no closing summary", async () => {
+    const { project } = await createApprovedProject(1000, [{ title: "Survey", price: 1000 }], "phase_by_phase");
+    const progress = await asClient(request(app).get(`/api/projects/${project._id.toString()}/progress`));
+    expect(progress.body.completion).toBeNull();
+  });
+
+  test("the final payment's result says the project is complete", async () => {
+    const { lastTranId } = await finishProject();
+    const result = await asClient(request(app).get(`/api/payments/${lastTranId}`));
+    expect(result.status).toBe(200);
+    expect(result.body.projectCompleted).toBe(true);
   });
 });

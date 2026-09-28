@@ -1,5 +1,11 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
+/** A project the two participants have talked about, newest context last. */
+export interface ConversationProject {
+  project: Types.ObjectId;
+  addedAt: Date;
+}
+
 export interface IConversation extends Document {
   participants: [Types.ObjectId, Types.ObjectId];
   pairKey: string;
@@ -9,6 +15,7 @@ export interface IConversation extends Document {
   // listed, independently of the other participant.
   starredBy: Types.ObjectId[];
   archivedBy: Types.ObjectId[];
+  projects: ConversationProject[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +60,18 @@ const conversationSchema = new Schema<IConversation>(
     },
     archivedBy: {
       type: [{ type: Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
+    projects: {
+      type: [
+        new Schema<ConversationProject>(
+          {
+            project: { type: Schema.Types.ObjectId, ref: "Project", required: true },
+            addedAt: { type: Date, required: true, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
       default: [],
     },
   },

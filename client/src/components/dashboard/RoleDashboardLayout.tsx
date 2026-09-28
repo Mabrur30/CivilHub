@@ -7,7 +7,9 @@ import { EngineerDashboardLayout } from "./EngineerDashboardLayout";
 // sit inside the signed-in user's own dashboard shell.
 export function RoleDashboardLayout(): ReactElement {
   const { currentUser } = useAuth();
-  return currentUser?.role === "engineer" ? (
+  // Engineers and companies share the provider shell.
+  return currentUser?.role === "engineer" ||
+    currentUser?.role === "organisation" ? (
     <EngineerDashboardLayout />
   ) : (
     <ClientDashboardLayout />

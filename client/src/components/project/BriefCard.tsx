@@ -8,6 +8,8 @@ interface BriefCardProps {
   title: string;
   client: ReactNode;
   description: string;
+  /** The project type's key facts, e.g. "Apartment · 5 katha · 6 storeys". */
+  facts?: string;
   budget: string;
   location: string;
   timeline: string;
@@ -28,6 +30,7 @@ export function BriefCard({
   title,
   client,
   description,
+  facts,
   budget,
   location,
   timeline,
@@ -46,6 +49,9 @@ export function BriefCard({
         {title}
       </Title>
       <p className="mt-1 text-sm text-white/55">{client}</p>
+      {facts ? (
+        <p className="mt-3 text-sm font-semibold text-white/80">{facts}</p>
+      ) : null}
       <p className="mb-5 mt-3 line-clamp-4 whitespace-pre-line text-sm leading-6 text-white/60">
         {description}
       </p>

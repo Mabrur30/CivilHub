@@ -12,7 +12,7 @@ interface LoginForm {
 }
 
 interface LoginResponse {
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
 }
 
 interface ErrorResponse {
@@ -27,7 +27,7 @@ const isLoginResponse = (value: unknown): value is LoginResponse => {
   }
 
   const response = value as Record<string, unknown>;
-  return response.role === "client" || response.role === "engineer";
+  return response.role === "client" || response.role === "engineer" || response.role === "organisation";
 };
 
 const getErrorMessage = (value: unknown): string => {

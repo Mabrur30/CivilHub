@@ -15,6 +15,29 @@ export interface PhaseChangeRequest {
   requestedAt: Date;
 }
 
+/** A file handed over with a phase: a photo, drawing, report or spreadsheet. */
+export interface DeliverableFile {
+  url: string;
+  publicId: string;
+  resourceType: "image" | "raw";
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
+/**
+ * What the engineer handed over when they submitted the phase for approval.
+ * Each resubmission after a change request is added, so the history stays.
+ */
+export interface PhaseSubmission {
+  note: string;
+  files: DeliverableFile[];
+  submittedAt: Date;
+}
+
+export const SUBMISSION_NOTE_LIMIT = 1000;
+export const SUBMISSION_FILE_LIMIT = 5;
+
 export interface IProjectPhase extends Document {
   project: Types.ObjectId;
   name: string;
@@ -27,6 +50,7 @@ export interface IProjectPhase extends Document {
   paymentStatus: PaymentStatus;
   paidAt?: Date;
   changeRequest?: PhaseChangeRequest | null;
+  submissions: PhaseSubmission[];
   updatedAt: Date;
   createdAt: Date;
 }
@@ -98,6 +122,43 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
         { _id: false },
       ),
       default: null,
+    },
+    submissions: {
+      type: [
+        new Schema<PhaseSubmission>(
+          {
+            note: {
+              type: String,
+              required: true,
+              trim: true,
+              maxlength: SUBMISSION_NOTE_LIMIT,
+            },
+            files: {
+              type: [
+                new Schema<DeliverableFile>(
+                  {
+                    url: { type: String, required: true },
+                    publicId: { type: String, required: true },
+                    resourceType: {
+                      type: String,
+                      enum: ["image", "raw"],
+                      required: true,
+                    },
+                    name: { type: String, required: true, trim: true },
+                    mimeType: { type: String, required: true },
+                    size: { type: Number, required: true, min: 0 },
+                  },
+                  { _id: false },
+                ),
+              ],
+              default: [],
+            },
+            submittedAt: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
     },
   },
   { timestamps: true },

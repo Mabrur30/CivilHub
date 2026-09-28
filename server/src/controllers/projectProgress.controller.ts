@@ -5,13 +5,26 @@ import {
   Notification,
   type NotificationType,
 } from "../models/Notification.model";
-import { type IPayment, type PaymentType } from "../models/Payment.model";
+import { Payment, type IPayment, type PaymentType } from "../models/Payment.model";
 import { Project, type IProject } from "../models/Project.model";
 import {
   ProjectPhase,
+  SUBMISSION_FILE_LIMIT,
+  SUBMISSION_NOTE_LIMIT,
+  type DeliverableFile,
   type IProjectPhase,
+  type PhaseSubmission,
   type ProjectPhaseStatus,
 } from "../models/ProjectPhase.model";
+import { Review } from "../models/Review.model";
+import { CustomerReview } from "../models/CustomerReview.model";
+import {
+  toCustomerReviewViews,
+  type CustomerReviewView,
+} from "./customerReview.controller";
+import { User, type UserRole } from "../models/User.model";
+import { messageAttachmentTypes } from "../middleware/upload.middleware";
+import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
 import {
   getAdvanceAmount,
   getAmountsPaidByPhase,
@@ -24,6 +37,12 @@ import {
   payeeShareNote,
 } from "../services/payments";
 import { formatTaka } from "../utils/money";
+import { assertCanTakeProjects } from "../utils/roles";
+import {
+  toPrivateSite,
+  type PrivateSiteResponse,
+} from "../utils/projectSite";
+import { type ProjectRequirements } from "../utils/projectCriteria";
 
 interface ProjectProgressError extends Error {
   statusCode: number;
@@ -40,6 +59,52 @@ export interface UpdateProjectPhaseBody {
 
 export interface RequestPhaseChangesBody {
   note?: string;
+}
+
+export interface SubmitPhaseBody {
+  note?: string;
+}
+
+interface DeliverableFileResponse {
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  resourceType: DeliverableFile["resourceType"];
+}
+
+interface PhaseSubmissionResponse {
+  note: string;
+  files: DeliverableFileResponse[];
+  submittedAt: string;
+}
+
+interface ProjectReviewResponse {
+  id: string;
+  rating: number;
+  reviewText: string;
+  engineerReply: string | null;
+  engineerRepliedAt: string | null;
+  createdAt: string;
+}
+
+/** The closing record of a finished project. */
+interface ProjectCompletionResponse {
+  completedAt: string;
+  /** When work could begin: the advance payment. */
+  startedAt: string | null;
+  /** Everything the client paid, refunds due excluded. */
+  totalPaid: number;
+  phaseCount: number;
+  review: ProjectReviewResponse | null;
+  /** What the engineer or company said about the client, once written. */
+  customerReview: CustomerReviewView | null;
+}
+
+interface ProjectPartyResponse {
+  id: string;
+  name: string;
+  role: UserRole;
 }
 
 interface ProjectProgressPhaseResponse {
@@ -59,6 +124,8 @@ interface ProjectProgressPhaseResponse {
   /** What has actually been charged for this phase so far. */
   amountPaid: number;
   changeRequest: { note: string; requestedAt: string } | null;
+  /** What the engineer handed over each time they submitted, oldest first. */
+  submissions: PhaseSubmissionResponse[];
 }
 
 interface ProjectProgressResponse {
@@ -72,9 +139,19 @@ interface ProjectProgressResponse {
     progressPercentage: number;
     nextMilestone: string;
     nextMilestoneDueDate: string | null;
+    completedAt: string | null;
+    category: string | null;
+    description: string;
+    servicesNeeded: string[];
+    requirements: ProjectRequirements | null;
+    /** Exact site: this page is only ever shown to the client and hired engineer. */
+    site: PrivateSiteResponse | null;
   };
+  client: ProjectPartyResponse | null;
+  provider: ProjectPartyResponse | null;
   phases: ProjectProgressPhaseResponse[];
   canUpdate: boolean;
+  completion: ProjectCompletionResponse | null;
 }
 
 const validStatuses: ProjectPhaseStatus[] = [
@@ -93,16 +170,19 @@ const statusLabels: Record<ProjectPhaseStatus, string> = {
   delayed: "Delayed",
 };
 
-// The only moves an engineer can make. Completing a phase is the client's
-// decision (approve), and so is sending it back (request changes), so neither
-// appears here, and a completed phase can never be reopened.
+// The status moves an engineer can make directly. Completing a phase is the
+// client's decision (approve), and so is sending it back (request changes), so
+// neither appears here, and a completed phase can never be reopened.
+// Submitting for approval hands work over, so it goes through submitPhase.
 const engineerTransitions: Record<ProjectPhaseStatus, ProjectPhaseStatus[]> = {
   not_started: ["in_progress"],
-  in_progress: ["delayed", "awaiting_approval"],
-  delayed: ["in_progress", "awaiting_approval"],
+  in_progress: ["delayed"],
+  delayed: ["in_progress"],
   awaiting_approval: [],
   completed: [],
 };
+
+const submittableStatuses: ProjectPhaseStatus[] = ["in_progress", "delayed"];
 
 const CHANGE_NOTE_LIMIT = 500;
 
@@ -172,6 +252,20 @@ const getNextMilestone = (
   };
 };
 
+const toSubmissionResponse = (
+  submission: PhaseSubmission,
+): PhaseSubmissionResponse => ({
+  note: submission.note,
+  files: submission.files.map((file) => ({
+    url: file.url,
+    name: file.name,
+    mimeType: file.mimeType,
+    size: file.size,
+    resourceType: file.resourceType,
+  })),
+  submittedAt: submission.submittedAt.toISOString(),
+});
+
 const toPhaseResponse = (
   phase: IProjectPhase,
   amountsDue: Map<string, number>,
@@ -198,6 +292,7 @@ const toPhaseResponse = (
           requestedAt: phase.changeRequest.requestedAt.toISOString(),
         }
       : null,
+    submissions: (phase.submissions ?? []).map(toSubmissionResponse),
   };
 };
 
@@ -234,17 +329,77 @@ export const isProjectFullyComplete = async (
   return project.paymentPlan === "full_upfront" && project.fullPaymentPaid;
 };
 
+const notifyProjectCompleted = async (project: IProject): Promise<void> => {
+  const label = projectLabel(project, "Your project");
+  const [provider, phaseCount] = await Promise.all([
+    project.assignedEngineer
+      ? User.findById(project.assignedEngineer).select("name").exec()
+      : null,
+    ProjectPhase.countDocuments({ project: project._id }).exec(),
+  ]);
+
+  const notifications = [];
+  if (project.client) {
+    notifications.push({
+      recipient: project.client,
+      type: "project_completed" as const,
+      message: `${label} is complete. Leave a review for ${provider?.name ?? "your engineer"}.`,
+      project: project._id,
+    });
+  }
+  if (project.assignedEngineer) {
+    notifications.push({
+      recipient: project.assignedEngineer,
+      type: "project_completed" as const,
+      message:
+        phaseCount === 1
+          ? `${label} is complete. Its phase has been approved and paid.`
+          : phaseCount === 2
+            ? `${label} is complete. Both phases have been approved and paid.`
+            : `${label} is complete. All ${phaseCount} phases have been approved and paid.`,
+      project: project._id,
+    });
+  }
+  if (notifications.length > 0) {
+    await Notification.insertMany(notifications);
+  }
+};
+
+/**
+ * Marks the project completed once every phase is approved and paid for.
+ * The flip is a conditional update, so however many requests race here only
+ * one completes the project, and only that one sends the notifications.
+ */
 export const syncProjectCompletionStatus = async (
   project: IProject,
+  options: { notify?: boolean } = {},
 ): Promise<boolean> => {
   if (!(await isProjectFullyComplete(project))) {
     return false;
   }
+  if (project.status === "completed" && project.completedAt) {
+    return true;
+  }
 
-  if (project.status !== "completed" || !project.completedAt) {
-    project.status = "completed";
-    project.completedAt = project.completedAt ?? new Date();
-    await project.save();
+  const completedAt = project.completedAt ?? new Date();
+  const flipped = await Project.findOneAndUpdate(
+    { _id: project._id, status: { $ne: "completed" } },
+    { $set: { status: "completed", completedAt } },
+    { returnDocument: "after" },
+  ).exec();
+  if (!flipped) {
+    // Already completed, perhaps by a request a moment ago. Old records may
+    // lack the date.
+    await Project.updateOne(
+      { _id: project._id, completedAt: null },
+      { $set: { completedAt } },
+    ).exec();
+  }
+
+  project.status = "completed";
+  project.completedAt = flipped?.completedAt ?? project.completedAt ?? completedAt;
+  if (flipped && options.notify) {
+    await notifyProjectCompleted(flipped);
   }
   return true;
 };
@@ -263,7 +418,7 @@ const refreshProjectState = async (projectId: Types.ObjectId): Promise<void> => 
   const fresh = await Project.findById(projectId).exec();
   if (!fresh) return;
   await syncProjectProgressSnapshot(fresh);
-  await syncProjectCompletionStatus(fresh);
+  await syncProjectCompletionStatus(fresh, { notify: true });
 };
 
 const loadProjectForViewer = async (
@@ -345,6 +500,48 @@ const requireApprovedPlan = (project: IProject): void => {
   }
 };
 
+const getCompletion = async (
+  project: IProject,
+  phaseCount: number,
+): Promise<ProjectCompletionResponse | null> => {
+  if (project.status !== "completed") return null;
+
+  const [payments, review, customerReview] = await Promise.all([
+    Payment.find({ project: project._id, status: "paid", refundDue: { $ne: true } })
+      .select("amount")
+      .exec(),
+    Review.findOne({ project: project._id }).exec(),
+    project.assignedEngineer
+      ? CustomerReview.findOne({ project: project._id, author: project.assignedEngineer }).exec()
+      : null,
+  ]);
+  const totalPaid =
+    Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) /
+    100;
+
+  return {
+    completedAt: (project.completedAt ?? project.updatedAt).toISOString(),
+    startedAt: project.advancePaidAt ? project.advancePaidAt.toISOString() : null,
+    totalPaid,
+    phaseCount,
+    review: review
+      ? {
+          id: review._id.toString(),
+          rating: review.rating,
+          reviewText: review.reviewText,
+          engineerReply: review.engineerReply ?? null,
+          engineerRepliedAt: review.engineerRepliedAt
+            ? review.engineerRepliedAt.toISOString()
+            : null,
+          createdAt: review.createdAt.toISOString(),
+        }
+      : null,
+    customerReview: customerReview
+      ? ((await toCustomerReviewViews([customerReview]))[0] ?? null)
+      : null,
+  };
+};
+
 export const getProjectProgress = async (
   req: AuthenticatedRequest,
   res: Response<ProjectProgressResponse>,
@@ -352,12 +549,31 @@ export const getProjectProgress = async (
 ): Promise<void> => {
   try {
     const { project, canUpdate } = await loadProjectForViewer(req);
-    const phases = await ProjectPhase.find({ project: project._id })
-      .sort({ order: 1 })
-      .exec();
+    const [phases, amountsPaid, people] = await Promise.all([
+      ProjectPhase.find({ project: project._id }).sort({ order: 1 }).exec(),
+      getAmountsPaidByPhase(project._id),
+      User.find({
+        _id: {
+          $in: [project.client, project.assignedEngineer].filter(
+            (id): id is Types.ObjectId => Boolean(id),
+          ),
+        },
+      })
+        .select("name role")
+        .exec(),
+    ]);
     const amountsDue = getPhaseAmountsDue(project, phases);
-    const amountsPaid = await getAmountsPaidByPhase(project._id);
     const nextMilestone = getNextMilestone(phases);
+    const toParty = (
+      id: Types.ObjectId | null | undefined,
+    ): ProjectPartyResponse | null => {
+      const person = id
+        ? people.find((user) => user._id.toString() === id.toString())
+        : undefined;
+      return person
+        ? { id: person._id.toString(), name: person.name, role: person.role }
+        : null;
+    };
 
     res.status(200).json({
       project: {
@@ -374,11 +590,22 @@ export const getProjectProgress = async (
         nextMilestoneDueDate: nextMilestone.dueDate
           ? nextMilestone.dueDate.toISOString()
           : null,
+        completedAt: project.completedAt
+          ? project.completedAt.toISOString()
+          : null,
+        category: project.category ?? null,
+        description: project.description ?? "",
+        servicesNeeded: project.servicesNeeded ?? [],
+        requirements: project.requirements ?? null,
+        site: toPrivateSite(project.site),
       },
+      client: toParty(project.client),
+      provider: toParty(project.assignedEngineer),
       phases: phases.map((phase) =>
         toPhaseResponse(phase, amountsDue, amountsPaid),
       ),
       canUpdate,
+      completion: await getCompletion(project, phases.length),
     });
   } catch (error: unknown) {
     next(error);
@@ -390,8 +617,6 @@ const engineerUpdateMessages: Partial<
 > = {
   in_progress: (phase, project) => `Work on ${phase} has started for ${project}.`,
   delayed: (phase, project) => `${phase} is running late on ${project}.`,
-  awaiting_approval: (phase, project) =>
-    `${phase} is ready for your approval on ${project}.`,
 };
 
 export const updateProjectPhase = async (
@@ -400,9 +625,7 @@ export const updateProjectPhase = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    if (!req.user?.userId || req.user.role !== "engineer") {
-      throw createProjectProgressError("Engineer access required", 403);
-    }
+    await assertCanTakeProjects(req.user);
 
     const { project, canUpdate } = await loadProjectForViewer(req);
     if (!canUpdate) {
@@ -432,7 +655,9 @@ export const updateProjectPhase = async (
             ? `${phase.name} is waiting for the client to approve it or request changes`
             : status === "completed"
               ? "The client completes a phase by approving it. Submit it for approval instead"
-              : `${phase.name} can't move from ${statusLabels[from]} to ${statusLabels[status]}`;
+              : status === "awaiting_approval" && submittableStatuses.includes(from)
+                ? "Submit the phase with a handover note so the client can review it"
+                : `${phase.name} can't move from ${statusLabels[from]} to ${statusLabels[status]}`;
       throw createProjectProgressError(reason, 409);
     }
 
@@ -485,6 +710,154 @@ export const updateProjectPhase = async (
         recipient: project.client,
         type: "project_phase_updated",
         message: message(updated.name, projectLabel(project, "your project")),
+        project: project._id,
+      });
+    }
+
+    const phases = await ProjectPhase.find({ project: project._id }).exec();
+    res.status(200).json({
+      success: true,
+      phase: toPhaseResponse(
+        updated,
+        getPhaseAmountsDue(project, phases),
+        await getAmountsPaidByPhase(project._id),
+      ),
+    });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+// ============ Handing a phase over ============
+
+// Images stay images so they can be previewed; everything else is stored as a
+// raw file so it downloads unchanged, with its original name.
+const uploadDeliverable = async (
+  file: Express.Multer.File,
+): Promise<DeliverableFile> => {
+  const name = file.originalname.trim() || "file";
+  const mimeType = file.mimetype.split(";")[0].trim().toLowerCase();
+  const resourceType = mimeType.startsWith("image/") ? "image" : "raw";
+  const result = await uploadBuffer(file.buffer, {
+    folder: "civilhub/project-deliverables",
+    resource_type: resourceType,
+    ...(resourceType === "raw"
+      ? { use_filename: true, unique_filename: true, filename_override: name }
+      : {}),
+  });
+  return {
+    url: result.secure_url,
+    publicId: result.public_id,
+    resourceType,
+    name,
+    mimeType,
+    size: file.size,
+  };
+};
+
+const discardDeliverables = async (files: DeliverableFile[]): Promise<void> => {
+  await Promise.all(
+    files.map((file) =>
+      deleteCloudinaryAsset(file.publicId, file.resourceType).catch(() => undefined),
+    ),
+  );
+};
+
+/**
+ * Submits a phase for the client's approval with what the engineer is
+ * handing over: a note, and optionally drawings, photos or reports.
+ */
+export const submitPhase = async (
+  req: AuthenticatedRequest<SubmitPhaseBody>,
+  res: Response<{ success: true; phase: ProjectProgressPhaseResponse }>,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    await assertCanTakeProjects(req.user);
+
+    const { project, canUpdate } = await loadProjectForViewer(req);
+    if (!canUpdate) {
+      throw createProjectProgressError("Forbidden", 403);
+    }
+    requireApprovedPlan(project);
+    const phase = await loadPhase(req, project);
+    const from = phase.status;
+    if (!submittableStatuses.includes(from)) {
+      throw createProjectProgressError(
+        from === "awaiting_approval"
+          ? `${phase.name} is already waiting for the client's approval`
+          : from === "completed"
+            ? `${phase.name} is complete and can no longer change`
+            : `Start ${phase.name} before submitting it`,
+        409,
+      );
+    }
+
+    const note = typeof req.body.note === "string" ? req.body.note.trim() : "";
+    if (!note) {
+      throw createProjectProgressError(
+        "Describe what you're handing over so the client knows what to review",
+        400,
+      );
+    }
+    if (note.length > SUBMISSION_NOTE_LIMIT) {
+      throw createProjectProgressError(
+        `Keep the handover note to ${SUBMISSION_NOTE_LIMIT} characters or fewer`,
+        400,
+      );
+    }
+
+    const uploads = Array.isArray(req.files) ? req.files : [];
+    if (uploads.length > SUBMISSION_FILE_LIMIT) {
+      throw createProjectProgressError(
+        `Attach at most ${SUBMISSION_FILE_LIMIT} files`,
+        400,
+      );
+    }
+    const unsupported = uploads.find(
+      (file) =>
+        !messageAttachmentTypes.includes(
+          file.mimetype.split(";")[0].trim().toLowerCase(),
+        ),
+    );
+    if (unsupported) {
+      throw createProjectProgressError(
+        `${unsupported.originalname} isn't a supported file type`,
+        400,
+      );
+    }
+
+    const files = await Promise.all(uploads.map(uploadDeliverable));
+    const submission: PhaseSubmission = { note, files, submittedAt: new Date() };
+
+    // Conditional on the status we checked, so a double submit can't add two
+    // handovers or skip the client's decision.
+    const updated = await ProjectPhase.findOneAndUpdate(
+      { _id: phase._id, status: from },
+      { $set: { status: "awaiting_approval" }, $push: { submissions: submission } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!updated) {
+      await discardDeliverables(files);
+      throw createProjectProgressError(
+        "This phase was just updated. Refresh to see its current status.",
+        409,
+      );
+    }
+
+    await refreshProjectState(project._id);
+
+    if (project.client) {
+      const attached =
+        files.length === 0
+          ? ""
+          : files.length === 1
+            ? " 1 file attached."
+            : ` ${files.length} files attached.`;
+      await Notification.create({
+        recipient: project.client,
+        type: "project_phase_updated",
+        message: `${updated.name} is ready for your approval on ${projectLabel(project, "your project")}.${attached}`,
         project: project._id,
       });
     }
@@ -644,8 +1017,6 @@ export const approvePhase = async (
       await claimRemainingBalance(project._id, now);
     }
 
-    await refreshProjectState(project._id);
-
     if (project.assignedEngineer) {
       await Notification.create({
         recipient: project.assignedEngineer,
@@ -654,6 +1025,9 @@ export const approvePhase = async (
         project: project._id,
       });
     }
+
+    // After the approval notice, so "project complete" is the newest one.
+    await refreshProjectState(project._id);
 
     res.status(200).json({
       success: true,
@@ -925,8 +1299,6 @@ export const applyProjectPayment = async (
     }
   }
 
-  await refreshProjectState(project._id);
-
   if (applied && project.assignedEngineer) {
     await Notification.create({
       recipient: project.assignedEngineer,
@@ -935,5 +1307,8 @@ export const applyProjectPayment = async (
       project: project._id,
     });
   }
+
+  // After the payment notice, so "project complete" is the newest one.
+  await refreshProjectState(project._id);
   return applied;
 };

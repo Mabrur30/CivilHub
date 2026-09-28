@@ -39,7 +39,7 @@ const createAuthError = (message: string): AuthError => {
 };
 
 const isUserRole = (role: unknown): role is UserRole =>
-  role === "client" || role === "engineer";
+  role === "client" || role === "engineer" || role === "organisation";
 
 const isVerifiedJwtPayload = (
   payload: string | jwt.JwtPayload,
@@ -65,7 +65,13 @@ export const protect = (
       throw new Error("JWT_SECRET is not configured");
     }
 
-    const decoded = jwt.verify(token, secret);
+    let decoded: string | jwt.JwtPayload;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch {
+      // Expired or tampered cookies are a sign-in problem, not a server fault.
+      throw createAuthError("Your session has expired. Please sign in again.");
+    }
 
     if (!isVerifiedJwtPayload(decoded)) {
       throw createAuthError("Invalid authentication token");

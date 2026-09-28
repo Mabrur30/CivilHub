@@ -17,6 +17,11 @@ import { EquipmentBooking } from "../models/EquipmentBooking.model";
 import { Engineer } from "../models/Engineer.model";
 import { Review } from "../models/Review.model";
 import {
+  assertCanListEquipment,
+  canRentEquipment,
+  isProviderRole,
+} from "../utils/roles";
+import {
   listingPricingOf,
   type ListingPricing,
   validateListingPricing,
@@ -78,6 +83,8 @@ interface BrowseEquipmentQuery {
 interface OwnerSummary {
   userId: string;
   name: string;
+  /** Rented out by a company rather than an individual engineer. */
+  isCompany: boolean;
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
@@ -119,6 +126,7 @@ interface EquipmentBrowseResponse {
 interface PopulatedOwner {
   _id: Types.ObjectId;
   name: string;
+  role?: string;
 }
 
 interface RatingAggregateRow {
@@ -142,20 +150,19 @@ const createEquipmentError = (
   return error;
 };
 
+// Owners are engineers and companies. Managing existing listings needs only
+// that; creating a new one also needs a company to offer equipment rental.
 const requireEngineerUser = (req: AuthenticatedRequest): string => {
-  if (!req.user?.userId || req.user.role !== "engineer") {
-    throw createEquipmentError("Engineer access required", 403);
+  if (!req.user?.userId || !isProviderRole(req.user.role)) {
+    throw createEquipmentError("Engineer or company access required", 403);
   }
 
   return req.user.userId;
 };
 
-// Browsing and viewing are open to anyone who can rent: clients and engineers.
+// Browsing and viewing are open to anyone who can rent.
 const requireRenterUser = (req: AuthenticatedRequest): string => {
-  if (
-    !req.user?.userId ||
-    (req.user.role !== "engineer" && req.user.role !== "client")
-  ) {
+  if (!req.user?.userId || !canRentEquipment(req.user.role)) {
     throw createEquipmentError("Sign in to browse equipment", 403);
   }
   return req.user.userId;
@@ -421,6 +428,7 @@ const toOwnerSummary = (
   return {
     userId,
     name: owner.name,
+    isCompany: owner.role === "organisation",
     profilePhotoUrl: ownerPhotos.get(userId) ?? null,
     rating: ratingInfo?.rating ?? null,
     reviewCount: ratingInfo?.reviewCount ?? 0,
@@ -432,7 +440,7 @@ const toPopulatedOwner = (value: unknown): PopulatedOwner | null => {
     return null;
   }
 
-  const record = value as { _id?: unknown; name?: unknown };
+  const record = value as { _id?: unknown; name?: unknown; role?: unknown };
   if (
     !(record._id instanceof Types.ObjectId) ||
     typeof record.name !== "string"
@@ -443,6 +451,7 @@ const toPopulatedOwner = (value: unknown): PopulatedOwner | null => {
   return {
     _id: record._id,
     name: record.name,
+    role: typeof record.role === "string" ? record.role : undefined,
   };
 };
 
@@ -472,7 +481,7 @@ export const createEquipment = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const ownerId = requireEngineerUser(req);
+    const ownerId = await assertCanListEquipment(req.user);
     const files = Array.isArray(req.files) ? req.files : [];
 
     const title = req.body.title?.trim();
@@ -554,6 +563,7 @@ export const createEquipment = async (
     const ownerSummary: OwnerSummary = {
       userId: ownerId,
       name: "You",
+      isCompany: req.user.role === "organisation",
       profilePhotoUrl: null,
       rating: null,
       reviewCount: 0,
@@ -580,6 +590,7 @@ export const getMyEquipment = async (
     const ownerSummary: OwnerSummary = {
       userId: ownerId,
       name: "You",
+      isCompany: req.user.role === "organisation",
       profilePhotoUrl: null,
       rating: null,
       reviewCount: 0,
@@ -680,6 +691,7 @@ export const updateEquipment = async (
     const ownerSummary: OwnerSummary = {
       userId: ownerId,
       name: "You",
+      isCompany: req.user.role === "organisation",
       profilePhotoUrl: null,
       rating: null,
       reviewCount: 0,
@@ -783,7 +795,7 @@ export const browseEquipment = async (
 
     const [items, total] = await Promise.all([
       Equipment.find(filter)
-        .populate("owner", "name")
+        .populate("owner", "name role")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -858,7 +870,7 @@ export const getEquipmentById = async (
     }
 
     const equipment = await Equipment.findById(equipmentId)
-      .populate("owner", "name")
+      .populate("owner", "name role")
       .exec();
 
     if (!equipment) {

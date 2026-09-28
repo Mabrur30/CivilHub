@@ -1,6 +1,7 @@
-import { PlusIcon } from "@phosphor-icons/react";
+import { CheckCircleIcon, PlusIcon } from "@phosphor-icons/react";
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { MessageButton } from "../components/messages/MessageButton";
 import { BackButton } from "../components/BackButton";
 import {
   inputClassName,
@@ -18,14 +19,35 @@ import {
   type PhaseChangeRequest,
   PhaseActions,
 } from "../components/project/PhaseActions";
+import {
+  PhaseHandover,
+  type PhaseSubmission,
+} from "../components/project/PhaseDeliverables";
+import { CustomerReviewForm } from "../components/profile/shared/CustomerReviewForm";
+import { type CustomerReview } from "../components/profile/shared/profileTypes";
+import {
+  ProjectHandover,
+  type ProjectReview,
+  ProviderReviewCard,
+} from "../components/project/ProjectCloseout";
 import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency } from "../lib/format";
+import { postFormWithProgress } from "../lib/messageAttachments";
 import { moneyValue } from "../lib/money";
 import {
   formatRate,
   startCheckout,
   type CheckoutRequest,
 } from "../lib/payments";
+import { dashboardBase, isProviderRole } from "../lib/dashboardPaths";
+import { ProjectRequirementsList } from "../components/project/ProjectRequirementsList";
+import { SiteDetailsPanel } from "../components/project/SiteDetailsPanel";
+import {
+  type ProjectRequirements,
+  findCategory,
+  useProjectCriteria,
+} from "../lib/projectCriteria";
+import { type PrivateSite, type PublicSite, toSite } from "../lib/siteDetails";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -58,6 +80,8 @@ interface ProjectPhase {
   /** What has actually been charged for this phase. */
   amountPaid: number;
   changeRequest: PhaseChangeRequest | null;
+  /** What the engineer handed over each time they submitted, oldest first. */
+  submissions: PhaseSubmission[];
   updatedAt: string;
 }
 
@@ -116,9 +140,34 @@ interface ProjectProgressResponse {
     progressPercentage: number;
     nextMilestone: string;
     nextMilestoneDueDate: string | null;
+    completedAt: string | null;
+    category?: string | null;
+    requirements?: ProjectRequirements | null;
+    /** The exact site: only the client and hired engineer reach this page. */
+    site?: PublicSite | PrivateSite | null;
   };
+  client: ProjectParty | null;
+  provider: ProjectParty | null;
   phases: ProjectPhase[];
   canUpdate: boolean;
+  /** The closing record, once every phase is approved and paid. */
+  completion: ProjectCompletion | null;
+}
+
+interface ProjectParty {
+  id: string;
+  name: string;
+  role: string;
+}
+
+interface ProjectCompletion {
+  completedAt: string;
+  startedAt: string | null;
+  totalPaid: number;
+  phaseCount: number;
+  review: ProjectReview | null;
+  /** What the engineer or company said about the client. */
+  customerReview: CustomerReview | null;
 }
 
 interface ReviewSummary {
@@ -184,6 +233,30 @@ const formatDate = (value: string | null): string => {
     return value;
   }
   return date.toLocaleDateString();
+};
+
+const formatLongDate = (value: string | null): string => {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+};
+
+/** "3 weeks", "2 months": how long the work ran, from the advance to the end. */
+const formatDuration = (start: string | null, end: string): string => {
+  if (!start) return "Not recorded";
+  const days = Math.max(
+    1,
+    Math.round((new Date(end).getTime() - new Date(start).getTime()) / 864e5),
+  );
+  if (days < 14) return countOf(days, "day", "days");
+  if (days < 60) return countOf(Math.round(days / 7), "week", "weeks");
+  return countOf(Math.round(days / 30), "month", "months");
 };
 
 const StatusIcon = ({
@@ -282,6 +355,7 @@ const StatusIcon = ({
 export function ProjectProgressPage(): ReactElement {
   const { projectId } = useParams<{ projectId: string }>();
   const { currentUser } = useAuth();
+  const { spec } = useProjectCriteria();
 
   const [projectProgress, setProjectProgress] =
     useState<ProjectProgressResponse | null>(null);
@@ -328,12 +402,14 @@ export function ProjectProgressPage(): ReactElement {
   const [rejectFeedback, setRejectFeedback] = useState<string>("");
   const [isRejectingPlan, setIsRejectingPlan] = useState<boolean>(false);
 
-  const backPath = useMemo(() => {
-    if (currentUser?.role === "client") {
-      return "/dashboard/client/projects";
-    }
-    return "/dashboard/engineer/projects";
-  }, [currentUser?.role]);
+  const isCompleted = projectProgress?.project.status === "completed";
+  // A finished project leaves the Projects list for Project history, so the
+  // way back goes there.
+  const backPath = useMemo(
+    () =>
+      `${dashboardBase(currentUser?.role)}/${isCompleted ? "history" : "projects"}`,
+    [currentUser?.role, isCompleted],
+  );
 
   const loadData = async (): Promise<void> => {
     if (!projectId) {
@@ -367,8 +443,11 @@ export function ProjectProgressPage(): ReactElement {
         return;
       }
 
-      const progressData: unknown = await progressRes.json();
-      setProjectProgress(progressData as ProjectProgressResponse);
+      const progressData = (await progressRes.json()) as ProjectProgressResponse;
+      setProjectProgress({
+        ...progressData,
+        project: { ...progressData.project, site: toSite(progressData.project.site) },
+      });
 
       if (planRes.ok) {
         const planData = (await planRes.json()) as PhasePlan;
@@ -436,6 +515,33 @@ export function ProjectProgressPage(): ReactElement {
       setUpdateError("Unable to connect to CivilHub. Please try again.");
     } finally {
       setUpdatingPhaseId(null);
+    }
+  };
+
+  // Hands a phase over with a note and files. Returns an error message, or ""
+  // once it's sent.
+  const handleSubmitPhase = async (
+    phaseId: string,
+    note: string,
+    files: File[],
+    onProgress: (fraction: number) => void,
+  ): Promise<string> => {
+    if (!projectId) return "Project ID is missing.";
+    const formData = new FormData();
+    formData.append("note", note);
+    for (const file of files) formData.append("files", file);
+    setUpdateError("");
+    try {
+      const result = await postFormWithProgress(
+        `${API_BASE_URL}/api/projects/${projectId}/phases/${phaseId}/submit`,
+        formData,
+        onProgress,
+      );
+      if (!result.ok) return getErrorMessage(result.body);
+      await loadData();
+      return "";
+    } catch {
+      return "Unable to connect to CivilHub. Please try again.";
     }
   };
 
@@ -818,7 +924,7 @@ export function ProjectProgressPage(): ReactElement {
     projectProgress?.phases.filter((phase) => phase.status === "completed")
       .length ?? 0;
 
-  const isEngineerViewer = currentUser?.role === "engineer";
+  const isEngineerViewer = isProviderRole(currentUser?.role);
   const isClientViewer = currentUser?.role === "client";
   const totalPhases = projectProgress?.phases.length ?? 0;
   const phasePaymentsPaid =
@@ -848,6 +954,23 @@ export function ProjectProgressPage(): ReactElement {
   // One sentence saying where the project stands and whose move it is.
   const getHeaderSummary = (): string => {
     if (!phasePlan || !projectProgress) return "";
+    const completion = projectProgress.completion;
+    if (completion) {
+      const phases =
+        completion.phaseCount === 1
+          ? "Its phase was approved and paid."
+          : completion.phaseCount === 2
+            ? "Both phases were approved and paid."
+            : `All ${completion.phaseCount} phases were approved and paid.`;
+      const who = isClientViewer
+        ? projectProgress.provider
+          ? ` Delivered by ${projectProgress.provider.name}.`
+          : ""
+        : projectProgress.client
+          ? ` Delivered for ${projectProgress.client.name}.`
+          : "";
+      return `Completed on ${formatLongDate(completion.completedAt)}. ${phases}${who}`;
+    }
     switch (phasePlan.phasePlanStatus) {
       case "not_created":
       case "draft":
@@ -870,7 +993,10 @@ export function ProjectProgressPage(): ReactElement {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <BackButton to={backPath} label="Back to projects" />
+      <BackButton
+        to={backPath}
+        label={isCompleted ? "Back to project history" : "Back to projects"}
+      />
 
       {isLoading ? (
         <section className={`${panelClassName} animate-pulse p-8`} aria-label="Loading project">
@@ -882,12 +1008,76 @@ export function ProjectProgressPage(): ReactElement {
       ) : projectProgress && phasePlan ? (
         <>
           <header>
-            <h1 className="font-heading text-4xl font-bold text-white sm:text-5xl">
-              {projectProgress.project.name}
-            </h1>
-            <p className="mt-3 max-w-2xl text-white/60">{getHeaderSummary()}</p>
+            {projectProgress.completion ? (
+              <p className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-300/40 bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                <CheckCircleIcon className="h-4 w-4" weight="fill" aria-hidden="true" />
+                Completed
+              </p>
+            ) : null}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h1 className="font-heading text-4xl font-bold text-white sm:text-5xl">
+                  {projectProgress.project.name}
+                </h1>
+                <p className="mt-3 max-w-2xl text-white/60">{getHeaderSummary()}</p>
+              </div>
+              {(() => {
+                const otherParty = isClientViewer
+                  ? projectProgress.provider
+                  : projectProgress.client;
+                return otherParty ? (
+                  <MessageButton
+                    userId={otherParty.id}
+                    projectId={projectProgress.project.id}
+                    label={`Message ${otherParty.name.split(" ")[0]}`}
+                    size="page"
+                  />
+                ) : null;
+              })()}
+            </div>
           </header>
 
+          {projectProgress.completion ? (
+            <section
+              aria-label="Project summary"
+              className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-3"
+            >
+              <div className="bg-surface p-5 sm:p-6">
+                <p className="text-sm text-white/55">Completed on</p>
+                <p className="mt-2 font-heading text-2xl font-bold text-white">
+                  {formatLongDate(projectProgress.completion.completedAt)}
+                </p>
+                <p className="mt-1 text-xs text-white/45">
+                  {countOf(projectProgress.completion.phaseCount, "phase", "phases")} approved
+                </p>
+              </div>
+              <div className="bg-surface p-5 sm:p-6">
+                <p className="text-sm text-white/55">
+                  {isClientViewer ? "Total paid" : "Client paid"}
+                </p>
+                <p className="mt-2 font-heading text-2xl font-bold tabular-nums text-white">
+                  {formatCurrency(projectProgress.completion.totalPaid)}
+                </p>
+                <p className="mt-1 text-xs text-white/45">
+                  Agreed {formatCurrency(totalAgreedValue)}
+                </p>
+              </div>
+              <div className="bg-surface p-5 sm:p-6">
+                <p className="text-sm text-white/55">Duration</p>
+                <p className="mt-2 font-heading text-2xl font-bold text-white">
+                  {formatDuration(
+                    projectProgress.completion.startedAt,
+                    projectProgress.completion.completedAt,
+                  )}
+                </p>
+                <p className="mt-1 text-xs text-white/45">
+                  {projectProgress.completion.startedAt
+                    ? `From ${formatLongDate(projectProgress.completion.startedAt)}`
+                    : "Start date not recorded"}
+                </p>
+              </div>
+            </section>
+          ) : (
           <section
             aria-label="Project summary"
             className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-3"
@@ -924,6 +1114,12 @@ export function ProjectProgressPage(): ReactElement {
               </p>
             </div>
           </section>
+          )}
+
+          <ProjectSiteSection
+            project={projectProgress.project}
+            spec={spec}
+          />
 
           {isClientViewer && reviewEligibility?.canReview && (
             <section className={`${panelClassName} border-t-2 border-t-primary p-6 sm:p-8`}>
@@ -931,8 +1127,11 @@ export function ProjectProgressPage(): ReactElement {
                 How did the project go?
               </h2>
               <p className="mt-2 max-w-[60ch] text-sm leading-6 text-white/60">
-                Your review appears on the engineer's profile and helps other
-                clients choose.
+                Your review appears on{" "}
+                {projectProgress.provider
+                  ? `${projectProgress.provider.name}'s`
+                  : "the engineer's"}{" "}
+                profile and helps other clients choose.
               </p>
               <fieldset className="mt-5">
                 <legend className="text-sm font-semibold text-white/80">Rating</legend>
@@ -1014,6 +1213,66 @@ export function ProjectProgressPage(): ReactElement {
                 </p>
               </section>
             )}
+
+          {isEngineerViewer && projectProgress.completion ? (
+            <ProviderReviewCard
+              review={projectProgress.completion.review}
+              clientName={projectProgress.client?.name ?? "The client"}
+              onReplied={(review) =>
+                setProjectProgress((current) =>
+                  current?.completion
+                    ? { ...current, completion: { ...current.completion, review } }
+                    : current,
+                )
+              }
+            />
+          ) : null}
+
+          {isEngineerViewer && projectProgress.completion && projectId ? (
+            <CustomerReviewForm
+              target={{ projectId }}
+              subjectName={projectProgress.client?.name ?? "the client"}
+              subjectKind="client"
+              existing={projectProgress.completion.customerReview}
+              onSaved={(customerReview) =>
+                setProjectProgress((current) =>
+                  current?.completion
+                    ? { ...current, completion: { ...current.completion, customerReview } }
+                    : current,
+                )
+              }
+            />
+          ) : null}
+
+          {isClientViewer && projectProgress.completion?.customerReview ? (
+            <section className={`${panelClassName} p-6 sm:p-8`}>
+              <h2 className="font-heading text-2xl font-bold text-white">
+                {projectProgress.completion.customerReview.author.name} reviewed you
+              </h2>
+              <p
+                className="mt-3 flex gap-0.5 text-lg text-amber-300"
+                aria-label={`${projectProgress.completion.customerReview.rating} out of 5 stars`}
+              >
+                {Array.from({ length: 5 }, (_, index) => (
+                  <span
+                    key={index}
+                    aria-hidden="true"
+                    className={index < projectProgress.completion!.customerReview!.rating ? "" : "text-white/15"}
+                  >
+                    ★
+                  </span>
+                ))}
+              </p>
+              <p className="mt-3 max-w-[65ch] whitespace-pre-line text-sm leading-6 text-white/75">
+                {projectProgress.completion.customerReview.reviewText}
+              </p>
+              <p className="mt-3 text-xs text-white/40">Shown on your profile</p>
+            </section>
+          ) : null}
+
+          {projectProgress.completion ? (
+            <ProjectHandover phases={projectProgress.phases} />
+          ) : null}
 
           {isEngineerViewer &&
             (phasePlan.phasePlanStatus === "not_created" ||
@@ -1192,7 +1451,7 @@ export function ProjectProgressPage(): ReactElement {
                         <p className="text-xs text-white/45">Phase {index + 1}</p>
                         <h3 className="mt-0.5 font-semibold text-white">{phase.title}</h3>
                         {phase.description ? (
-                          <p className="mt-1 text-sm leading-6 text-white/60">{phase.description}</p>
+                          <p className="mt-1 whitespace-pre-line text-sm leading-6 text-white/60">{phase.description}</p>
                         ) : null}
                         <p className="mt-1 text-xs text-white/45">
                           Due {formatDate(phase.estimatedDueDate)}
@@ -1415,7 +1674,9 @@ export function ProjectProgressPage(): ReactElement {
                     Phase Progress
                   </h2>
                   <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs font-semibold text-white/60">
-                    {projectProgress.canUpdate
+                    {projectProgress.completion
+                      ? "All phases approved"
+                      : projectProgress.canUpdate
                       ? "You submit each phase"
                       : currentUser?.role === "client"
                         ? "You approve each phase"
@@ -1434,7 +1695,15 @@ export function ProjectProgressPage(): ReactElement {
                   <div
                     className="absolute left-[0.7rem] top-8 w-px bg-primary transition-[height] duration-500 sm:left-[1rem]"
                     style={{
-                      height: `${projectProgress.phases.length > 1 ? (completedPhaseCount / (projectProgress.phases.length - 1)) * 100 : completedPhaseCount > 0 ? 100 : 0}%`,
+                      // The grey track runs between the first and last dots
+                      // (4rem shorter than the list), so the fill must too.
+                      height: `calc((100% - 4rem) * ${
+                        projectProgress.phases.length > 1
+                          ? Math.min(1, completedPhaseCount / (projectProgress.phases.length - 1))
+                          : completedPhaseCount > 0
+                            ? 1
+                            : 0
+                      })`,
                     }}
                   />
                   {projectProgress.phases.map((phase, index) => {
@@ -1468,7 +1737,8 @@ export function ProjectProgressPage(): ReactElement {
                               {phase.name}
                             </h3>
                             {phase.description && (
-                              <p className="mt-1 text-xs text-white/60">
+                              <p className="mt-1.5 max-w-[65ch] whitespace-pre-line text-sm leading-6 text-white/65">
+                                <span className="sr-only">Scope: </span>
                                 {phase.description}
                               </p>
                             )}
@@ -1513,6 +1783,12 @@ export function ProjectProgressPage(): ReactElement {
                           />
                         ) : null}
 
+                        <PhaseHandover
+                          submissions={phase.submissions}
+                          phaseStatus={phase.status}
+                          viewer={viewer}
+                        />
+
                         <div className="mt-4 empty:hidden">
                           <PhaseActions
                             phase={phase}
@@ -1533,6 +1809,9 @@ export function ProjectProgressPage(): ReactElement {
                             onSetStatus={(status) =>
                               void handleUpdatePhase(phase.id, status)
                             }
+                            onSubmitPhase={(note, files, onProgress) =>
+                              handleSubmitPhase(phase.id, note, files, onProgress)
+                            }
                             onApprove={() => void handleApprovePhase(phase.id)}
                             onRequestChanges={(note) =>
                               handleRequestChanges(phase.id, note)
@@ -1545,7 +1824,46 @@ export function ProjectProgressPage(): ReactElement {
                 </div>
               </section>
             )}
+
         </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Where the site is and what the brief asked for, for the people on the job. */
+function ProjectSiteSection({
+  project,
+  spec,
+}: {
+  project: ProjectProgressResponse["project"];
+  spec: ReturnType<typeof useProjectCriteria>["spec"];
+}): ReactElement | null {
+  const criteria = findCategory(spec, project.category ?? "");
+  const requirements = project.requirements ?? null;
+  const hasRequirements =
+    criteria !== null && requirements !== null && Object.keys(requirements).length > 0;
+  if (!project.site && !hasRequirements) return null;
+
+  return (
+    <div className="grid items-start gap-6 lg:grid-cols-2">
+      {project.site ? (
+        <SiteDetailsPanel
+          site={project.site}
+          siteOptions={spec?.siteOptions}
+          headingId="project-site"
+        />
+      ) : null}
+      {hasRequirements ? (
+        <section
+          aria-labelledby="project-requirements"
+          className={`${panelClassName} grid gap-5 p-5 sm:p-6`}
+        >
+          <h2 id="project-requirements" className="font-heading text-2xl font-bold text-white">
+            {criteria.title} details
+          </h2>
+          <ProjectRequirementsList criteria={criteria} requirements={requirements} />
+        </section>
       ) : null}
     </div>
   );

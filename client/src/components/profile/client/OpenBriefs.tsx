@@ -14,6 +14,7 @@ import {
   secondaryButtonClassName,
 } from "../../dashboard/ui/buttonStyles";
 import { type BidStatus, type ClientOpenProject } from "./clientProfile";
+import { useDashboardBase } from "../../../lib/dashboardPaths";
 
 export type BriefViewer = "owner" | "engineer" | "other";
 
@@ -46,6 +47,7 @@ function BriefAction({
   project: ClientOpenProject;
   viewer: BriefViewer;
 }): ReactElement | null {
+  const base = useDashboardBase();
   if (viewer === "owner") {
     return project.bidCount === 0 ? null : (
       <Link to="/dashboard/client/bids" className={secondaryButtonClassName}>
@@ -69,7 +71,7 @@ function BriefAction({
 
   return (
     <Link
-      to={`/dashboard/engineer/marketplace?project=${encodeURIComponent(project.id)}`}
+      to={`${base}/marketplace?project=${encodeURIComponent(project.id)}`}
       className={primaryButtonClassName}
     >
       Submit bid

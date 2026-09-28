@@ -1,9 +1,16 @@
-import { Router } from "express";
+import {
+  Router,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import {
   createProject,
   getMyPostedProjects,
   getMyProjects,
   getOpenProjects,
+  getProjectBrief,
+  getProjectCriteria,
   type CreateProjectRequestBody,
   createPhasePlan,
   type CreatePhasePlanRequestBody,
@@ -22,12 +29,19 @@ import {
   approvePhase,
   requestPhaseChanges,
   type RequestPhaseChangesBody,
+  submitPhase,
+  type SubmitPhaseBody,
 } from "../controllers/projectProgress.controller";
 import { getMyProjectHistory } from "../controllers/projectHistory.controller";
 import {
   protect,
   type AuthenticatedRequest,
 } from "../middleware/auth.middleware";
+import {
+  handleUploadError,
+  phaseDeliverableUpload,
+} from "../middleware/upload.middleware";
+import { SUBMISSION_FILE_LIMIT } from "../models/ProjectPhase.model";
 
 const projectsRouter = Router();
 
@@ -36,6 +50,7 @@ projectsRouter.get("/history", protect, (req, res, next) =>
 );
 
 projectsRouter.get("/open", getOpenProjects);
+projectsRouter.get("/criteria", getProjectCriteria);
 projectsRouter.post("/", protect, (req, res, next) =>
   createProject(
     req as AuthenticatedRequest<CreateProjectRequestBody>,
@@ -49,6 +64,9 @@ projectsRouter.get("/my-projects", protect, (req, res, next) =>
 projectsRouter.get("/my-posted-projects", protect, (req, res, next) =>
   getMyPostedProjects(req as AuthenticatedRequest, res, next),
 );
+projectsRouter.get("/:projectId/brief", protect, (req, res, next) =>
+  getProjectBrief(req as AuthenticatedRequest, res, next),
+);
 projectsRouter.get("/:projectId/progress", protect, (req, res, next) =>
   getProjectProgress(req as AuthenticatedRequest, res, next),
 );
@@ -61,6 +79,16 @@ projectsRouter.patch("/:projectId/phases/:phaseId", protect, (req, res, next) =>
     res,
     next,
   ),
+);
+
+// The engineer submits a phase for approval with a handover note and files.
+projectsRouter.post(
+  "/:projectId/phases/:phaseId/submit",
+  protect,
+  phaseDeliverableUpload.array("files", SUBMISSION_FILE_LIMIT),
+  handleUploadError,
+  (req: Request, res: Response, next: NextFunction) =>
+    submitPhase(req as AuthenticatedRequest<SubmitPhaseBody>, res, next),
 );
 
 // Only the client completes a phase: approving it, or sending it back with a

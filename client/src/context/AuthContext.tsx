@@ -8,12 +8,25 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 
+/** Clients hire; engineers and organisations (companies) provide services. */
+export type UserRole = "client" | "engineer" | "organisation";
+
+/** What a company offers; decides which tools its dashboard shows. */
+export type CompanyService = "equipment" | "projects";
+
 export interface CurrentUser {
   id: string;
   name: string;
   email: string;
-  role: "client" | "engineer";
+  role: UserRole;
   profilePhotoUrl: string | null;
+  /** Companies only. */
+  services?: CompanyService[];
+  /**
+   * Engineers and companies: their chosen specialities, main one first. Empty
+   * means they haven't chosen yet and should be asked.
+   */
+  disciplines?: string[];
 }
 
 interface AuthContextValue {
@@ -42,7 +55,17 @@ const isCurrentUser = (value: unknown): value is CurrentUser => {
     typeof user.email === "string" &&
     (typeof user.profilePhotoUrl === "string" ||
       user.profilePhotoUrl === null) &&
-    (user.role === "client" || user.role === "engineer")
+    (user.role === "client" ||
+      user.role === "engineer" ||
+      user.role === "organisation") &&
+    (user.services === undefined ||
+      (Array.isArray(user.services) &&
+        user.services.every(
+          (service) => service === "equipment" || service === "projects",
+        ))) &&
+    (user.disciplines === undefined ||
+      (Array.isArray(user.disciplines) &&
+        user.disciplines.every((item) => typeof item === "string")))
   );
 };
 

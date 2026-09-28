@@ -4,14 +4,27 @@ import jwt from "jsonwebtoken";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
+import {
+  Organisation,
+  isOrganisationService,
+  type OrganisationService,
+} from "../models/Organisation.model";
 import { User, type IUser, type UserRole } from "../models/User.model";
 import { getProfilePhotoUrl } from "../utils/profilePhotos";
+import { onlyDisciplines, parseDisciplines } from "../utils/disciplines";
 
 export interface SignupRequestBody {
   name: string;
   email: string;
   password: string;
   role: UserRole;
+  /** Companies only: what they offer ("equipment", "projects" or both). */
+  services?: unknown;
+  /**
+   * Engineers, and companies that take on projects: their main speciality
+   * first, then up to two more, from the discipline list.
+   */
+  disciplines?: unknown;
 }
 
 export interface LoginRequestBody {
@@ -66,6 +79,21 @@ const setAuthCookie = (res: Response, user: IUser): void => {
 
 const toPublicUser = async (user: IUser) => {
   const profilePhotoUrl = await getProfilePhotoUrl(user._id);
+  // Companies see only the tools for what they offer, so the app needs these.
+  const organisation =
+    user.role === "organisation"
+      ? await Organisation.findOne({ user: user._id })
+          .select("services specialties")
+          .exec()
+      : null;
+  // Providers without a speciality are prompted to choose one.
+  const disciplines =
+    user.role === "engineer"
+      ? ((await Engineer.findOne({ user: user._id }).select("disciplines").exec())
+          ?.disciplines ?? [])
+      : user.role === "organisation"
+        ? onlyDisciplines(organisation?.specialties)
+        : undefined;
 
   return {
     id: user._id.toString(),
@@ -73,7 +101,21 @@ const toPublicUser = async (user: IUser) => {
     email: user.email,
     role: user.role,
     profilePhotoUrl,
+    ...(user.role === "organisation" ? { services: organisation?.services ?? [] } : {}),
+    ...(disciplines ? { disciplines } : {}),
   };
+};
+
+/** A company must say what it offers; duplicates are dropped. */
+const parseServices = (value: unknown): OrganisationService[] => {
+  const list: unknown[] = Array.isArray(value) ? value : [];
+  if (list.length === 0 || !list.every(isOrganisationService)) {
+    throw createAuthError(
+      "Choose what your company does: rent out equipment, take on projects, or both",
+      400,
+    );
+  }
+  return [...new Set(list as OrganisationService[])];
 };
 
 export const signup = async (
@@ -82,15 +124,28 @@ export const signup = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, services, disciplines } = req.body;
 
     if (!name || !email || !password || !role) {
       throw createAuthError("All fields are required", 400);
     }
 
-    if (role !== "client" && role !== "engineer") {
-      throw createAuthError("Role must be client or engineer", 400);
+    if (role !== "client" && role !== "engineer" && role !== "organisation") {
+      throw createAuthError(
+        "Role must be client, engineer or organisation",
+        400,
+      );
     }
+    const organisationServices =
+      role === "organisation" ? parseServices(services) : [];
+    // Engineers always need a speciality; a company only if it takes on
+    // projects (a rental-only firm is found by its equipment instead).
+    const needsSpeciality =
+      role === "engineer" ||
+      (role === "organisation" && organisationServices.includes("projects"));
+    const chosenDisciplines = needsSpeciality
+      ? (parseDisciplines(disciplines, { required: true }) ?? [])
+      : (role === "organisation" ? parseDisciplines(disciplines) : undefined) ?? [];
 
     if (password.length < 8) {
       throw createAuthError("Password must be at least 8 characters", 400);
@@ -113,9 +168,16 @@ export const signup = async (
     try {
       if (role === "client") {
         await Client.create({ user: user._id });
+      } else if (role === "organisation") {
+        await Organisation.create({
+          user: user._id,
+          services: organisationServices,
+          specialties: chosenDisciplines,
+        });
       } else {
         await Engineer.create({
           user: user._id,
+          disciplines: chosenDisciplines,
           certificates: [],
           portfolio: [],
         });
@@ -191,6 +253,125 @@ export const getCurrentUser = async (
       throw createAuthError("User not found", 404);
     }
 
+    res.status(200).json(await toPublicUser(user));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+// ============ Account settings ============
+
+export interface UpdateNameBody {
+  name?: unknown;
+}
+
+export interface UpdateEmailBody {
+  email?: unknown;
+  currentPassword?: unknown;
+}
+
+export interface UpdatePasswordBody {
+  currentPassword?: unknown;
+  newPassword?: unknown;
+}
+
+const NAME_MIN = 2;
+const NAME_MAX = 80;
+const PASSWORD_MIN = 8;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The signed-in user with their password hash, for changes that need it. */
+const loadSelf = async (req: AuthenticatedRequest): Promise<IUser> => {
+  if (!req.user?.userId) {
+    throw createAuthError("Authentication required", 401);
+  }
+  const user = await User.findById(req.user.userId).select("+passwordHash").exec();
+  if (!user) {
+    throw createAuthError("User not found", 404);
+  }
+  return user;
+};
+
+// Email and password changes are sensitive, so they ask for the current
+// password even though the user is signed in.
+const assertCurrentPassword = async (user: IUser, value: unknown): Promise<void> => {
+  const matches =
+    typeof value === "string" && value.length > 0
+      ? await bcrypt.compare(value, user.passwordHash)
+      : false;
+  if (!matches) {
+    throw createAuthError("Your current password isn't right", 401);
+  }
+};
+
+export const updateMyName = async (
+  req: AuthenticatedRequest<UpdateNameBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const user = await loadSelf(req);
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    if (name.length < NAME_MIN || name.length > NAME_MAX) {
+      throw createAuthError(
+        `Your name must be ${NAME_MIN} to ${NAME_MAX} characters`,
+        400,
+      );
+    }
+    user.name = name;
+    await user.save();
+    res.status(200).json(await toPublicUser(user));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const updateMyEmail = async (
+  req: AuthenticatedRequest<UpdateEmailBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const user = await loadSelf(req);
+    const email =
+      typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (!EMAIL_PATTERN.test(email)) {
+      throw createAuthError("Enter a valid email address", 400);
+    }
+    await assertCurrentPassword(user, req.body.currentPassword);
+    if (email === user.email) {
+      res.status(200).json(await toPublicUser(user));
+      return;
+    }
+    if (await User.exists({ email, _id: { $ne: user._id } })) {
+      throw createAuthError("Another account already uses that email", 409);
+    }
+    user.email = email;
+    await user.save();
+    res.status(200).json(await toPublicUser(user));
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const updateMyPassword = async (
+  req: AuthenticatedRequest<UpdatePasswordBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const user = await loadSelf(req);
+    const newPassword =
+      typeof req.body.newPassword === "string" ? req.body.newPassword : "";
+    if (newPassword.length < PASSWORD_MIN) {
+      throw createAuthError(
+        `Your new password must be at least ${PASSWORD_MIN} characters`,
+        400,
+      );
+    }
+    await assertCurrentPassword(user, req.body.currentPassword);
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await user.save();
     res.status(200).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);

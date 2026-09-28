@@ -26,6 +26,7 @@ import {
 } from "./equipment.api";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { toPlainAmount } from "../lib/money";
+import { canListEquipment } from "../lib/dashboardPaths";
 
 const ALL_TYPES = "all";
 type CategoryFilter = typeof ALL_TYPES | EquipmentCategory;
@@ -144,7 +145,8 @@ function EquipmentCardSkeleton(): ReactElement {
 
 export function BrowseEquipmentPage(): ReactElement {
   const paths = useEquipmentPaths();
-  const isClient = useAuth().currentUser?.role === "client";
+  // Only people who rent machines out get the "List your equipment" action.
+  const isClient = !canListEquipment(useAuth().currentUser);
   const [items, setItems] = useState<EquipmentListing[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -239,7 +241,7 @@ export function BrowseEquipmentPage(): ReactElement {
 
   const summary =
     isLoading || error
-      ? "Machines and tools other engineers rent out, with a daily rate and deposit."
+      ? "Machines and tools engineers and companies rent out, with a daily rate and deposit."
       : activeFilters
         ? `${countOf(total, "listing matches", "listings match")} your filters.`
         : `${countOf(total, "listing", "listings")} available to rent.`;

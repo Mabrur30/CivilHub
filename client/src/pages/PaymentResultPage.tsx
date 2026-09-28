@@ -20,6 +20,7 @@ import {
   type PaymentResult,
   type PaymentStatus,
 } from "../lib/payments";
+import { dashboardBase } from "../lib/dashboardPaths";
 
 /** SSLCommerz usually confirms within seconds; stop asking after about half a minute. */
 const POLL_INTERVAL_MS = 4000;
@@ -72,11 +73,17 @@ const summaryFor = (payment: PaymentResult): string => {
       if (payment.refundDue) {
         return `We received ${amount}, but this had already been paid or was no longer due. CivilHub will refund it to you.`;
       }
+      if (payment.projectCompleted) {
+        const via = payment.method ? ` with ${payment.method}` : "";
+        return payment.viewerRole === "payer"
+          ? `You paid ${amount}${via}. That was the final payment, so the project is complete. Tell others how it went by leaving a review.`
+          : `The client paid ${amount}${via}. That was the final payment, so the project is complete.`;
+      }
       return payment.viewerRole === "payer"
         ? `You paid ${amount}${payment.method ? ` with ${payment.method}` : ""}. ${
             payment.type === "equipment_booking"
               ? "The owner has been notified."
-              : "Your engineer has been notified."
+              : "Whoever is working on your project has been notified."
           }`
         : `${payment.type === "equipment_booking" ? "The renter" : "The client"} paid ${amount}${payment.method ? ` with ${payment.method}` : ""}.`;
     case "initiated":
@@ -148,11 +155,17 @@ export function PaymentResultPage(): ReactElement {
     return () => window.clearTimeout(timer);
   }, [payment, polls, load]);
 
-  const fallbackPath =
-    currentUser?.role === "client" ? "/dashboard/client" : "/dashboard/engineer";
+  const fallbackPath = dashboardBase(currentUser?.role);
   const backPath = payment?.returnPath ?? fallbackPath;
+  const isFinished = payment?.status === "paid" && payment.projectCompleted === true && !payment.refundDue;
   const backLabel =
-    payment?.type === "equipment_booking" ? "Back to the booking" : "Back to the project";
+    payment?.type === "equipment_booking"
+      ? "Back to the booking"
+      : isFinished
+        ? payment?.viewerRole === "payer"
+          ? "Leave a review"
+          : "View the finished project"
+        : "Back to the project";
 
   if (error) {
     return (
@@ -193,7 +206,7 @@ export function PaymentResultPage(): ReactElement {
           <Icon className="h-7 w-7" weight="duotone" aria-hidden="true" />
         </span>
         <h1 className="mt-5 font-heading text-4xl font-bold text-white sm:text-5xl">
-          {copy.title}
+          {isFinished ? "Project complete" : copy.title}
         </h1>
         <p className="mt-3 max-w-xl text-white/60" role="status">
           {summaryFor(payment)}

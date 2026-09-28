@@ -14,6 +14,10 @@ export interface IMessage extends Document {
   attachmentSize?: number;
   durationSeconds?: number;
   readBy: Types.ObjectId[];
+  /** The project this message was about, when sent from a project's context. */
+  project?: Types.ObjectId;
+  /** Set when phone numbers or emails were masked before the pair had a hire. */
+  contactHidden: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -87,6 +91,15 @@ const messageSchema = new Schema<IMessage>(
         },
       ],
       default: [],
+    },
+    project: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
+      required: false,
+    },
+    contactHidden: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },

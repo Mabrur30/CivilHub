@@ -28,10 +28,16 @@ import {
 import { FileTypeIcon } from "../chat/MessageAttachmentView";
 import { API_BASE_URL, CONNECTION_ERROR, getErrorMessage } from "./api";
 import { type ChatMessage, isMessage } from "./types";
+import { type UserRole } from "../../context/AuthContext";
 
 interface ComposerProps {
   conversationId: string;
   recipientName: string;
+  /** The project new messages are about. */
+  projectId?: string | null;
+  /** Phone numbers and emails will be hidden until the pair has a hire. */
+  contactsHidden?: boolean;
+  viewerRole?: UserRole;
   sendText: (content: string) => Promise<string>;
   onSent: (message?: ChatMessage) => void;
 }
@@ -77,6 +83,9 @@ function UploadProgressBar({
 export function Composer({
   conversationId,
   recipientName,
+  projectId,
+  contactsHidden,
+  viewerRole,
   sendText,
   onSent,
 }: ComposerProps): ReactElement {
@@ -133,6 +142,7 @@ export function Composer({
 
     const caption = draft.trim();
     const formData = new FormData();
+    if (projectId) formData.append("projectId", projectId);
     if (recording) {
       formData.append("messageType", "audio");
       formData.append(
@@ -431,6 +441,13 @@ export function Composer({
           </button>
         </div>
       </div>
+      {contactsHidden ? (
+        <p className="mt-2 px-1 text-xs leading-5 text-white/45">
+          Phone numbers and emails are hidden until{" "}
+          {viewerRole === "client" ? "you hire" : "you're hired"}. Keep payments
+          on CivilHub so your project stays protected.
+        </p>
+      ) : null}
     </form>
   );
 }

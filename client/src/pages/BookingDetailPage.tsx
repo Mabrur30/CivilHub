@@ -1,3 +1,4 @@
+import { CustomerReviewForm } from "../components/profile/shared/CustomerReviewForm";
 import {
   type ChangeEvent,
   type ReactElement,
@@ -943,6 +944,20 @@ export function BookingDetailPage(): ReactElement {
                 {isSubmittingAction ? "Submitting..." : "Submit Decision"}
               </button>
             </section>
+          ) : null}
+
+          {viewerRole === "owner" &&
+          booking.status === "completed" &&
+          booking.depositResolution !== "pending" ? (
+            <CustomerReviewForm
+              target={{ bookingId: booking.id }}
+              subjectName={booking.renter.name}
+              subjectKind="renter"
+              existing={booking.ownerReview}
+              onSaved={(ownerReview) =>
+                setBooking((current) => (current ? { ...current, ownerReview } : current))
+              }
+            />
           ) : null}
 
           {viewerRole === "renter" && reviewEligibility?.canReview ? (

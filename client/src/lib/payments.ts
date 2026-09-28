@@ -33,6 +33,8 @@ export interface PaymentResult {
   paidAt: string | null;
   createdAt: string;
   viewerRole: "payer" | "payee";
+  /** True once the project this paid for is finished (its final payment). */
+  projectCompleted?: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

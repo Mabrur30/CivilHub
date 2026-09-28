@@ -1,4 +1,9 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
+import {
+  PROJECT_SERVICES,
+  type ProjectRequirements,
+} from "../utils/projectCriteria";
+import { SITE_OPTIONS, type GeoPoint, type ProjectSite } from "../utils/projectSite";
 
 export type PhasePlanStatus =
   | "not_created"
@@ -22,6 +27,11 @@ export interface IProject extends Document {
   budgetMax?: number;
   budgetRange?: string;
   location?: string;
+  /** Where the site is and how to reach it; null on briefs posted before pins. */
+  site?: ProjectSite | null;
+  /** The answers the project's category asks for, checked by projectCriteria. */
+  requirements?: ProjectRequirements | null;
+  servicesNeeded: string[];
   targetStartDate?: Date;
   targetCompletionDate?: Date;
   client?: Types.ObjectId;
@@ -51,6 +61,41 @@ export interface IProject extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const pointSchema = new Schema<GeoPoint>(
+  {
+    type: { type: String, enum: ["Point"], required: true },
+    coordinates: { type: [Number], required: true },
+  },
+  { _id: false },
+);
+
+const siteSchema = new Schema<ProjectSite>(
+  {
+    division: { type: String, required: true, trim: true },
+    district: { type: String, required: true, trim: true },
+    area: { type: String, required: true, trim: true, maxlength: 120 },
+    point: { type: pointSchema, required: true },
+    approxPoint: { type: pointSchema, required: true },
+    addressLine: { type: String, trim: true, maxlength: 200 },
+    directions: { type: String, trim: true, maxlength: 500 },
+    vehicleAccess: {
+      type: String,
+      enum: SITE_OPTIONS.vehicleAccess.map((option) => option.value),
+    },
+    utilities: {
+      type: [String],
+      enum: SITE_OPTIONS.utilities.map((option) => option.value),
+      default: [],
+    },
+    documentsAvailable: {
+      type: [String],
+      enum: SITE_OPTIONS.documentsAvailable.map((option) => option.value),
+      default: [],
+    },
+  },
+  { _id: false },
+);
 
 const projectSchema = new Schema<IProject>(
   {
@@ -109,6 +154,19 @@ const projectSchema = new Schema<IProject>(
     location: {
       type: String,
       trim: true,
+    },
+    site: {
+      type: siteSchema,
+      default: null,
+    },
+    requirements: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
+    servicesNeeded: {
+      type: [String],
+      enum: PROJECT_SERVICES.map((service) => service.value),
+      default: [],
     },
     targetStartDate: {
       type: Date,
@@ -191,6 +249,9 @@ const projectSchema = new Schema<IProject>(
   },
   { timestamps: true },
 );
+
+// Lets the marketplace find briefs near an engineer later without exposing pins.
+projectSchema.index({ "site.approxPoint": "2dsphere" });
 
 export const Project: Model<IProject> = model<IProject>(
   "Project",

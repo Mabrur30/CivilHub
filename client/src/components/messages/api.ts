@@ -87,9 +87,11 @@ export const fetchMessages = async (
 
 export const resolveConversationWithUser = async (
   userId: string,
+  projectId?: string | null,
 ): Promise<Result<string>> => {
+  const query = projectId ? `?project=${encodeURIComponent(projectId)}` : "";
   const response = await fetch(
-    `${API_BASE_URL}/api/conversations/with/${userId}`,
+    `${API_BASE_URL}/api/conversations/with/${userId}${query}`,
     { credentials: "include" },
   );
   const body = await readJson(response);
@@ -109,6 +111,7 @@ export const resolveConversationWithUser = async (
 export const sendTextMessage = async (
   conversationId: string,
   content: string,
+  projectId?: string | null,
 ): Promise<Result<ChatMessage>> => {
   const response = await fetch(
     `${API_BASE_URL}/api/conversations/${conversationId}/messages`,
@@ -116,7 +119,7 @@ export const sendTextMessage = async (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(projectId ? { content, projectId } : { content }),
     },
   );
   const body = await readJson(response);

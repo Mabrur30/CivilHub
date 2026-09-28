@@ -1,3 +1,7 @@
+import {
+  type CustomerReview,
+  isCustomerReview,
+} from "../components/profile/shared/profileTypes";
 import { toPlainAmount } from "../lib/money";
 
 export const API_BASE_URL =
@@ -46,6 +50,8 @@ export interface EquipmentPhoto {
 export interface EquipmentOwner {
   userId: string;
   name: string;
+  /** Rented out by a company rather than an individual engineer. */
+  isCompany?: boolean;
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
@@ -483,6 +489,8 @@ export interface EquipmentBookingBase {
   createdAt: string;
   /** The settled payment; only sent on the single-booking view. */
   payment: EquipmentBookingPayment | null;
+  /** The owner's review of the renter; only sent on the single-booking view. */
+  ownerReview: CustomerReview | null;
 }
 
 export interface EquipmentBookingPayment {
@@ -568,6 +576,7 @@ const withBookingDefaults = <T extends EquipmentBookingBase>(booking: T): T => {
     deliveryAddress:
       typeof raw.deliveryAddress === "string" ? raw.deliveryAddress : null,
     payment: toBookingPayment(raw.payment),
+    ownerReview: isCustomerReview(raw.ownerReview) ? raw.ownerReview : null,
   };
 };
 

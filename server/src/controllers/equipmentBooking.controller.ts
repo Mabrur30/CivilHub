@@ -3,6 +3,11 @@ import { type UploadApiOptions, type UploadApiResponse } from "cloudinary";
 import { Types } from "mongoose";
 import cloudinary from "../config/cloudinary";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { CustomerReview } from "../models/CustomerReview.model";
+import {
+  toCustomerReviewViews,
+  type CustomerReviewView,
+} from "./customerReview.controller";
 import { Engineer } from "../models/Engineer.model";
 import { Equipment, type IEquipment } from "../models/Equipment.model";
 import {
@@ -15,6 +20,7 @@ import {
 import { Notification } from "../models/Notification.model";
 import { Payment, type IPayment } from "../models/Payment.model";
 import { describePaymentMethod, payeeShareNote } from "../services/payments";
+import { canRentEquipment } from "../utils/roles";
 import { Review } from "../models/Review.model";
 import { formatTaka } from "../utils/money";
 import {
@@ -134,6 +140,8 @@ interface BookingViewResponse {
   createdAt: string;
   /** The settled payment; only on the single-booking view. */
   payment?: BookingPaymentResponse | null;
+  /** The owner's review of the renter, once written. */
+  ownerReview?: CustomerReviewView | null;
 }
 
 interface BookingPaymentResponse {
@@ -180,10 +188,7 @@ const createBookingError = (
 };
 
 const requireRenterUserId = (req: AuthenticatedRequest): string => {
-  if (
-    !req.user?.userId ||
-    (req.user.role !== "engineer" && req.user.role !== "client")
-  ) {
+  if (!req.user?.userId || !canRentEquipment(req.user.role)) {
     throw createBookingError("Sign in to rent equipment", 403);
   }
 
@@ -947,16 +952,20 @@ export const getBookingByIdForUser = async (
       throw createBookingError("Unable to map booking details", 500);
     }
 
-    const payment = await Payment.findOne({
-      equipmentBooking: booking._id,
-      status: "paid",
-      refundDue: { $ne: true },
-    })
-      .sort({ paidAt: 1 })
-      .exec();
+    const [payment, ownerReview] = await Promise.all([
+      Payment.findOne({
+        equipmentBooking: booking._id,
+        status: "paid",
+        refundDue: { $ne: true },
+      })
+        .sort({ paidAt: 1 })
+        .exec(),
+      CustomerReview.findOne({ equipmentBooking: booking._id, author: booking.owner }).exec(),
+    ]);
 
     res.status(200).json({
       ...response,
+      ownerReview: ownerReview ? (await toCustomerReviewViews([ownerReview]))[0] : null,
       payment: payment
         ? {
             tranId: payment.tranId ?? null,
@@ -1176,7 +1185,7 @@ export const prepareBookingCharge = async (
   role: string,
   bookingId: unknown,
 ): Promise<BookingCharge> => {
-  if (role !== "engineer" && role !== "client") {
+  if (!canRentEquipment(role)) {
     throw createBookingError("Sign in to rent equipment", 403);
   }
   if (typeof bookingId !== "string") {

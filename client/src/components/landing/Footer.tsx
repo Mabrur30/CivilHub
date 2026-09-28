@@ -16,13 +16,17 @@ interface FooterProps {}
 const exploreLinks = [
   { label: "Home", targetId: "home" },
   { label: "How it works", targetId: "how-it-works" },
-  { label: "For clients and engineers", targetId: "for-engineers-clients" },
+  { label: "Equipment rental", targetId: "equipment" },
+  { label: "Features", targetId: "features" },
+  { label: "Who it's for", targetId: "for-engineers-clients" },
   { label: "Pricing", targetId: "pricing" },
 ];
 
 const startLinks = [
   { label: "Post a project", to: "/signup/client" },
   { label: "Find work", to: "/signup/engineer" },
+  { label: "Join as a company", to: "/signup/company" },
+  { label: "List equipment", to: "/signup/company" },
   { label: "Sign in", to: "/login" },
 ];
 
@@ -47,8 +51,8 @@ export function Footer(_props: FooterProps): ReactElement {
             <BrandLogo height={36} />
 
             <p className="mt-4 text-sm leading-6 text-white/55">
-              One platform for bids, approvals, and site coordination — from
-              concept through to handover.
+              One platform for bids, phase payments, equipment hire and site
+              coordination — from brief through to handover.
             </p>
 
             <div className="mt-6 flex items-center gap-3">

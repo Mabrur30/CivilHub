@@ -25,6 +25,7 @@ export interface NotificationFeedEntry {
   bidId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  postId?: string | null;
 }
 
 export interface OwnBidFeedEntry {
@@ -109,6 +110,7 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   new_message: "messages",
 
   connection_accepted: "network",
+  connection_request: "network",
   connection_post: "network",
   post_liked: "network",
   comment_received: "network",
@@ -123,6 +125,8 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   full_payment_received: "projects",
   review_received: "projects",
   review_reply: "projects",
+  project_completed: "projects",
+  customer_review_received: "projects",
   // Refunds can be for a project or a booking; projects is the usual case.
   payment_refund_due: "projects",
 
@@ -175,7 +179,7 @@ const isOwnAction = (entry: FeedEntry): boolean =>
 
 const getFeedEntryTargetPath = (
   entry: FeedEntry,
-  role: "client" | "engineer",
+  role: "client" | "engineer" | "organisation",
 ): string | null => {
   if (entry.source === "own_bid") {
     return `/dashboard/${role}/bids`;
@@ -188,7 +192,7 @@ const getFeedEntryTargetPath = (
 
 interface ActivityFeedItemProps {
   entry: FeedEntry;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
 }
 
 export function ActivityFeedItem({

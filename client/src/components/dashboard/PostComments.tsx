@@ -1,12 +1,14 @@
-import { type ReactElement, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { RatingBadge } from "../RatingBadge";
+import { isProviderRole } from "../../lib/dashboardPaths";
+import { ReportDialog } from "../safety/ReportDialog";
 
 export interface CommentAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer";
+  role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
   rating?: number | null;
   reviewCount?: number;
@@ -26,7 +28,12 @@ interface UsePostCommentsArgs {
   postId: string;
   initialCount: number;
   currentUser: CommentAuthor | null;
+  /** Open with comments loaded, as on a post's own page. */
+  defaultOpen?: boolean;
 }
+
+// Top-level comments per page; each comes with all of its replies.
+const COMMENT_PAGE_SIZE = 20;
 
 interface ErrorResponse {
   message?: string;
@@ -58,8 +65,12 @@ export function usePostComments({
   postId,
   initialCount,
   currentUser,
+  defaultOpen = false,
 }: UsePostCommentsArgs) {
-  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [isOpen, setIsOpen] = useState<boolean>(defaultOpen);
+  // Offset of the next page of top-level comments, or null when all are shown.
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentCount, setCommentCount] = useState<number>(initialCount);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -70,12 +81,14 @@ export function usePostComments({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
 
-  const loadComments = async (): Promise<void> => {
-    setIsLoading(true);
+  const loadComments = async (append = false): Promise<void> => {
+    const offset = append ? (nextOffset ?? 0) : 0;
+    if (append) setIsLoadingMore(true);
+    else setIsLoading(true);
     setError("");
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/posts/${postId}/comments`,
+        `${API_BASE_URL}/api/posts/${postId}/comments?limit=${COMMENT_PAGE_SIZE}&offset=${offset}`,
         { credentials: "include" },
       );
       const body: unknown = await response.json();
@@ -83,14 +96,28 @@ export function usePostComments({
         setError(getErrorMessage(body));
         return;
       }
-      setComments(body as PostComment[]);
-      setCommentCount(body.length);
+      const page = body as PostComment[];
+      setComments((current) => {
+        if (!append) return page;
+        const seen = new Set(current.map((comment) => comment.id));
+        return [...current, ...page.filter((comment) => !seen.has(comment.id))];
+      });
+      const topLevel = page.filter((comment) => !comment.parentCommentId).length;
+      setNextOffset(topLevel === COMMENT_PAGE_SIZE ? offset + COMMENT_PAGE_SIZE : null);
     } catch {
       setError("Unable to load comments.");
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   };
+
+  // A post's own page opens with its comments already showing.
+  useEffect(() => {
+    if (defaultOpen) void loadComments();
+    // Only on first mount; later loads come from the toggle and "Show more".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleComments = (): void => {
     const nextOpen = !isOpen;
@@ -141,6 +168,13 @@ export function usePostComments({
         current.filter((comment) => comment.id !== temporaryId),
       );
       setCommentCount((count) => Math.max(0, count - 1));
+      // Give the text back so a failed send doesn't lose what was typed.
+      if (parentCommentId) {
+        setReplyContent(nextContent);
+        setReplyTarget(parentCommentId);
+      } else {
+        setContent(nextContent);
+      }
       setError(
         submissionError instanceof Error
           ? submissionError.message
@@ -188,6 +222,9 @@ export function usePostComments({
     commentCount,
     comments,
     isLoading,
+    hasMoreComments: nextOffset !== null,
+    isLoadingMore,
+    loadMoreComments: () => void loadComments(true),
     content,
     setContent,
     replyTarget,
@@ -253,6 +290,9 @@ export function CommentPanel({
   isOpen,
   comments,
   isLoading,
+  hasMoreComments,
+  isLoadingMore,
+  loadMoreComments,
   content,
   setContent,
   replyTarget,
@@ -266,6 +306,7 @@ export function CommentPanel({
   deleteComment,
   currentUser,
 }: CommentPanelProps): ReactElement | null {
+  const [reportingId, setReportingId] = useState<string | null>(null);
   if (!isOpen) return null;
 
   const renderComments = (
@@ -295,7 +336,7 @@ export function CommentPanel({
                 >
                   {comment.author.name}
                 </Link>
-                {comment.author.role === "engineer" && (
+                {isProviderRole(comment.author.role) && (
                   <RatingBadge
                     rating={comment.author.rating ?? null}
                     reviewCount={comment.author.reviewCount ?? 0}
@@ -309,6 +350,8 @@ export function CommentPanel({
               <p className="mt-1 wrap-break-word text-xs leading-5 text-white/70">
                 {comment.content}
               </p>
+              {/* Nothing to reply to or delete until the server has saved it. */}
+              {comment.id.startsWith("optimistic-") ? null : (
               <div className="mt-1.5 flex items-center gap-3">
                 <button
                   type="button"
@@ -332,7 +375,18 @@ export function CommentPanel({
                     Delete
                   </button>
                 ) : null}
+                {currentUser && currentUser.userId !== comment.author.userId &&
+                comment.content !== "[deleted]" ? (
+                  <button
+                    type="button"
+                    onClick={() => setReportingId(comment.id)}
+                    className="text-[11px] font-medium text-white/40 transition-colors duration-150 hover:text-primary"
+                  >
+                    Report
+                  </button>
+                ) : null}
               </div>
+              )}
               {replyTarget === comment.id && (
                 <div className="mt-2 flex gap-2">
                   <input
@@ -341,6 +395,13 @@ export function CommentPanel({
                       setReplyContent(event.target.value.slice(0, 500))
                     }
                     maxLength={500}
+                    aria-label={`Reply to ${comment.author.name}`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void submitComment(comment.id);
+                      }
+                    }}
                     placeholder="Write a reply..."
                     className="min-w-0 flex-1 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-xs text-white outline-none focus:border-primary/50"
                   />
@@ -368,6 +429,13 @@ export function CommentPanel({
             value={content}
             onChange={(event) => setContent(event.target.value.slice(0, 500))}
             maxLength={500}
+            aria-label="Write a comment"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void submitComment();
+              }
+            }}
             placeholder="Add a comment..."
             className="min-w-0 flex-1 rounded-lg border border-white/10 bg-void/60 px-3 py-2 text-xs text-white outline-none focus:border-primary/50"
           />
@@ -399,37 +467,23 @@ export function CommentPanel({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-interface PostCommentsProps {
-  postId: string;
-  initialCount: number;
-  currentUser: CommentAuthor | null;
-  variant?: "default" | "inline";
-}
-
-export function PostComments({
-  postId,
-  initialCount,
-  currentUser,
-  variant = "default",
-}: PostCommentsProps): ReactElement {
-  const state = usePostComments({ postId, initialCount, currentUser });
-  const isInline = variant === "inline";
-
-  return (
-    <div
-      className={isInline ? "min-w-0" : "mt-4 border-t border-white/10 pt-3"}
-    >
-      <CommentToggleButton
-        isOpen={state.isOpen}
-        commentCount={state.commentCount}
-        onToggle={state.toggleComments}
-        variant={variant}
-      />
-      <CommentPanel {...state} currentUser={currentUser} />
+      {reportingId ? (
+        <ReportDialog
+          targetType="comment"
+          targetId={reportingId}
+          onClose={() => setReportingId(null)}
+        />
+      ) : null}
+      {hasMoreComments && !isLoading ? (
+        <button
+          type="button"
+          onClick={loadMoreComments}
+          disabled={isLoadingMore}
+          className="mt-2 text-xs font-semibold text-white/60 transition-colors hover:text-white disabled:opacity-50"
+        >
+          {isLoadingMore ? "Loading…" : "Show more comments"}
+        </button>
+      ) : null}
     </div>
   );
 }

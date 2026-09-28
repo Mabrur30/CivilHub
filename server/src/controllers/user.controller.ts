@@ -1,18 +1,23 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
+import { isBlockedByMe } from "../utils/blocks";
 import { Connection } from "../models/Connection.model";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
+import { Equipment } from "../models/Equipment.model";
+import { Organisation } from "../models/Organisation.model";
+import { toOrganisationProfile } from "./organisation.controller";
 import { type IProject, Project } from "../models/Project.model";
 import {
   ProjectPhase,
   type ProjectPhaseStatus,
 } from "../models/ProjectPhase.model";
 import { type IUser, User, type UserRole } from "../models/User.model";
-import { Review } from "../models/Review.model";
 import { Bid } from "../models/Bid.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
+import { getProviderRatings, type ProviderRatings } from "../utils/providerRatings";
+import { getCustomerRating } from "./customerReview.controller";
 import type { ConnectionViewStatus } from "./network.controller";
 import { budgetLabel } from "../utils/money";
 
@@ -37,39 +42,16 @@ const getUserId = (req: AuthenticatedRequest): string => {
 const getParams = (req: AuthenticatedRequest): UserParams =>
   req.params as unknown as UserParams;
 
-const getEngineerRating = async (
-  userId: string,
-): Promise<{ rating: number | null; reviewCount: number }> => {
-  if (!Types.ObjectId.isValid(userId)) {
-    return { rating: null, reviewCount: 0 };
-  }
-
-  const engineerId = new Types.ObjectId(userId);
-  const rows = await Review.aggregate<{
-    averageRating: number;
-    reviewCount: number;
-  }>([
-    {
-      $match: {
-        engineer: engineerId,
-        project: { $exists: true, $ne: null },
-      },
-    },
-    {
-      $group: {
-        _id: "$engineer",
-        averageRating: { $avg: "$rating" },
-        reviewCount: { $sum: 1 },
-      },
-    },
-  ]).exec();
-  return rows[0]
-    ? {
-        rating: Math.round(rows[0].averageRating * 10) / 10,
-        reviewCount: rows[0].reviewCount,
-      }
-    : { rating: null, reviewCount: 0 };
-};
+/** The headline rating plus the split by kind, for a provider's profile. */
+const toRatingFields = (ratings: ProviderRatings) => ({
+  rating: ratings.headline.rating,
+  reviewCount: ratings.headline.count,
+  ratingKind: ratings.headline.kind,
+  ratings: {
+    project: ratings.project,
+    equipment: ratings.equipment,
+  },
+});
 
 const getEngineerRateStats = async (
   userId: string,
@@ -177,7 +159,23 @@ const getConnectionsCount = async (userId: string): Promise<number> =>
     status: "accepted",
   }).exec();
 
+interface ConnectionDetails {
+  status: ConnectionViewStatus;
+  connectionId: string | null;
+  /** The viewer has blocked this person; the profile offers Unblock. */
+  blockedByMe: boolean;
+}
+
 const getConnectionDetails = async (
+  requester: string,
+  target: string,
+): Promise<ConnectionDetails> => {
+  const blockedByMe = requester !== target && (await isBlockedByMe(requester, target));
+  const details = await getConnectionStatusFor(requester, target);
+  return { ...details, blockedByMe };
+};
+
+const getConnectionStatusFor = async (
   requester: string,
   target: string,
 ): Promise<{ status: ConnectionViewStatus; connectionId: string | null }> => {
@@ -204,15 +202,107 @@ const getConnectionDetails = async (
 };
 
 const HIRED_STATUSES = new Set(["active", "in-progress", "completed"]);
-const PAYABLE_PHASE_STATUSES: ProjectPhaseStatus[] = [
+const REVIEWED_PHASE_STATUSES: ProjectPhaseStatus[] = [
   "awaiting_approval",
   "completed",
 ];
+const DAY_MS = 864e5;
+
+/** The middle value, to one decimal place; null when there's nothing to measure. */
+const median = (values: number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  const value =
+    sorted.length % 2 === 1
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  return Math.round(value * 10) / 10;
+};
 const OPEN_PROJECT_LIMIT = 10;
 const COMPLETED_PROJECT_LIMIT = 6;
 
 const projectTitle = (project: IProject): string =>
   project.title ?? project.name ?? "Untitled project";
+
+const LISTING_LIMIT = 6;
+
+/** Machines someone has up for rent right now. */
+const getActiveListings = async (userId: Types.ObjectId) => {
+  const listings = await Equipment.find({ owner: userId, status: "active" })
+    .select("_id title category dailyRate location photos quantity")
+    .sort({ createdAt: -1 })
+    .limit(LISTING_LIMIT)
+    .exec();
+  return listings.map((item) => ({
+    id: item._id.toString(),
+    title: item.title,
+    category: item.category,
+    dailyRate: item.dailyRate,
+    location: item.location,
+    quantity: item.quantity ?? 1,
+    photoUrl: item.photos[0]?.url ?? null,
+  }));
+};
+
+// Delivered work as a profile shows it. The price stays between the client
+// and whoever delivered it, so it isn't included.
+const toDeliveredProject = (project: IProject) => ({
+  id: project._id.toString(),
+  title: projectTitle(project),
+  category: project.category ?? "General",
+  location: project.location ?? null,
+  completedAt: (
+    project.completedAt ??
+    project.updatedAt ??
+    project.createdAt
+  ).toISOString(),
+});
+
+// A company's page: who they are and what they offer (from their own
+// profile), plus proof from the platform: rating, delivered projects and the
+// machines they have for rent right now.
+const buildOrganisationPublicProfile = async (
+  user: IUser,
+  requesterId: string,
+  connection: ConnectionDetails,
+  connectionsCount: number,
+) => {
+  const userId = user._id.toString();
+  const [organisation, ratings, completedWork, equipment] = await Promise.all([
+    Organisation.findOne({ user: user._id }).exec(),
+    getProviderRatings(userId),
+    Project.find({ assignedEngineer: user._id, status: "completed" })
+      .select("_id title name category location completedAt updatedAt createdAt")
+      .sort({ completedAt: -1, updatedAt: -1 })
+      .limit(COMPLETED_PROJECT_LIMIT)
+      .exec(),
+    getActiveListings(user._id),
+  ]);
+  const details = organisation
+    ? toOrganisationProfile(organisation, user.name)
+    : null;
+  // The phone number is private to the company itself.
+  const profile =
+    details && requesterId !== userId ? { ...details, phone: "" } : details;
+
+  return {
+    userId,
+    name: user.name,
+    role: user.role,
+    memberSince: user.createdAt.toISOString(),
+    profilePhotoUrl: profile?.logoUrl ?? null,
+    bio: profile?.about ?? "",
+    connectionsCount,
+    connectionStatus: connection.status,
+    connectionId: connection.connectionId,
+    blockedByMe: connection.blockedByMe,
+    ...toRatingFields(ratings),
+    company: profile,
+    completedWork: completedWork.map(toDeliveredProject),
+    equipment,
+  };
+};
 
 // Everything an engineer weighs before bidding for this client: who they are,
 // whether their briefs turn into hires, whether they pay what falls due, and
@@ -221,7 +311,7 @@ const projectTitle = (project: IProject): string =>
 const buildClientPublicProfile = async (
   user: IUser,
   requesterId: string,
-  connection: { status: ConnectionViewStatus; connectionId: string | null },
+  connection: ConnectionDetails,
   connectionsCount: number,
 ) => {
   const [client, projects] = await Promise.all([
@@ -237,10 +327,6 @@ const buildClientPublicProfile = async (
   const hired = projects.filter(
     (project) => project.assignedEngineer || HIRED_STATUSES.has(project.status),
   );
-  const closedWithoutHire = projects.filter(
-    (project) => project.status === "cancelled" && !project.assignedEngineer,
-  );
-  const decided = hired.length + closedWithoutHire.length;
   const openProjects = projects.filter(
     (project) => project.status === "open_for_bids",
   );
@@ -263,9 +349,7 @@ const buildClientPublicProfile = async (
     }
   }
 
-  const phaseByPhaseIds = projects
-    .filter((project) => project.paymentPlan === "phase_by_phase")
-    .map((project) => project._id);
+  const hiredIds = hired.map((project) => project._id);
   const openIds = openProjects
     .slice(0, OPEN_PROJECT_LIMIT)
     .map((project) => project._id);
@@ -280,14 +364,15 @@ const buildClientPublicProfile = async (
     .map((project) => project.assignedEngineer)
     .filter((id): id is Types.ObjectId => Boolean(id));
 
-  const [payablePhases, bidCounts, myBids, engineers, photos] =
+  const [reviewedPhases, bidCounts, myBids, engineers, photos, customerRating] =
     await Promise.all([
-      phaseByPhaseIds.length > 0
+      hiredIds.length > 0
         ? ProjectPhase.find({
-            project: { $in: phaseByPhaseIds },
-            status: { $in: PAYABLE_PHASE_STATUSES },
+            project: { $in: hiredIds },
+            status: { $in: REVIEWED_PHASE_STATUSES },
+            "submissions.0": { $exists: true },
           })
-            .select("paymentStatus")
+            .select("status completedAt submissions")
             .exec()
         : Promise.resolve([]),
       openIds.length > 0
@@ -307,7 +392,24 @@ const buildClientPublicProfile = async (
             .exec()
         : Promise.resolve([]),
       getProfilePhotoMap([user._id, ...engineerIds]),
+      getCustomerRating(user._id),
     ]);
+
+  // How long this client takes to approve handed-over work, and whether any
+  // is sitting unreviewed. Only phases handed over with a submission count,
+  // since that's when the client's clock starts.
+  const approvalDays = reviewedPhases
+    .filter((phase) => phase.status === "completed" && phase.completedAt)
+    .map((phase) => {
+      const handedOver = phase.submissions[phase.submissions.length - 1].submittedAt;
+      return Math.max(0, ((phase.completedAt as Date).getTime() - handedOver.getTime()) / DAY_MS);
+    });
+  const weekAgo = Date.now() - 7 * DAY_MS;
+  const phasesWaitingOverWeek = reviewedPhases.filter(
+    (phase) =>
+      phase.status === "awaiting_approval" &&
+      phase.submissions[phase.submissions.length - 1].submittedAt.getTime() < weekAgo,
+  ).length;
 
   const bidCountByProject = new Map(
     bidCounts.map((row) => [row._id.toString(), row.count]),
@@ -332,9 +434,10 @@ const buildClientPublicProfile = async (
     completedProjects: completedProjects.length,
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
+    blockedByMe: connection.blockedByMe,
     connectionsCount,
-    rating: null,
-    reviewCount: 0,
+    rating: customerRating.rating,
+    reviewCount: customerRating.reviewCount,
     stats: {
       projectsPosted: projects.length,
       activeProjects: projects.filter(
@@ -344,13 +447,9 @@ const buildClientPublicProfile = async (
       completedProjects: completedProjects.length,
       openProjects: openProjects.length,
       hiredProjects: hired.length,
-      decidedProjects: decided,
-      hireRate:
-        decided > 0 ? Math.round((hired.length / decided) * 100) : null,
-      phasesDue: payablePhases.length,
-      phasesPaid: payablePhases.filter(
-        (phase) => phase.paymentStatus === "paid",
-      ).length,
+      approvalDaysMedian: median(approvalDays),
+      approvalsMeasured: approvalDays.length,
+      phasesWaitingOverWeek,
       budgetMin: budgetMins.length > 0 ? Math.min(...budgetMins) : null,
       budgetMax: budgetMaxes.length > 0 ? Math.max(...budgetMaxes) : null,
       topCategories: [...categoryCounts.entries()]
@@ -403,7 +502,9 @@ export const getPublicProfile = async (
   try {
     const requesterId = getUserId(req);
     const { userId } = getParams(req);
-    if (!userId) throw createUserError("User ID is required", 400);
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      throw createUserError("User not found", 404);
+    }
     const user = await User.findById(userId)
       .select("name role createdAt")
       .exec();
@@ -413,27 +514,27 @@ export const getPublicProfile = async (
 
     if (user.role === "engineer") {
       const engineer = await Engineer.findOne({ user: user._id }).exec();
-      const [engineerRating, rateStats, derivedLocationStats] =
+      const [ratings, rateStats, derivedLocationStats, completedWork, equipment] =
         await Promise.all([
-          getEngineerRating(user._id.toString()),
+          getProviderRatings(user._id.toString()),
           getEngineerRateStats(user._id.toString()),
           getEngineerDerivedLocation(user._id.toString()),
+          Project.find({ assignedEngineer: user._id, status: "completed" })
+            .select("_id title name category location completedAt updatedAt createdAt")
+            .sort({ completedAt: -1, updatedAt: -1 })
+            .limit(12)
+            .exec(),
+          getActiveListings(user._id),
         ]);
-      const completedWork = await Project.find({
-        assignedEngineer: user._id,
-        status: "completed",
-      })
-        .select("_id title name category location completedAt totalAgreedValue")
-        .sort({ completedAt: -1, updatedAt: -1 })
-        .limit(12)
-        .exec();
 
       res.status(200).json({
         userId: user._id.toString(),
         name: user.name,
         role: user.role,
+        memberSince: user.createdAt.toISOString(),
         profilePhotoUrl: engineer?.profilePhoto?.url ?? null,
         bio: engineer?.bio ?? "",
+        disciplines: engineer?.disciplines ?? [],
         connectionsCount,
         portfolio:
           engineer?.portfolio.map((item) => ({
@@ -442,15 +543,19 @@ export const getPublicProfile = async (
             imageUrl: item.imageUrl,
             uploadedAt: item.uploadedAt.toISOString(),
           })) ?? [],
+        // Anyone signed in can open a certificate and check it themselves;
+        // CivilHub doesn't verify them yet.
         certificates:
           engineer?.certificates.map((certificate) => ({
             title: certificate.title,
             uploadedAt: certificate.uploadedAt.toISOString(),
+            fileUrl: certificate.fileUrl,
+            resourceType: certificate.resourceType,
           })) ?? [],
         connectionStatus: connection.status,
         connectionId: connection.connectionId,
-        rating: engineerRating.rating,
-        reviewCount: engineerRating.reviewCount,
+    blockedByMe: connection.blockedByMe,
+        ...toRatingFields(ratings),
         startingRateMin:
           typeof engineer?.startingRateMin === "number"
             ? engineer.startingRateMin
@@ -486,19 +591,23 @@ export const getPublicProfile = async (
         derivedLocation: derivedLocationStats.derivedLocation,
         completedLocationProjectCount:
           derivedLocationStats.completedProjectCount,
-        completedWork: completedWork.map((project) => ({
-          id: project._id.toString(),
-          title: project.title ?? project.name ?? "Untitled project",
-          category: project.category ?? "General",
-          location: project.location ?? null,
-          completedAt: (
-            project.completedAt ??
-            project.updatedAt ??
-            project.createdAt
-          ).toISOString(),
-          contractValue: project.totalAgreedValue ?? null,
-        })),
+        completedWork: completedWork.map(toDeliveredProject),
+        equipment,
       });
+      return;
+    }
+
+    if (user.role === "organisation") {
+      res
+        .status(200)
+        .json(
+          await buildOrganisationPublicProfile(
+            user,
+            requesterId,
+            connection,
+            connectionsCount,
+          ),
+        );
       return;
     }
 

@@ -1,6 +1,11 @@
 import { type ReactElement, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import {
+  outlineButtonClassName,
+  secondaryButtonClassName,
+} from "../components/dashboard/ui/buttonStyles";
 import {
   formatRelativeTime,
   getNotificationDotClassName,
@@ -125,27 +130,20 @@ export function NotificationsPage(): ReactElement {
   };
 
   return (
-    <main className="min-h-screen bg-void px-4 py-12 text-white sm:px-6 lg:px-8">
-      <section className="mx-auto max-w-5xl rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-              Activity
-            </p>
-            <h1 className="mt-2 font-heading text-3xl font-bold text-white sm:text-4xl">
-              Notifications
-            </h1>
-            <p className="mt-2 text-sm text-white/60">
-              {unreadCount > 0
-                ? `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
-                : "All caught up"}
-            </p>
-          </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Notifications"
+        summary={
+          unreadCount > 0
+            ? `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}.`
+            : "You're all caught up."
+        }
+        action={
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void loadNotifications(page)}
-              className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/70 hover:border-primary hover:text-white"
+              className={secondaryButtonClassName}
             >
               Refresh
             </button>
@@ -153,15 +151,16 @@ export function NotificationsPage(): ReactElement {
               type="button"
               onClick={() => void handleMarkAllRead()}
               disabled={unreadCount === 0}
-              className="rounded-full border border-primary/50 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary hover:text-on-primary disabled:cursor-not-allowed disabled:opacity-40"
+              className={outlineButtonClassName}
             >
               Mark all as read
             </button>
           </div>
-        </div>
-
+        }
+      />
+      <section className="rounded-2xl border border-white/10 bg-surface p-6 sm:p-8">
         {isLoading ? (
-          <div className="mt-6 space-y-3" aria-label="Loading notifications">
+          <div className="space-y-3" aria-label="Loading notifications">
             {Array.from({ length: 5 }).map((_, index) => (
               <div
                 key={`notification-skeleton-${index}`}
@@ -174,13 +173,13 @@ export function NotificationsPage(): ReactElement {
           </div>
         ) : error ? (
           <div
-            className="mt-6 rounded-xl border border-rose-400/25 bg-rose-400/10 p-4"
+            className="rounded-xl border border-rose-400/25 bg-rose-400/10 p-4"
             role="alert"
           >
             <p className="text-sm text-rose-200">{error}</p>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-white/15 bg-void/40 p-8 text-center">
+          <div className="rounded-xl border border-dashed border-white/15 bg-void/40 p-8 text-center">
             <h2 className="font-heading text-2xl font-bold text-white">
               No notifications yet
             </h2>
@@ -190,7 +189,7 @@ export function NotificationsPage(): ReactElement {
             </p>
           </div>
         ) : (
-          <div className="mt-6 space-y-2">
+          <div className="space-y-2">
             {notifications.map((notification) => (
               <button
                 key={notification.id}
@@ -249,6 +248,6 @@ export function NotificationsPage(): ReactElement {
           </div>
         ) : null}
       </section>
-    </main>
+    </div>
   );
 }

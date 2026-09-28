@@ -7,7 +7,7 @@ interface CTASectionProps {}
 export function CTASection(_props: CTASectionProps): ReactElement {
   return (
     <section
-      id="pricing"
+      id="get-started"
       className="bg-gradient-to-r from-primary via-primary to-glow px-4 py-20 sm:px-6 lg:px-8"
     >
       <Reveal className="mx-auto max-w-5xl rounded-[32px] border border-void/20 bg-void/90 px-6 py-10 shadow-[0_24px_60px_-20px_rgba(0,0,0,0.55)] backdrop-blur-sm sm:px-10 lg:px-14">

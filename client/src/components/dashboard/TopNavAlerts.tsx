@@ -1,7 +1,7 @@
 import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import { BellIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth, type UserRole } from "../../context/AuthContext";
 import { fetchConversations } from "../messages/api";
 import { InboxDropdown } from "../messages/InboxDropdown";
 import {
@@ -18,7 +18,7 @@ import {
 } from "./notificationUtils";
 
 interface TopNavAlertsProps {
-  role: "client" | "engineer";
+  role: UserRole;
 }
 
 interface ErrorResponse {

@@ -10,11 +10,12 @@ import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
+import { dashboardBase as dashboardBaseFor } from "../lib/dashboardPaths";
 
 interface HistoryItem {
   id: string;
   title: string;
-  otherParty: { id: string; name: string } | null;
+  otherParty: { id: string; name: string; role?: string } | null;
   completedAt: string;
   totalValuePaid: number;
   rating: number | null;
@@ -55,15 +56,23 @@ const getTime = (value: string): number => {
   return Number.isNaN(time) ? 0 : time;
 };
 
+const partyLabelFor = (role: string | undefined, isClient: boolean): string =>
+  role === "organisation"
+    ? "Company:"
+    : role === "client" || !isClient
+      ? "Client:"
+      : "Engineer:";
+
 function HistoryRow({
   project,
   projectPath,
-  partyLabel,
+  isClient,
 }: {
   project: HistoryItem;
   projectPath: string;
-  partyLabel: string;
+  isClient: boolean;
 }): ReactElement {
+  const partyLabel = partyLabelFor(project.otherParty?.role, isClient);
   return (
     <li className="grid gap-3 px-5 py-5 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-6">
       <div className="min-w-0 lg:col-span-5">
@@ -111,6 +120,10 @@ function HistoryRow({
             />
             {project.rating.toFixed(1)}
           </span>
+        ) : isClient ? (
+          <Link to={projectPath} className={inlineLinkClassName}>
+            Leave a review
+          </Link>
         ) : (
           <span className="text-sm text-white/40">Not reviewed</span>
         )}
@@ -185,8 +198,7 @@ export function ProjectHistoryPage(): ReactElement {
   // This page serves both dashboards, so every label that names the other
   // side of the project follows the viewer's role.
   const isClient = currentUser?.role === "client";
-  const dashboardBase = isClient ? "/dashboard/client" : "/dashboard/engineer";
-  const partyLabel = isClient ? "Engineer:" : "Client:";
+  const dashboardBase = dashboardBaseFor(currentUser?.role);
   const otherSide = isClient ? "engineers" : "clients";
 
   const totalValue = projects.reduce(
@@ -297,7 +309,7 @@ export function ProjectHistoryPage(): ReactElement {
                   key={project.id}
                   project={project}
                   projectPath={`${dashboardBase}/projects/${project.id}`}
-                  partyLabel={partyLabel}
+                  isClient={isClient}
                 />
               ))}
             </ul>

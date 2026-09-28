@@ -12,13 +12,16 @@ import { type CurrentUser } from "../../context/AuthContext";
 import { Avatar } from "../Avatar";
 import { AboutPanel } from "./AboutPanel";
 import { Composer } from "./Composer";
+import { ProjectContextBar } from "./ProjectContextBar";
 import { groupMessages } from "./groupMessages";
-import { DayDivider, MessageGroup } from "./MessageGroup";
+import { DayDivider, MessageGroup, ProjectDivider } from "./MessageGroup";
 import { type ConversationsState } from "./useConversations";
 import { useChatThread } from "./useChatThread";
 
 interface ThreadViewProps {
   targetId: string;
+  /** The project a "Message" link opened this chat about. */
+  projectId?: string | null;
   currentUser: CurrentUser | null;
   inbox: ConversationsState;
   onBack: () => void;
@@ -29,12 +32,13 @@ const headerButton =
 
 export function ThreadView({
   targetId,
+  projectId,
   currentUser,
   inbox,
   onBack,
 }: ThreadViewProps): ReactElement {
   const { clearUnread, reload } = inbox;
-  const thread = useChatThread(targetId, currentUser, clearUnread);
+  const thread = useChatThread(targetId, currentUser, clearUnread, projectId);
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -43,9 +47,13 @@ export function ThreadView({
   );
   const other = thread.otherParticipant ?? summary?.otherParticipant ?? null;
 
+  const projectTitles = useMemo(
+    () => new Map(thread.projects.map((project) => [project.id, project.title])),
+    [thread.projects],
+  );
   const items = useMemo(
-    () => groupMessages(thread.messages, currentUser?.id),
-    [thread.messages, currentUser?.id],
+    () => groupMessages(thread.messages, currentUser?.id, projectTitles),
+    [thread.messages, currentUser?.id, projectTitles],
   );
 
   useEffect(() => {
@@ -183,6 +191,13 @@ export function ThreadView({
           </div>
         </header>
 
+        <ProjectContextBar
+          projects={thread.projects}
+          activeProjectId={thread.activeProjectId}
+          onChange={thread.setActiveProjectId}
+          viewerRole={currentUser?.role}
+        />
+
         <div
           ref={listRef}
           role="log"
@@ -210,6 +225,8 @@ export function ThreadView({
             items.map((item) =>
               item.kind === "day" ? (
                 <DayDivider key={item.key} label={item.label} />
+              ) : item.kind === "project" ? (
+                <ProjectDivider key={item.key} title={item.title} />
               ) : (
                 <MessageGroup key={item.key} group={item} />
               ),
@@ -221,6 +238,9 @@ export function ThreadView({
           key={conversationId}
           conversationId={conversationId}
           recipientName={other.name.split(" ")[0]}
+          projectId={thread.activeProjectId}
+          contactsHidden={thread.contactsHidden}
+          viewerRole={currentUser?.role}
           sendText={thread.sendText}
           onSent={(message) => {
             if (message) thread.addMessage(message);
@@ -230,7 +250,12 @@ export function ThreadView({
       </section>
 
       <div className="hidden w-72 shrink-0 border-l border-white/10 xl:block">
-        <AboutPanel key={other.userId} participant={other} />
+        <AboutPanel
+          key={other.userId}
+          participant={other}
+          projects={thread.projects}
+          viewerRole={currentUser?.role}
+        />
       </div>
 
       {isAboutOpen ? (
@@ -245,6 +270,8 @@ export function ThreadView({
             <AboutPanel
               key={other.userId}
               participant={other}
+              projects={thread.projects}
+              viewerRole={currentUser?.role}
               onClose={() => setIsAboutOpen(false)}
             />
           </div>

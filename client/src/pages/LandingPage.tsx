@@ -1,12 +1,15 @@
 import { type ReactElement } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { CTASection } from "../components/landing/CTASection";
+import { EquipmentBand } from "../components/landing/EquipmentBand";
 import { Footer } from "../components/landing/Footer";
 import { ForClientsForEngineers } from "../components/landing/ForClientsForEngineers";
 import { Hero } from "../components/landing/Hero";
 import { HowItWorks } from "../components/landing/HowItWorks";
 import { MissionSection } from "../components/landing/MissionSection";
 import { Navbar } from "../components/landing/Navbar";
+import { PlatformFeatures } from "../components/landing/PlatformFeatures";
+import { Pricing } from "../components/landing/Pricing";
 import { Testimonials } from "../components/landing/Testimonials";
 import { TrustStats } from "../components/landing/TrustStats";
 
@@ -21,7 +24,7 @@ export function LandingPage(): ReactElement {
     setSearchParams(nextParams, { replace: true });
   };
 
-  const continueAsRole = (role: "client" | "engineer"): void => {
+  const continueAsRole = (role: "client" | "engineer" | "company"): void => {
     navigate(`/signup/${role}`);
   };
 
@@ -30,10 +33,13 @@ export function LandingPage(): ReactElement {
       <Navbar />
       <Hero />
       <HowItWorks />
+      <EquipmentBand />
       <MissionSection />
       <TrustStats />
+      <PlatformFeatures />
       <Testimonials />
       <ForClientsForEngineers />
+      <Pricing />
       <CTASection />
       <Footer />
       {showRolePrompt ? (
@@ -64,7 +70,17 @@ export function LandingPage(): ReactElement {
               >
                 Continue as Engineer
               </button>
+              <button
+                type="button"
+                onClick={() => continueAsRole("company")}
+                className="w-full rounded-full border border-white/20 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-all duration-300 hover:border-primary hover:text-primary"
+              >
+                Continue as a Company
+              </button>
             </div>
+            <p className="mt-3 text-xs text-white/50">
+              Companies rent out equipment or take on projects as a firm.
+            </p>
 
             <button
               type="button"
