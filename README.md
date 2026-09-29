@@ -4,6 +4,8 @@
 
 CivilHub is a full-stack application starter with a TypeScript Express API and a React + Vite client.
 
+For the full platform architecture, setup, role capabilities, workflows, API domains, data model, and operational notes, see [the project documentation](docs/PROJECT_DOCUMENTATION.md).
+
 ## Stack
 
 - Backend: Node.js, TypeScript, Express, Mongoose
