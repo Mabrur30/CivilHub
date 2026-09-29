@@ -25,6 +25,7 @@ const exploreLinks = [
 const startLinks = [
   { label: "Post a project", to: "/signup/client" },
   { label: "Find work", to: "/signup/engineer" },
+  { label: "Develop projects", to: "/signup/developer" },
   { label: "Join as a company", to: "/signup/company" },
   { label: "List equipment", to: "/signup/company" },
   { label: "Sign in", to: "/login" },

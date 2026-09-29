@@ -25,6 +25,7 @@ interface EngineerBid {
   projectTitle: string;
   clientName: string;
   amount: number;
+  durationDays: number;
   status: "pending" | "accepted" | "declined";
   submittedDate: string;
   projectStatus: string;
@@ -61,6 +62,7 @@ const isEngineerBid = (value: unknown): value is EngineerBid => {
     typeof bid.projectTitle === "string" &&
     typeof bid.clientName === "string" &&
     typeof bid.amount === "number" &&
+    typeof bid.durationDays === "number" &&
     (bid.status === "pending" ||
       bid.status === "accepted" ||
       bid.status === "declined") &&
@@ -370,6 +372,10 @@ function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
         }`}
       >
         {formatCurrency(bid.amount)}
+      </p>
+
+      <p className="text-right text-xs text-white/50 lg:col-span-2 lg:text-left">
+        {bid.durationDays} day delivery estimate
       </p>
 
       <p className="text-right text-sm text-white/55 lg:col-span-2 lg:text-left">

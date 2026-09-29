@@ -6,6 +6,7 @@ import { Avatar } from "../Avatar";
 const roleLabels: Record<UserRole, string> = {
   client: "Client",
   engineer: "Engineer",
+  developer: "Developer",
   organisation: "Company",
 };
 

@@ -15,7 +15,7 @@ import { isProviderRole } from "../../lib/dashboardPaths";
 export interface FeedAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer" | "organisation";
+  role: "client" | "engineer" | "developer" | "organisation";
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;

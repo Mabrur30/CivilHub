@@ -8,8 +8,8 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 
-/** Clients hire; engineers and organisations (companies) provide services. */
-export type UserRole = "client" | "engineer" | "organisation";
+/** Clients hire; engineers, developers and organisations provide services. */
+export type UserRole = "client" | "engineer" | "developer" | "organisation";
 
 /** What a company offers; decides which tools its dashboard shows. */
 export type CompanyService = "equipment" | "projects";
@@ -57,6 +57,7 @@ const isCurrentUser = (value: unknown): value is CurrentUser => {
       user.profilePhotoUrl === null) &&
     (user.role === "client" ||
       user.role === "engineer" ||
+      user.role === "developer" ||
       user.role === "organisation") &&
     (user.services === undefined ||
       (Array.isArray(user.services) &&

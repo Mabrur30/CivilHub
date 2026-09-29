@@ -6,6 +6,7 @@ export interface IBid extends Document {
   engineer: Types.ObjectId;
   project: Types.ObjectId;
   amount: number;
+  durationDays: number;
   message: string;
   status: BidStatus;
   createdAt: Date;
@@ -30,6 +31,13 @@ const bidSchema = new Schema<IBid>(
       type: Number,
       required: true,
       min: 0,
+    },
+    durationDays: {
+      type: Number,
+      required: true,
+      default: 30,
+      min: 1,
+      max: 3650,
     },
     message: {
       type: String,

@@ -55,6 +55,7 @@ const getErrorMessage = (value: unknown): string => {
 const roleLabelMap: Record<SignupPageProps["role"], string> = {
   client: "Client",
   engineer: "Engineer",
+  developer: "Developer",
   organisation: "Company",
 };
 
@@ -104,7 +105,9 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
   const isCompany = role === "organisation";
   // Engineers always have a speciality; a company only if it takes on projects.
   const asksSpeciality =
-    role === "engineer" || (isCompany && services.includes("projects"));
+    role === "engineer" ||
+    role === "developer" ||
+    (isCompany && services.includes("projects"));
 
   const toggleService = (service: CompanyService): void => {
     setServices((current) =>
@@ -130,7 +133,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
     }
     if (asksSpeciality && disciplines.length === 0) {
       setError(
-        isCompany
+          isCompany
           ? "Choose what your company specialises in."
           : "Choose your main speciality.",
       );
@@ -336,6 +339,10 @@ export function SignupRoute(): ReactElement {
 
   if (role === "engineer") {
     return <SignupPage role="engineer" />;
+  }
+
+  if (role === "developer") {
+    return <SignupPage role="developer" />;
   }
 
   if (role === "company" || role === "organisation") {

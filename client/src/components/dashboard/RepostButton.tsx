@@ -5,7 +5,7 @@ import { Avatar } from "../Avatar";
 interface RepostAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer" | "organisation";
+  role: "client" | "engineer" | "developer" | "organisation";
   profilePhotoUrl: string | null;
 }
 

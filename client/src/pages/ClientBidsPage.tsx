@@ -36,6 +36,7 @@ interface ClientBid {
   engineerId: string;
   engineerName: string;
   amount: number;
+  durationDays: number;
   message: string;
   submittedDate: string;
   status: BidStatus;
@@ -71,6 +72,7 @@ const isClientBid = (value: unknown): value is ClientBid =>
   typeof value.engineerId === "string" &&
   typeof value.engineerName === "string" &&
   typeof value.amount === "number" &&
+  typeof value.durationDays === "number" &&
   typeof value.message === "string" &&
   typeof value.submittedDate === "string" &&
   (value.status === "pending" ||
@@ -237,6 +239,9 @@ function BidRow({ bid, project, onHire, onDecline }: BidRowProps): ReactElement 
         <div className="shrink-0 pl-14 sm:pl-0 sm:text-right">
           <p className="text-2xl font-semibold tabular-nums text-white">
             {formatCurrency(bid.amount)}
+          </p>
+          <p className="mt-1 text-sm text-white/55">
+            Delivery in {bid.durationDays} days
           </p>
           <div className="mt-1.5">
             <BudgetMarker amount={bid.amount} min={project.budgetMin} max={project.budgetMax} />

@@ -328,6 +328,7 @@ export const acceptBidInvitation = async (
       engineerUserId,
       projectId: invitation.project.toString(),
       amount,
+      durationDays: 30,
       message,
     });
 

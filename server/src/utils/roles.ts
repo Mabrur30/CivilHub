@@ -14,15 +14,22 @@ const createRoleError = (message: string, statusCode: number): RoleError => {
   return error;
 };
 
-/** Roles that offer services: engineers and companies. Clients hire them. */
-export const PROVIDER_ROLES: UserRole[] = ["engineer", "organisation"];
+/** Roles that offer services: engineers, developers and companies. */
+export const PROVIDER_ROLES: UserRole[] = [
+  "engineer",
+  "developer",
+  "organisation",
+];
 
 export const isProviderRole = (role: unknown): boolean =>
-  role === "engineer" || role === "organisation";
+  role === "engineer" || role === "developer" || role === "organisation";
 
 /** Anyone signed in can rent equipment. */
 export const canRentEquipment = (role: unknown): boolean =>
-  role === "client" || role === "engineer" || role === "organisation";
+  role === "client" ||
+  role === "engineer" ||
+  role === "developer" ||
+  role === "organisation";
 
 export const getOrganisationServices = async (
   userId: string,
@@ -39,15 +46,16 @@ interface Actor {
 }
 
 /**
- * Engineers can always take on project work. A company can only when its
- * profile says it does, so a plant-hire firm isn't shown bidding tools.
+ * Engineers and developers can always take on project work. A company can
+ * only when its profile says it does, so a plant-hire firm isn't shown
+ * bidding tools.
  */
 export const assertCanTakeProjects = async (
   user: Actor | undefined,
   deniedMessage = "Engineer access required",
 ): Promise<string> => {
   if (!user?.userId) throw createRoleError("Authentication required", 401);
-  if (user.role === "engineer") return user.userId;
+  if (user.role === "engineer" || user.role === "developer") return user.userId;
   if (user.role === "organisation") {
     const services = await getOrganisationServices(user.userId);
     if (services.includes("projects")) return user.userId;
@@ -103,7 +111,7 @@ export const canUserTakeProjects = async (
   userId: string,
   role: UserRole,
 ): Promise<boolean> => {
-  if (role === "engineer") return true;
+  if (role === "engineer" || role === "developer") return true;
   if (role !== "organisation") return false;
   return (await getOrganisationServices(userId)).includes("projects");
 };

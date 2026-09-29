@@ -27,7 +27,7 @@ const IMAGE_LIMIT = 5 * 1024 * 1024;
 interface ClientProfileViewProps {
   profile: ClientPublicProfile;
   isSelf: boolean;
-  viewerRole: "client" | "engineer" | "organisation" | null;
+  viewerRole: "client" | "engineer" | "developer" | "organisation" | null;
   actionError: string;
   onProfileChange: (
     update: (current: ClientPublicProfile) => ClientPublicProfile,

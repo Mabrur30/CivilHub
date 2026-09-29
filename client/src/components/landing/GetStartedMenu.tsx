@@ -79,6 +79,14 @@ export function GetStartedMenu(_props: GetStartedMenuProps): ReactElement {
         <button
           type="button"
           role="menuitem"
+          onClick={() => handleOptionClick("/signup/developer")}
+          className="block w-full rounded-lg border-l-2 border-transparent px-3 py-2.5 text-left font-body text-sm text-white/80 transition-colors duration-200 hover:border-glow hover:bg-primary/10 hover:text-white"
+        >
+          Continue as Developer / Builder
+        </button>
+        <button
+          type="button"
+          role="menuitem"
           onClick={() => handleOptionClick("/signup/company")}
           className="block w-full rounded-lg border-l-2 border-transparent px-3 py-2.5 text-left font-body text-sm text-white/80 transition-colors duration-200 hover:border-glow hover:bg-primary/10 hover:text-white"
         >

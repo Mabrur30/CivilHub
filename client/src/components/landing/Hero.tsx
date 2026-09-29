@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 interface HeroProps {}
 
 interface Persona {
-  side: "client" | "engineer";
+  side: "client" | "engineer" | "builder";
   label: string;
   headline: string;
   valueProp: string;
@@ -31,6 +31,15 @@ const personas: Persona[] = [
       "Bid on work you can price properly, hand over each phase with its files, and get paid as the client approves.",
     cta: "I'm an Engineer",
     to: "/signup/engineer",
+  },
+  {
+    side: "builder",
+    label: "For builders",
+    headline: "Build approved civil projects with a team that fits",
+    valueProp:
+      "See approved briefs, submit your price and delivery plan, and win work from clients who value proven builders.",
+    cta: "I'm a Builder",
+    to: "/signup/developer",
   },
 ];
 
@@ -66,7 +75,7 @@ export function Hero(_props: HeroProps): ReactElement {
       </h1>
 
       <div className="relative mx-auto flex min-h-[calc(100vh-80px)] max-w-7xl flex-col justify-center px-4 pb-16 pt-12 sm:px-6 lg:px-8">
-        <div className="relative grid gap-10 lg:grid-cols-2 lg:gap-0">
+          <div className="relative grid gap-10 lg:grid-cols-3 lg:gap-0">
           {/* The centerline. Vertical between the two panels on wide screens,
               horizontal between the stacked panels below lg. */}
           <div

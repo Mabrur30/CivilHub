@@ -49,12 +49,14 @@ interface MarketplaceProject {
 
 interface BidForm {
   amount: string;
+  durationDays: string;
   message: string;
 }
 
 interface SubmitBidRequestBody {
   projectId: string;
   amount: number;
+  durationDays: number;
   message: string;
 }
 
@@ -289,7 +291,11 @@ export function EngineerMarketplacePage(): ReactElement {
   const [search, setSearch] = useState<string>("");
   const [selectedProject, setSelectedProject] =
     useState<MarketplaceProject | null>(null);
-  const [bid, setBid] = useState<BidForm>({ amount: "", message: "" });
+  const [bid, setBid] = useState<BidForm>({
+    amount: "",
+    durationDays: "",
+    message: "",
+  });
   const [bidError, setBidError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [submittedProjectIds, setSubmittedProjectIds] = useState<Set<string>>(
@@ -359,7 +365,7 @@ export function EngineerMarketplacePage(): ReactElement {
     );
     if (requested && !submittedProjectIds.has(requested.id)) {
       setSelectedProject(requested);
-      setBid({ amount: "", message: "" });
+      setBid({ amount: "", durationDays: "", message: "" });
       setBidError("");
     }
     setSearchParams(
@@ -436,7 +442,7 @@ export function EngineerMarketplacePage(): ReactElement {
 
   const openBidDialog = (project: MarketplaceProject): void => {
     setSelectedProject(project);
-    setBid({ amount: "", message: "" });
+    setBid({ amount: "", durationDays: "", message: "" });
     setBidError("");
   };
 
@@ -446,8 +452,13 @@ export function EngineerMarketplacePage(): ReactElement {
     event.preventDefault();
     if (!selectedProject) return;
     const amount = moneyValue(bid.amount) ?? Number.NaN;
+    const durationDays = Number(bid.durationDays);
     if (!Number.isFinite(amount) || amount <= 0) {
       setBidError("Enter a price greater than zero.");
+      return;
+    }
+    if (!Number.isInteger(durationDays) || durationDays < 1) {
+      setBidError("Enter an estimated delivery time in days.");
       return;
     }
     if (!bid.message.trim()) {
@@ -459,6 +470,7 @@ export function EngineerMarketplacePage(): ReactElement {
     const requestBody: SubmitBidRequestBody = {
       projectId: selectedProject.id,
       amount,
+      durationDays,
       message: bid.message.trim(),
     };
     try {
@@ -673,6 +685,30 @@ export function EngineerMarketplacePage(): ReactElement {
           isBusy={isSubmitting}
         >
           <form onSubmit={submitBid} className="grid gap-5" noValidate>
+            <div className="grid gap-2">
+              <label
+                htmlFor="bid-duration"
+                className="text-sm font-semibold text-white/80"
+              >
+                Estimated delivery time
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="bid-duration"
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={bid.durationDays}
+                  onChange={(event) =>
+                    setBid({ ...bid, durationDays: event.target.value })
+                  }
+                  className={`${inputClassName} max-w-40`}
+                  placeholder="30"
+                  aria-describedby={bidError ? "bid-error" : undefined}
+                />
+                <span className="text-sm text-white/50">days</span>
+              </div>
+            </div>
             <div className="grid gap-2">
               <label
                 htmlFor="bid-amount"

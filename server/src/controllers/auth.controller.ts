@@ -3,6 +3,7 @@ import { type NextFunction, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Client } from "../models/Client.model";
+import { Developer } from "../models/Developer.model";
 import { Engineer } from "../models/Engineer.model";
 import {
   Organisation,
@@ -87,13 +88,18 @@ const toPublicUser = async (user: IUser) => {
           .exec()
       : null;
   // Providers without a speciality are prompted to choose one.
-  const disciplines =
-    user.role === "engineer"
-      ? ((await Engineer.findOne({ user: user._id }).select("disciplines").exec())
-          ?.disciplines ?? [])
-      : user.role === "organisation"
-        ? onlyDisciplines(organisation?.specialties)
-        : undefined;
+  let disciplines: string[] | undefined;
+  if (user.role === "engineer") {
+    disciplines =
+      (await Engineer.findOne({ user: user._id }).select("disciplines").exec())
+        ?.disciplines ?? [];
+  } else if (user.role === "developer") {
+    disciplines =
+      (await Developer.findOne({ user: user._id }).select("disciplines").exec())
+        ?.disciplines ?? [];
+  } else if (user.role === "organisation") {
+    disciplines = onlyDisciplines(organisation?.specialties);
+  }
 
   return {
     id: user._id.toString(),
@@ -130,9 +136,14 @@ export const signup = async (
       throw createAuthError("All fields are required", 400);
     }
 
-    if (role !== "client" && role !== "engineer" && role !== "organisation") {
+    if (
+      role !== "client" &&
+      role !== "engineer" &&
+      role !== "developer" &&
+      role !== "organisation"
+    ) {
       throw createAuthError(
-        "Role must be client, engineer or organisation",
+        "Role must be client, engineer, developer or organisation",
         400,
       );
     }
@@ -142,6 +153,7 @@ export const signup = async (
     // projects (a rental-only firm is found by its equipment instead).
     const needsSpeciality =
       role === "engineer" ||
+      role === "developer" ||
       (role === "organisation" && organisationServices.includes("projects"));
     const chosenDisciplines = needsSpeciality
       ? (parseDisciplines(disciplines, { required: true }) ?? [])
@@ -174,11 +186,17 @@ export const signup = async (
           services: organisationServices,
           specialties: chosenDisciplines,
         });
-      } else {
+      } else if (role === "engineer") {
         await Engineer.create({
           user: user._id,
           disciplines: chosenDisciplines,
           certificates: [],
+          portfolio: [],
+        });
+      } else {
+        await Developer.create({
+          user: user._id,
+          disciplines: chosenDisciplines,
           portfolio: [],
         });
       }

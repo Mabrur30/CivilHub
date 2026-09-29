@@ -9,6 +9,7 @@ export function RoleDashboardLayout(): ReactElement {
   const { currentUser } = useAuth();
   // Engineers and companies share the provider shell.
   return currentUser?.role === "engineer" ||
+    currentUser?.role === "developer" ||
     currentUser?.role === "organisation" ? (
     <EngineerDashboardLayout />
   ) : (

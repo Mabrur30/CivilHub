@@ -139,7 +139,7 @@ type ConnectionStatus =
 interface BasePublicProfile {
   userId: string;
   name: string;
-  role: "client" | "engineer" | "organisation";
+  role: "client" | "engineer" | "developer" | "organisation";
   profilePhotoUrl: string | null;
   bio: string;
   rating: number | null;
@@ -152,7 +152,7 @@ interface BasePublicProfile {
 }
 
 interface EngineerPublicProfile extends BasePublicProfile {
-  role: "engineer";
+  role: "engineer" | "developer";
   startingRateMin: number | null;
   startingRateMax: number | null;
   location: string | null;
@@ -233,7 +233,7 @@ const isBaseProfile = (value: unknown): value is BasePublicProfile => {
   return (
     typeof profile.userId === "string" &&
     typeof profile.name === "string" &&
-    (profile.role === "client" || profile.role === "engineer" || profile.role === "organisation") &&
+    (profile.role === "client" || profile.role === "engineer" || profile.role === "developer" || profile.role === "organisation") &&
     (typeof profile.profilePhotoUrl === "string" ||
       profile.profilePhotoUrl === null) &&
     typeof profile.bio === "string" &&
@@ -453,7 +453,7 @@ const isPublicProfile = (value: unknown): value is PublicProfile => {
   if (!isBaseProfile(value)) return false;
   const profile = value as unknown as Record<string, unknown>;
 
-  if (profile.role === "engineer") {
+  if (profile.role === "engineer" || profile.role === "developer") {
     return (
       (typeof profile.startingRateMin === "number" ||
         profile.startingRateMin === null) &&
@@ -490,7 +490,7 @@ const isFeedAuthor = (value: unknown): value is FeedAuthor => {
   return (
     typeof author.userId === "string" &&
     typeof author.name === "string" &&
-    (author.role === "client" || author.role === "engineer" || author.role === "organisation") &&
+    (author.role === "client" || author.role === "engineer" || author.role === "developer" || author.role === "organisation") &&
     (typeof author.profilePhotoUrl === "string" ||
       author.profilePhotoUrl === null) &&
     (typeof author.rating === "number" || author.rating === null) &&
@@ -1001,6 +1001,7 @@ export function PublicProfilePage(): ReactElement {
   useEffect(() => {
     const canBeInvited =
       subjectRole === "engineer" ||
+      subjectRole === "developer" ||
       (subjectRole === "organisation" && companyTakesProjects);
     if (
       !subjectId ||
@@ -1937,7 +1938,11 @@ export function PublicProfilePage(): ReactElement {
   // The posts list, shared by engineer, client and company pages.
   const renderPostsSection = (
     showComposer: boolean,
-    author: { name: string; photoUrl: string | null; role: "client" | "engineer" | "organisation" },
+    author: {
+      name: string;
+      photoUrl: string | null;
+      role: "client" | "engineer" | "developer" | "organisation";
+    },
   ): ReactElement => (
     <article className="space-y-4 rounded-2xl border border-white/10 bg-surface p-6">
       <div className="flex items-center justify-between gap-3">
@@ -2243,8 +2248,9 @@ export function PublicProfilePage(): ReactElement {
   }
 
   const isSelf = currentUser?.id === profile.userId;
-  const isEngineerProfile = profile.role === "engineer";
-  const engineerProfile = profile.role === "engineer" ? profile : null;
+  const isEngineerProfile =
+    profile.role === "engineer" || profile.role === "developer";
+  const engineerProfile = isEngineerProfile ? profile : null;
   const isClientViewingEngineerProfile =
     currentUser?.role === "client" && isEngineerProfile && !isSelf;
   const rawBackState =
@@ -2269,7 +2275,7 @@ export function PublicProfilePage(): ReactElement {
         ? "Back to dashboard"
         : currentUser?.role === "client"
           ? "Back to Engineer Directory"
-          : currentUser?.role === "engineer"
+          : currentUser?.role === "engineer" || currentUser?.role === "developer"
             ? "Back to My Network"
             : "Back to Engineer Directory";
 
@@ -3478,7 +3484,9 @@ export function PublicProfilePage(): ReactElement {
                     style={entrance(3).style}
                   >
                     {renderPostsSection(
-                      isSelf && currentUser?.role === "engineer",
+                      isSelf &&
+                        (currentUser?.role === "engineer" ||
+                          currentUser?.role === "developer"),
                       {
                         name: profile.name,
                         photoUrl: profile.profilePhotoUrl,

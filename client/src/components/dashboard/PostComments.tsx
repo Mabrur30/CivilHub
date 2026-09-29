@@ -8,7 +8,7 @@ import { ReportDialog } from "../safety/ReportDialog";
 export interface CommentAuthor {
   userId: string;
   name: string;
-  role: "client" | "engineer" | "organisation";
+  role: "client" | "engineer" | "developer" | "organisation";
   profilePhotoUrl: string | null;
   rating?: number | null;
   reviewCount?: number;

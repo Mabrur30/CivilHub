@@ -4,6 +4,7 @@ import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { isBlockedByMe } from "../utils/blocks";
 import { Connection } from "../models/Connection.model";
 import { Client } from "../models/Client.model";
+import { Developer } from "../models/Developer.model";
 import { Engineer } from "../models/Engineer.model";
 import { Equipment } from "../models/Equipment.model";
 import { Organisation } from "../models/Organisation.model";
@@ -511,6 +512,58 @@ export const getPublicProfile = async (
     if (!user) throw createUserError("User not found", 404);
     const connection = await getConnectionDetails(requesterId, userId);
     const connectionsCount = await getConnectionsCount(userId);
+
+    if (user.role === "developer") {
+      const developer = await Developer.findOne({ user: user._id }).exec();
+      const [ratings, rateStats, derivedLocationStats, completedWork] =
+        await Promise.all([
+          getProviderRatings(user._id.toString()),
+          getEngineerRateStats(user._id.toString()),
+          getEngineerDerivedLocation(user._id.toString()),
+          Project.find({ assignedEngineer: user._id, status: "completed" })
+            .select("_id title name category location completedAt updatedAt createdAt")
+            .sort({ completedAt: -1, updatedAt: -1 })
+            .limit(12)
+            .exec(),
+        ]);
+
+      res.status(200).json({
+        userId: user._id.toString(),
+        name: user.name,
+        role: user.role,
+        memberSince: user.createdAt.toISOString(),
+        profilePhotoUrl: null,
+        bio: developer?.bio ?? "",
+        disciplines: developer?.disciplines ?? [],
+        connectionsCount,
+        portfolio:
+          developer?.portfolio.map((item) => ({
+            title: item.title,
+            description: item.description,
+            imageUrl: item.imageUrl,
+            uploadedAt: item.uploadedAt.toISOString(),
+          })) ?? [],
+        certificates: [],
+        connectionStatus: connection.status,
+        connectionId: connection.connectionId,
+        blockedByMe: connection.blockedByMe,
+        ...toRatingFields(ratings),
+        startingRateMin: null,
+        startingRateMax: null,
+        location: developer?.location?.trim() || derivedLocationStats.derivedLocation,
+        education: [],
+        experience: [],
+        typicalRate: rateStats.typicalRate,
+        rateMin: rateStats.rateMin,
+        rateMax: rateStats.rateMax,
+        acceptedBidCount: rateStats.acceptedBidCount,
+        derivedLocation: derivedLocationStats.derivedLocation,
+        completedLocationProjectCount: derivedLocationStats.completedProjectCount,
+        completedWork: completedWork.map(toDeliveredProject),
+        equipment: [],
+      });
+      return;
+    }
 
     if (user.role === "engineer") {
       const engineer = await Engineer.findOne({ user: user._id }).exec();

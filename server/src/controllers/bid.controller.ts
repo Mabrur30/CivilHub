@@ -13,6 +13,7 @@ import { assertCanTakeProjects } from "../utils/roles";
 export interface SubmitBidRequestBody {
   projectId: string;
   amount: number;
+  durationDays: number;
   message: string;
 }
 
@@ -31,6 +32,7 @@ interface ClientBidResponse {
   /** The bid comes from a company rather than an individual engineer. */
   isCompany: boolean;
   amount: number;
+  durationDays: number;
   message: string;
   submittedDate: string;
   status: "pending" | "accepted" | "declined";
@@ -58,6 +60,7 @@ export interface EngineerBidResponse {
   projectTitle: string;
   clientName: string;
   amount: number;
+  durationDays: number;
   status: "pending" | "accepted" | "declined";
   submittedDate: string;
   projectStatus: string;
@@ -67,6 +70,7 @@ interface CreateBidInput {
   engineerUserId: string;
   projectId: string;
   amount: number;
+  durationDays: number;
   message: string;
 }
 
@@ -100,6 +104,7 @@ export const createBidForProject = async ({
   engineerUserId,
   projectId,
   amount,
+  durationDays,
   message,
 }: CreateBidInput): Promise<CreatedBidResult> => {
   const project = await Project.findOne({
@@ -123,6 +128,7 @@ export const createBidForProject = async ({
     engineer: engineerUserId,
     project: project._id,
     amount,
+    durationDays,
     message: message.trim(),
     status: "pending",
   });
@@ -138,12 +144,16 @@ export const submitBid = async (
   try {
     await assertCanTakeProjects(req.user);
 
-    const { projectId, amount, message } = req.body;
+    const { projectId, amount, durationDays, message } = req.body;
     if (
       !projectId ||
       !message?.trim() ||
       !Number.isFinite(amount) ||
-      amount <= 0
+      amount <= 0 ||
+      (durationDays !== undefined &&
+        (!Number.isInteger(durationDays) ||
+          durationDays < 1 ||
+          durationDays > 3650))
     ) {
       throw createBidError(
         "Project, a positive bid amount, and a message are required",
@@ -155,6 +165,7 @@ export const submitBid = async (
       engineerUserId: req.user.userId,
       projectId,
       amount,
+      durationDays: durationDays ?? 30,
       message,
     });
 
@@ -162,6 +173,7 @@ export const submitBid = async (
       id: bid._id.toString(),
       projectId: project._id.toString(),
       amount: bid.amount,
+      durationDays: bid.durationDays ?? 30,
       message: bid.message,
       status: bid.status,
     });
@@ -244,6 +256,7 @@ export const getBidsForMyProjects = async (
         engineerName: engineer.name ?? "Unknown engineer",
         isCompany: engineer.role === "organisation",
         amount: bid.amount,
+        durationDays: bid.durationDays ?? 30,
         message: bid.message,
         submittedDate: bid.createdAt.toISOString(),
         status: bid.status,
@@ -306,6 +319,7 @@ export const getMyBids = async (
         projectTitle: project.title ?? project.name ?? "Untitled project",
         clientName: project.clientName ?? project.client?.name ?? "Client",
         amount: bid.amount,
+        durationDays: bid.durationDays ?? 30,
         status: bid.status,
         submittedDate: bid.createdAt.toISOString(),
         projectStatus: project.status,

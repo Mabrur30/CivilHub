@@ -39,7 +39,10 @@ const createAuthError = (message: string): AuthError => {
 };
 
 const isUserRole = (role: unknown): role is UserRole =>
-  role === "client" || role === "engineer" || role === "organisation";
+  role === "client" ||
+  role === "engineer" ||
+  role === "developer" ||
+  role === "organisation";
 
 const isVerifiedJwtPayload = (
   payload: string | jwt.JwtPayload,

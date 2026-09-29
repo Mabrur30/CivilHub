@@ -10,6 +10,8 @@ export const dashboardBase = (role: UserRole | undefined): string =>
     ? "/dashboard/client"
     : role === "organisation"
       ? "/dashboard/organisation"
+      : role === "developer"
+        ? "/dashboard/developer"
       : "/dashboard/engineer";
 
 /** The signed-in user's dashboard root, e.g. "/dashboard/organisation". */
@@ -20,11 +22,12 @@ export function useDashboardBase(): string {
 
 /** Engineers and companies offer services; clients hire them. */
 export const isProviderRole = (role: unknown): boolean =>
-  role === "engineer" || role === "organisation";
+  role === "engineer" || role === "developer" || role === "organisation";
 
 /** Engineers always take on projects; a company only if its profile says so. */
 export const canTakeProjects = (user: CurrentUser | null): boolean =>
   user?.role === "engineer" ||
+  user?.role === "developer" ||
   (user?.role === "organisation" &&
     (user.services ?? []).includes("projects"));
 

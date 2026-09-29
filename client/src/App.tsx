@@ -176,6 +176,7 @@ function App(): ReactElement {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup/client" element={<SignupPage role="client" />} />
       <Route path="/signup/engineer" element={<SignupPage role="engineer" />} />
+      <Route path="/signup/developer" element={<SignupPage role="developer" />} />
       <Route
         path="/signup/company"
         element={<SignupPage role="organisation" />}
@@ -186,6 +187,16 @@ function App(): ReactElement {
         path="/dashboard/engineer"
         element={
           <ProtectedRoute allowedRole="engineer">
+            <EngineerDashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        {providerRoutes()}
+      </Route>
+      <Route
+        path="/dashboard/developer"
+        element={
+          <ProtectedRoute allowedRole="developer">
             <EngineerDashboardLayout />
           </ProtectedRoute>
         }

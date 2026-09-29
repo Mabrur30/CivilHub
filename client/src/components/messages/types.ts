@@ -7,7 +7,7 @@ import {
 export interface Participant {
   userId: string;
   name: string;
-  role: "client" | "engineer" | "organisation";
+  role: "client" | "engineer" | "developer" | "organisation";
   profilePhotoUrl: string | null;
 }
 
