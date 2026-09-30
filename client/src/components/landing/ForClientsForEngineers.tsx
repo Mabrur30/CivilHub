@@ -82,44 +82,44 @@ export function ForClientsForEngineers(
       <div className="mx-auto max-w-7xl">
         <Reveal variant="head" className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-primary">
-            Built for every side of the site
+            Who it's for
           </p>
           <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
-            One workspace for whoever is paying, designing or supplying.
+            One platform. Every side of the site.
           </h2>
         </Reveal>
 
         <Reveal className="mt-12 grid gap-8 lg:grid-cols-3">
           <RoleCard
             role="Clients"
-            title="Know what you are paying for"
-            description="Homeowners and developers post a brief once, compare bids, and release money only as each phase is delivered and approved."
+            title="Pay for progress, not promises"
+            description="Homeowners and developers post once, compare bids, and pay out only for work they've seen and approved."
             bullets={[
-              "Brief questions tailored to the project type, with your exact site kept private until you hire.",
-              "Compare bids, check reviews and message engineers before committing.",
-              "Approve & pay each phase after reviewing its handover note and files.",
+              "Questions tailored to your project type. Your exact site stays private.",
+              "Compare bids, reviews and Verified badges. Chat before you commit.",
+              "Your money is held, and released only when you approve.",
             ]}
             accent="bg-primary/90"
           />
           <RoleCard
             role="Engineers"
-            title="Win work that fits your speciality"
-            description="Show your main speciality and up to two more, bid on briefs you can price properly, and get paid as phases are approved."
+            title="Win work that fits. Get paid without chasing."
+            description="Pick your specialities, bid on briefs you can price properly, and see each phase funded before you start."
             bullets={[
-              "Briefs arrive with the type-specific facts you need to price the job.",
-              "Hand over each phase with notes and files, kept as a record for both sides.",
-              "Build a profile with reviews, certificates, equipment and a professional network.",
+              "Briefs come with the facts you need to price the job.",
+              "The client funds each phase first. Approval releases it to you.",
+              "A profile that proves it: reviews, certificates and the Verified badge.",
             ]}
             accent="bg-glow/90"
           />
           <RoleCard
             role="Companies"
-            title="Run projects and rent out your fleet"
-            description="Construction firms and plant-hire companies choose what they do — take on projects, rent out equipment, or both — and see only the tools they need."
+            title="Run projects. Rent out your fleet."
+            description="Construction firms and plant-hire companies pick what they do: projects, equipment, or both."
             bullets={[
               "Bid on and deliver projects as a firm, phase by phase.",
-              "List plant with daily, weekly or monthly rates and a held security deposit.",
-              "Rent equipment yourself, and network and message with engineers.",
+              "List plant by the day, week or month, with a held deposit.",
+              "Rent equipment yourself, and work with engineers directly.",
             ]}
             accent="bg-primary/70"
           />

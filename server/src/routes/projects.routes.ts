@@ -23,6 +23,13 @@ import {
 } from "../controllers/project.controller";
 import { canReviewProject } from "../controllers/review.controller";
 import {
+  answerCancellation,
+  getProjectDisputeState,
+  openProjectDispute,
+  proposeCancellation,
+  withdrawProjectDispute,
+} from "../controllers/projectDispute.controller";
+import {
   getProjectProgress,
   updateProjectPhase,
   type UpdateProjectPhaseBody,
@@ -150,5 +157,26 @@ projectsRouter.post(
 );
 
 // Payments (advance, phases, remaining balance) go through /api/payments.
+
+// When something goes wrong mid-project: ask CivilHub to step in, or agree
+// with the other side to end the project early.
+projectsRouter.get("/:projectId/dispute", protect, (req, res, next) =>
+  getProjectDisputeState(req as AuthenticatedRequest, res, next),
+);
+projectsRouter.post("/:projectId/dispute", protect, (req, res, next) =>
+  openProjectDispute(req as AuthenticatedRequest<{ reason?: unknown; description?: unknown }>, res, next),
+);
+projectsRouter.post("/:projectId/dispute/withdraw", protect, (req, res, next) =>
+  withdrawProjectDispute(req as AuthenticatedRequest, res, next),
+);
+projectsRouter.post("/:projectId/cancellation", protect, (req, res, next) =>
+  proposeCancellation(req as AuthenticatedRequest<{ providerAmount?: unknown; note?: unknown }>, res, next),
+);
+for (const answer of ["accept", "decline", "withdraw"] as const) {
+  const handler = answerCancellation(answer);
+  projectsRouter.post(`/:projectId/cancellation/${answer}`, protect, (req, res, next) =>
+    handler(req as AuthenticatedRequest, res, next),
+  );
+}
 
 export default projectsRouter;

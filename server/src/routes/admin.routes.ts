@@ -12,7 +12,29 @@ import {
   listUsers,
   setUserStatus,
 } from "../controllers/admin.controller";
-import { decideDeposit, getDeposit, listDeposits } from "../controllers/adminDeposits.controller";
+import {
+  getSettings,
+  listListings,
+  listReviews,
+  pauseListing,
+  removeReview,
+  setCommission,
+  unpauseListing,
+} from "../controllers/adminContent.controller";
+import {
+  decideDeposit,
+  decideDepositAppeal,
+  getDeposit,
+  listDeposits,
+  messageDepositParty,
+} from "../controllers/adminDeposits.controller";
+import {
+  decideProjectAppeal,
+  getProjectDispute,
+  listProjectDisputes,
+  messageProjectDisputeParty,
+  resolveProjectDispute,
+} from "../controllers/adminProjectDisputes.controller";
 import {
   approveVerification,
   getVerification,
@@ -70,6 +92,23 @@ adminRouter.get("/money/payments", handle(listPayments));
 adminRouter.get("/deposits", handle(listDeposits));
 adminRouter.get("/deposits/:bookingId", handle(getDeposit));
 adminRouter.post("/deposits/:bookingId/decide", handle(decideDeposit));
+adminRouter.post("/deposits/:bookingId/messages", handle(messageDepositParty));
+adminRouter.post("/deposits/:bookingId/appeal", handle(decideDepositAppeal));
+
+adminRouter.get("/project-disputes", handle(listProjectDisputes));
+adminRouter.get("/project-disputes/:disputeId", handle(getProjectDispute));
+adminRouter.post("/project-disputes/:disputeId/resolve", handle(resolveProjectDispute));
+adminRouter.post("/project-disputes/:disputeId/messages", handle(messageProjectDisputeParty));
+adminRouter.post("/project-disputes/:disputeId/appeal", handle(decideProjectAppeal));
+
+adminRouter.get("/content/reviews", handle(listReviews));
+adminRouter.post("/content/reviews/:kind/:reviewId/remove", handle(removeReview));
+adminRouter.get("/content/listings", handle(listListings));
+adminRouter.post("/content/listings/:listingId/pause", handle(pauseListing));
+adminRouter.post("/content/listings/:listingId/unpause", handle(unpauseListing));
+
+adminRouter.get("/settings", handle(getSettings));
+adminRouter.post("/settings/commission", handle(setCommission));
 
 adminRouter.get("/verifications", handle(listVerifications));
 adminRouter.get("/verifications/:userId", handle(getVerification));

@@ -47,7 +47,26 @@ export type NotificationType =
   | "verification_approved"
   | "verification_rejected"
   | "verification_lapsed"
-  | "verification_expiring";
+  | "verification_expiring"
+  /** Project disputes and cancelling a project early. */
+  | "project_dispute_opened"
+  | "project_dispute_resolved"
+  | "project_cancellation_proposed"
+  | "project_cancellation_declined"
+  | "project_cancelled"
+  /** A handed-over phase has been waiting for the client's decision. */
+  | "phase_approval_reminder"
+  /** The next phase is waiting for the client to fund it. */
+  | "phase_funding_reminder"
+  /** CivilHub wrote in a dispute, or a reply it asked for is almost due. */
+  | "dispute_message"
+  | "dispute_reply_reminder"
+  /** A dispute decision waiting out its appeal window, an appeal, and its outcome. */
+  | "dispute_decided"
+  | "dispute_appealed"
+  | "dispute_appeal_decided"
+  /** The other side added their own pickup or return photos to a rental. */
+  | "equipment_condition_report";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -118,6 +137,19 @@ const notificationSchema = new Schema<INotification>(
         "verification_rejected",
         "verification_lapsed",
         "verification_expiring",
+        "project_dispute_opened",
+        "project_dispute_resolved",
+        "project_cancellation_proposed",
+        "project_cancellation_declined",
+        "project_cancelled",
+        "phase_approval_reminder",
+        "phase_funding_reminder",
+        "dispute_message",
+        "dispute_reply_reminder",
+        "dispute_decided",
+        "dispute_appealed",
+        "dispute_appeal_decided",
+        "equipment_condition_report",
       ],
       required: true,
     },

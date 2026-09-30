@@ -71,6 +71,9 @@ export interface Overview {
   };
   openReports: number;
   verificationsPending: number;
+  projectDisputes: number;
+  /** Disputes where a side wrote to CivilHub and hasn't had an answer. */
+  disputeReplies: number;
   projects: { openBriefs: number; active: number };
   activeBookings: number;
   money: {
@@ -133,7 +136,7 @@ export interface PayeeDetail {
 }
 
 export interface RefundDue {
-  kind: "overpayment" | "deposit";
+  kind: "overpayment" | "deposit" | "cancellation";
   paymentId: string;
   bookingId: string | null;
   payer: { id: string; name: string; email: string } | null;
@@ -147,7 +150,7 @@ export interface RefundDue {
 
 export interface RefundRecord {
   id: string;
-  kind: "overpayment" | "deposit";
+  kind: "overpayment" | "deposit" | "cancellation";
   paymentId: string;
   payer: { id: string; name: string } | null;
   amount: number;
@@ -254,6 +257,56 @@ export interface ActionEntry {
 
 export type DisputeDecision = "upheld" | "reduced" | "rejected";
 
+/** Where an open dispute is: under review, a decision waiting to take effect, or appealed. */
+export type DisputeStage = "review" | "awaiting_final" | "appealed";
+
+export interface DisputeAppealView {
+  role: string;
+  reason: string;
+  openedAt: string;
+  decision: "upheld" | "changed" | null;
+  note: string | null;
+  decidedAt: string | null;
+}
+
+/** Who made a decision, and whether the admin looking may review an appeal against it. */
+export interface DecisionReview {
+  decidedByName: string | null;
+  isOwnDecision: boolean;
+  mayReview: boolean;
+}
+
+/** A photo or document offered as evidence, and what CivilHub knows about it. */
+export interface EvidenceFileView {
+  name?: string;
+  url: string;
+  isImage: boolean;
+  uploadedAt: string | null;
+  /** Who uploaded it, e.g. "renter"; filled in by the page showing it. */
+  uploadedByLabel?: string;
+  takenAt: string | null;
+  location: { lat: number; lng: number } | null;
+  camera: string | null;
+  flags?: string[];
+}
+
+export interface CaseMessageView {
+  id: string;
+  from: "admin" | "party";
+  partyRole: string;
+  text: string;
+  files: Array<EvidenceFileView & { name: string; mimeType: string; size: number }>;
+  replyBy: string | null;
+  at: string;
+}
+
+/** CivilHub's private thread with one side of a dispute. */
+export interface CaseThread {
+  messages: CaseMessageView[];
+  /** A reply CivilHub asked for and hasn't had yet. */
+  replyBy: string | null;
+}
+
 export interface DepositDisputeRow {
   bookingId: string;
   equipment: string;
@@ -265,6 +318,17 @@ export interface DepositDisputeRow {
   claimedAt: string | null;
   dispute: {
     status: "open" | "decided";
+    stage: DisputeStage;
+    pendingDecision: {
+      decision: DisputeDecision;
+      amount: number;
+      note: string;
+      decidedBy: string;
+      decidedAt: string;
+      appealDeadline: string;
+      acceptedBy: string[];
+    } | null;
+    appeal: DisputeAppealView | null;
     reason: string;
     openedAt: string;
     decision: DisputeDecision | null;
@@ -272,12 +336,28 @@ export interface DepositDisputeRow {
     decisionNote: string | null;
     decidedAt: string | null;
   };
+  /** A side wrote to CivilHub last. */
+  newReply?: boolean;
 }
+
+/** A condition photo, with who took it and what its camera data says. */
+export type ConditionPhoto = EvidenceFileView & { uploadedByRole: "renter" | "owner" | null };
 
 export interface ConditionRecord {
   at: string | null;
+  /** Who confirmed this stage; null on older bookings. */
+  by: "renter" | "owner" | null;
   notes: string | null;
-  photos: string[];
+  photos: ConditionPhoto[];
+}
+
+/** The other side's own record of a pickup or return. */
+export interface ConditionReport {
+  stage: "pickup" | "return";
+  by: "renter" | "owner";
+  at: string;
+  notes: string | null;
+  photos: ConditionPhoto[];
 }
 
 export interface DepositDisputeDetail extends DepositDisputeRow {
@@ -285,8 +365,11 @@ export interface DepositDisputeDetail extends DepositDisputeRow {
   endDate: string;
   pickup: ConditionRecord;
   return: ConditionRecord;
+  counterReports: ConditionReport[];
   payment: { id: string; amount: number; depositAmount: number; tranId: string | null } | null;
   refund: { amount: number; status: string; method: string } | null;
+  threads: Record<string, CaseThread>;
+  review: DecisionReview | null;
 }
 
 export interface VerificationRow {
@@ -312,4 +395,127 @@ export interface VerificationDetail extends VerificationRow {
   profile: { location: string | null; tradeLicenceNo: string | null; certificateCount: number | null };
   documents: Array<{ kind: "ieb_certificate" | "trade_licence" | "nid"; name: string; isImage: boolean; uploadedAt: string; url: string }>;
   history: Array<{ action: string; reason: string | null; admin: string; at: string }>;
+}
+
+export type ProjectDisputeOutcome = "resumed" | "phase_approved" | "cancelled";
+
+export interface ProjectDisputeRow {
+  id: string;
+  projectId: string;
+  projectTitle: string;
+  client: { id: string; name: string; email: string; role: string } | null;
+  provider: { id: string; name: string; email: string; role: string } | null;
+  openedByRole: "client" | "provider";
+  reason: string;
+  reasonLabel: string;
+  description: string;
+  status: "open" | "resolved" | "withdrawn";
+  stage: DisputeStage;
+  openedAt: string;
+  decision: {
+    outcome: ProjectDisputeOutcome;
+    note: string;
+    phase: string | null;
+    providerAmount: number | null;
+    decidedBy: string;
+    decidedAt: string;
+    appealDeadline: string;
+    acceptedBy: string[];
+  } | null;
+  appeal: DisputeAppealView | null;
+  resolution: {
+    outcome: ProjectDisputeOutcome;
+    note: string;
+    providerAmount: number | null;
+    refundAmount: number | null;
+    decidedAt: string;
+  } | null;
+  /** A side wrote to CivilHub last. */
+  newReply?: boolean;
+}
+
+export interface ProjectDisputeDetail extends ProjectDisputeRow {
+  project: {
+    id: string;
+    title: string;
+    status: string;
+    paused: boolean;
+    totalAgreedValue: number | null;
+    paymentPlan: "phase_by_phase" | "full_upfront" | null;
+    /** Work is funded into CivilHub's hold before it starts. */
+    fundsBeforeWork: boolean;
+    phasePlanStatus: string;
+    advancePaid: boolean;
+    cancellation: { by: string; held: number; providerAmount: number; refundAmount: number } | null;
+    proposal: { providerAmount: number; note?: string; proposedAt: string } | null;
+  };
+  held: number | null;
+  phases: Array<{
+    id: string;
+    name: string;
+    order: number;
+    status: string;
+    price: number;
+    paymentStatus: "paid" | "unpaid";
+    dueDate: string | null;
+    completedAt: string | null;
+    changeRequest: { note: string; requestedAt: string } | null;
+    submissions: Array<{ note: string; submittedAt: string; files: Array<EvidenceFileView & { name: string; mimeType: string }> }>;
+    canApproveForClient: boolean;
+  }>;
+  payments: Array<{
+    id: string;
+    type: string;
+    status: string;
+    amount: number;
+    payeeAmount: number;
+    paidAt: string | null;
+    description: string | null;
+  }>;
+  messages: Array<{
+    id: string;
+    fromRole: "client" | "provider";
+    type: string;
+    content: string | null;
+    attachmentName: string | null;
+    attachmentUrl: string | null;
+    aboutThisProject: boolean;
+    at: string;
+  }>;
+  earlierDisputes: Array<{ status: string; reason: string; openedAt: string; outcome: ProjectDisputeOutcome | null }>;
+  threads: Record<string, CaseThread>;
+  review: DecisionReview | null;
+}
+
+export interface ReviewRow {
+  id: string;
+  kind: "provider" | "customer";
+  author: { id: string; name: string; role: string } | null;
+  subject: { id: string; name: string; role: string } | null;
+  rating: number;
+  text: string;
+  reply: string | null;
+  about: string | null;
+  createdAt: string;
+}
+
+export interface ListingRow {
+  id: string;
+  title: string;
+  category: string;
+  location: string;
+  dailyRate: number;
+  photoUrl: string | null;
+  owner: { id: string; name: string; role: string } | null;
+  status: "active" | "paused";
+  adminHold: { reason: string; at: string } | null;
+  createdAt: string;
+}
+
+export interface PlatformSettings {
+  commissionRate: number;
+  commissionSource: "admin" | "default";
+  defaultCommissionRate: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
 }

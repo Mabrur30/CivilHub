@@ -111,6 +111,8 @@ interface EquipmentListItemResponse {
   location: string;
   photos: EquipmentPhotoResponse[];
   status: EquipmentStatus;
+  /** Paused by CivilHub rather than the owner, with the reason. */
+  pausedByCivilHub: { reason: string; at: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -313,6 +315,9 @@ const toEquipmentResponse = (
     publicId: photo.publicId,
   })),
   status: equipment.status,
+  pausedByCivilHub: equipment.adminHold
+    ? { reason: equipment.adminHold.reason, at: equipment.adminHold.at.toISOString() }
+    : null,
   createdAt: equipment.createdAt.toISOString(),
   updatedAt: equipment.updatedAt.toISOString(),
 });
@@ -677,6 +682,12 @@ export const updateEquipment = async (
     if (req.body.status !== undefined) {
       if (req.body.status !== "active" && req.body.status !== "paused") {
         throw createEquipmentError("Status must be active or paused", 400);
+      }
+      if (req.body.status === "active" && equipment.adminHold) {
+        throw createEquipmentError(
+          `CivilHub paused this listing: ${equipment.adminHold.reason.replace(/([^.!?])$/, "$1.")} Contact CivilHub to have it reopened.`,
+          409,
+        );
       }
       equipment.status = req.body.status;
     }

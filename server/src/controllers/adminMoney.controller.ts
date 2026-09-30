@@ -281,7 +281,9 @@ export const issueRefund = async (
   try {
     const paymentId = objectId(typeof req.body.paymentId === "string" ? req.body.paymentId : undefined, "Payment").toString();
     const rawKind = req.body.kind;
-    if (rawKind !== "overpayment" && rawKind !== "deposit") throw adminError("Choose overpayment or deposit.", 400);
+    if (rawKind !== "overpayment" && rawKind !== "deposit" && rawKind !== "cancellation") {
+      throw adminError("Choose overpayment, deposit or cancellation.", 400);
+    }
     const kind: RefundKind = rawKind;
     const method = req.body.method;
     if (method !== "sslcommerz" && method !== "manual") throw adminError("Choose sslcommerz or manual.", 400);

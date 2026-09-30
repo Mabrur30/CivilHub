@@ -78,6 +78,12 @@ export function OverviewPage(): ReactElement {
                 label={`Refunds to send, ${formatTaka(data.money.refundsDueAmount)}`}
                 to="/refunds"
               />
+              <Attention count={data.projectDisputes} label="Projects paused for a dispute" to="/project-disputes" />
+              <Attention
+                count={data.disputeReplies}
+                label="Disputes with a reply waiting for CivilHub"
+                note="Marked “New reply” in the dispute lists"
+              />
               <Attention count={data.money.depositDisputes} label="Deposit claims disputed by renters" to="/deposits" />
               <Attention
                 count={data.money.depositsPending}

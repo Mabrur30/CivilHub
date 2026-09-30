@@ -3,7 +3,9 @@ import { EquipmentBooking } from "../models/EquipmentBooking.model";
 import { type IPayment, Payment } from "../models/Payment.model";
 import { Refund, type RefundKind } from "../models/Refund.model";
 import { User } from "../models/User.model";
+import { Project } from "../models/Project.model";
 import { isClaimSettled } from "./deposits";
+import { cancellationRefunds, projectTitle } from "./projectMoney";
 
 /**
  * Money CivilHub owes back to payers:
@@ -13,6 +15,8 @@ import { isClaimSettled } from "./deposits";
  *   released it, less anything they claimed. A claim the renter can still
  *   dispute, or has disputed and is waiting on an admin, holds the whole
  *   refund back so it's paid once, at the final amount.
+ * - cancellations: a cancelled project's held money, less what the provider
+ *   was given, one item per payment.
  * A refund that's done or still processing takes the item off the list; a
  * failed one leaves it there to try again.
  */
@@ -76,13 +80,30 @@ export const getRefundsDue = async (): Promise<RefundDue[]> => {
     bookingPayments.map((payment) => [payment.equipmentBooking!.toString(), payment]),
   );
 
+  const cancelledProjects = await Project.find({ status: "cancelled", "cancellation.refundAmount": { $gt: 0 } })
+    .select("title name cancellation cancelledAt")
+    .lean()
+    .exec();
+  const cancellations = (
+    await Promise.all(
+      cancelledProjects.map(async (project) =>
+        (await cancellationRefunds(project)).map((row) => ({ ...row, project })),
+      ),
+    )
+  ).flat();
+
   const done = await openRefundKeys([
     ...overpaid.map((payment) => payment._id as Types.ObjectId),
     ...bookingPayments.map((payment) => payment._id as Types.ObjectId),
+    ...cancellations.map((row) => row.payment._id as Types.ObjectId),
   ]);
 
   const payerIds = [
-    ...new Set([...overpaid, ...bookingPayments].map((payment) => payment.paidBy.toString())),
+    ...new Set(
+      [...overpaid, ...bookingPayments, ...cancellations.map((row) => row.payment)].map((payment) =>
+        payment.paidBy.toString(),
+      ),
+    ),
   ];
   const payers = new Map(
     (await User.find({ _id: { $in: payerIds } }).select("name email").lean().exec()).map((user) => [
@@ -128,6 +149,23 @@ export const getRefundsDue = async (): Promise<RefundDue[]> => {
       cardType: payment.cardType ?? null,
       canUseGateway: gatewayUsable(payment),
       since: booking.updatedAt.toISOString(),
+    });
+  }
+  for (const { payment, amount, project } of cancellations) {
+    if (done.has(`cancellation:${payment._id.toString()}`)) continue;
+    items.push({
+      kind: "cancellation",
+      paymentId: payment._id.toString(),
+      bookingId: null,
+      payer: payers.get(payment.paidBy.toString()) ?? null,
+      amount,
+      description: `Cancelled project: ${projectTitle(project)} (${
+        payment.type === "advance" ? "advance" : payment.type === "phase" ? "phase funding" : "upfront payment"
+      })`,
+      tranId: payment.tranId ?? null,
+      cardType: payment.cardType ?? null,
+      canUseGateway: gatewayUsable(payment),
+      since: (project.cancelledAt ?? payment.paidAt ?? payment.createdAt).toISOString(),
     });
   }
   return items.sort((a, b) => a.since.localeCompare(b.since));

@@ -29,7 +29,13 @@ export const getPaymentSummary = (booking: EquipmentBookingBase): string => {
   if (booking.paymentStatus === "unpaid") {
     return booking.status === "approved" ? "Payment due" : "Not paid yet";
   }
-  if (booking.depositDispute?.status === "open") return "Paid, deposit disputed";
+  if (booking.depositDispute?.status === "open") {
+    return booking.depositDispute.stage === "appealed"
+      ? "Paid, deposit decision appealed"
+      : booking.depositDispute.stage === "awaiting_final"
+        ? "Paid, deposit decided; open to appeal"
+        : "Paid, deposit disputed";
+  }
   if (booking.depositResolution === "released") return "Paid, deposit released";
   if (booking.depositResolution === "claimed") {
     const deadline = booking.disputeDeadline ? new Date(booking.disputeDeadline).getTime() : 0;

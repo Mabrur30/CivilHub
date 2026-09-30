@@ -52,8 +52,16 @@ interface PhaseActionsProps {
   advancePaid: boolean;
   fullPaymentPaid: boolean;
   remainingBalance: number;
+  /**
+   * Work is paid into CivilHub's hold before it starts: each phase on the
+   * phase-by-phase plan, the whole balance on full upfront. False only for
+   * projects planned before funding.
+   */
+  fundsBeforeWork: boolean;
   isBusy: boolean;
   onSetStatus: (status: PhaseStatus) => void;
+  /** Opens checkout to fund this phase. */
+  onFund: () => void;
   /** Hands the phase over; resolves to an error message, or "" when sent. */
   onSubmitPhase: (
     note: string,
@@ -423,8 +431,10 @@ export function PhaseActions({
   advancePaid,
   fullPaymentPaid,
   remainingBalance,
+  fundsBeforeWork,
   isBusy,
   onSetStatus,
+  onFund,
   onSubmitPhase,
   onApprove,
   onRequestChanges,
@@ -433,6 +443,11 @@ export function PhaseActions({
     useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const isPhaseByPhase = paymentPlan === "phase_by_phase";
+  const isFunded = (target: PhaseActionTarget): boolean =>
+    !fundsBeforeWork ||
+    (isPhaseByPhase
+      ? target.paymentStatus === "paid" || target.amountDue <= 0
+      : fullPaymentPaid);
 
   if (viewer === "engineer") {
     switch (phase.status) {
@@ -447,6 +462,15 @@ export function PhaseActions({
         if (!previousDone) {
           return (
             <WaitingNote>{`Starts after ${previousPhase?.name ?? "the previous phase"} is approved`}</WaitingNote>
+          );
+        }
+        if (!isFunded(phase)) {
+          return (
+            <WaitingNote>
+              {isPhaseByPhase
+                ? "Waiting for the client to fund this phase"
+                : "Waiting for the client to pay the remaining balance"}
+            </WaitingNote>
           );
         }
         return (
@@ -526,14 +550,41 @@ export function PhaseActions({
     );
   }
 
+  // Funding a phase before work on it starts. Phases are funded in order,
+  // but the client may fund ahead while the one before is still under way.
+  if (
+    fundsBeforeWork &&
+    isPhaseByPhase &&
+    advancePaid &&
+    phase.status === "not_started" &&
+    !isFunded(phase) &&
+    (!previousPhase || isFunded(previousPhase))
+  ) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={onFund} disabled={isBusy} className={primaryButtonClassName}>
+          {isBusy ? "Opening payment..." : `Fund phase ${formatCurrency(phase.amountDue)}`}
+        </button>
+        <p className="text-xs text-white/50">
+          CivilHub holds it until you approve the phase.
+        </p>
+      </div>
+    );
+  }
+
   if (phase.status !== "awaiting_approval") return null;
 
   // Paid approvals go through SSLCommerz; the phase completes once it confirms.
-  const needsPayment = isPhaseByPhase
-    ? phase.amountDue > 0
-    : isFinalPhase && !fullPaymentPaid && remainingBalance > 0;
+  // Funded phases were paid before work started, so approving them is free.
+  const needsPayment = isFunded(phase) && fundsBeforeWork
+    ? false
+    : isPhaseByPhase
+      ? phase.amountDue > 0
+      : isFinalPhase && !fullPaymentPaid && remainingBalance > 0;
   const approveLabel = !needsPayment
-    ? "Approve phase"
+    ? fundsBeforeWork && isPhaseByPhase && phase.amountDue > 0
+      ? `Approve and release ${formatCurrency(phase.amountDue)}`
+      : "Approve phase"
     : isPhaseByPhase
       ? `Approve and pay ${formatCurrency(phase.amountDue)}`
       : `Approve and pay remaining ${formatCurrency(remainingBalance)}`;

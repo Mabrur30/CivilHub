@@ -22,8 +22,10 @@ import { REPORT_TARGETS, Report, type ReportTarget } from "../models/Report.mode
 import { type AccountStatus, User, type UserRole } from "../models/User.model";
 import { getAccountStanding } from "../utils/accountStatus";
 import { settleDueDeposits } from "../utils/deposits";
+import { countCasesAwaitingAdmin } from "../utils/disputeCases";
 import { settleVerificationExpiries } from "../utils/verification";
 import { Verification } from "../models/Verification.model";
+import { ProjectDispute } from "../models/ProjectDispute.model";
 import { getEarnings } from "../utils/earnings";
 import { getRefundsDue } from "../utils/refunds";
 import { removePost } from "./post.controller";
@@ -147,6 +149,8 @@ export const getOverview = async (
       depositsPending,
       depositDisputes,
       verificationsPending,
+      projectDisputes,
+      disputeReplies,
       feeRows,
       earnings,
     ] = await Promise.all([
@@ -173,6 +177,8 @@ export const getOverview = async (
       }).exec(),
       EquipmentBooking.countDocuments({ "depositDispute.status": "open" }).exec(),
       Verification.countDocuments({ status: "pending" }).exec(),
+      ProjectDispute.countDocuments({ status: "open" }).exec(),
+      countCasesAwaitingAdmin(),
       Payment.aggregate<{ fees: number; volume: number }>([
         { $match: { status: "paid", refundDue: { $ne: true } } },
         { $group: { _id: null, fees: { $sum: "$platformFee" }, volume: { $sum: "$amount" } } },
@@ -198,6 +204,9 @@ export const getOverview = async (
       },
       openReports: openReportTargets[0]?.count ?? 0,
       verificationsPending,
+      projectDisputes,
+      // Disputes where a side wrote to CivilHub and hasn't had an answer.
+      disputeReplies,
       projects: { openBriefs, active: activeProjects },
       activeBookings,
       money: {

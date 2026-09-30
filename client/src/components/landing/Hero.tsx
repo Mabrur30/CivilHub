@@ -1,4 +1,4 @@
-import { BulldozerIcon } from "@phosphor-icons/react";
+import { BulldozerIcon, SealCheckIcon } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { Link } from "react-router-dom";
 
@@ -17,19 +17,19 @@ const personas: Persona[] = [
   {
     side: "client",
     label: "For clients",
-    headline: "Post a project, compare bids from engineers who fit",
+    headline: "Build it right. Pay for what's done.",
     valueProp:
-      "Set out the scope once, hear from engineers and firms in the right speciality, and pay only as each phase is approved.",
-    cta: "I'm a Client",
+      "Post once, compare bids from engineers who fit, and your money waits with CivilHub until you approve each phase.",
+    cta: "Post a project",
     to: "/signup/client",
   },
   {
     side: "engineer",
     label: "For engineers",
-    headline: "Find briefs in your speciality, get paid phase by phase",
+    headline: "Bid on work you can actually price.",
     valueProp:
-      "Bid on work you can price properly, hand over each phase with its files, and get paid as the client approves.",
-    cta: "I'm an Engineer",
+      "Briefs come with the facts you need. The client funds each phase before you start, and you're paid the moment they approve it.",
+    cta: "Find work",
     to: "/signup/engineer",
   },
 ];
@@ -60,9 +60,9 @@ export function Hero(_props: HeroProps): ReactElement {
       </div>
 
       <h1 className="sr-only">
-        CivilHub — post a project and compare bids from engineers who fit, find
-        briefs in your speciality and get paid phase by phase, or rent and list
-        construction equipment.
+        CivilHub: hire engineers and pay only for approved work, win briefs you
+        can price and get paid on approval, or rent and list construction
+        equipment.
       </h1>
 
       <div className="relative mx-auto flex min-h-[calc(100vh-80px)] max-w-7xl flex-col justify-center px-4 pb-16 pt-12 sm:px-6 lg:px-8">
@@ -119,10 +119,10 @@ export function Hero(_props: HeroProps): ReactElement {
             </span>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-                For companies &amp; plant hire
+                Plant hire &amp; construction firms
               </p>
               <p className="mt-1 text-sm text-white/75">
-                Rent excavators, cranes and rollers, or list your own fleet.
+                Rent out your fleet, or run projects as a firm.
               </p>
             </div>
           </div>
@@ -149,10 +149,10 @@ export function Hero(_props: HeroProps): ReactElement {
               <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.24em] text-white/45">
-                    Live project
+                    How a project looks
                   </p>
                   <p className="mt-2 font-heading text-2xl text-white">
-                    Northline By-Pass
+                    Road widening
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary">
@@ -163,29 +163,30 @@ export function Hero(_props: HeroProps): ReactElement {
               <div className="mt-4 space-y-3">
                 <div className="rounded-2xl border border-white/10 bg-white/3 p-3.5">
                   <div className="flex items-center justify-between text-sm text-white/65">
-                    <span>Progress</span>
-                    <span className="font-semibold text-white">78%</span>
+                    <span>Phases approved</span>
+                    <span className="font-semibold text-white">2 of 4</span>
                   </div>
                   <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
-                    <div className="h-full w-[78%] rounded-full bg-gradient-to-r from-primary to-glow" />
+                    <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-primary to-glow" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-white/10 bg-white/3 p-3.5">
                     <p className="text-xs uppercase tracking-[0.2em] text-white/45">
-                      Budget
+                      Engineer
                     </p>
-                    <p className="mt-1.5 font-heading text-2xl text-white">
-                      ৳4.2 crore
+                    <p className="mt-1.5 inline-flex items-center gap-1.5 font-heading text-xl text-white">
+                      <SealCheckIcon weight="fill" className="h-5 w-5 text-primary" aria-hidden="true" />
+                      Verified
                     </p>
                   </div>
                   <div className="rounded-2xl border border-white/10 bg-white/3 p-3.5">
                     <p className="text-xs uppercase tracking-[0.2em] text-white/45">
-                      Due
+                      Paid out
                     </p>
-                    <p className="mt-1.5 font-heading text-2xl text-white">
-                      12 weeks
+                    <p className="mt-1.5 font-heading text-xl text-white">
+                      Approved work
                     </p>
                   </div>
                 </div>
@@ -196,9 +197,9 @@ export function Hero(_props: HeroProps): ReactElement {
                     illustration twice. The one phase row shows the payment
                     moment the client acts on. */}
                 <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/3 px-3.5 py-3 text-sm">
-                  <span className="text-white/65">Phase 3 payment</span>
+                  <span className="text-white/65">Phase 3 · Funded</span>
                   <span className="rounded-full bg-violet-300/10 px-2.5 py-0.5 text-xs font-semibold text-violet-200">
-                    Awaiting approval
+                    Held by CivilHub
                   </span>
                 </div>
               </div>
@@ -207,11 +208,11 @@ export function Hero(_props: HeroProps): ReactElement {
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-white/60">
-          <span>Phase-by-phase payments</span>
+          <span>Money held until you approve</span>
           <span className="h-1 w-1 rounded-full bg-primary" />
-          <span>Contacts protected until hire</span>
+          <span>Verified engineers</span>
           <span className="h-1 w-1 rounded-full bg-primary" />
-          <span>Handover on record</span>
+          <span>Contacts protected until you hire</span>
         </div>
       </div>
     </section>

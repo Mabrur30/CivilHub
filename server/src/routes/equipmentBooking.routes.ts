@@ -7,6 +7,7 @@ import {
 import { canReviewBooking } from "../controllers/review.controller";
 import {
   cancelBookingRequest,
+  addConditionReport,
   confirmPickup,
   confirmReturn,
   createBookingRequest,
@@ -123,6 +124,16 @@ equipmentBookingRouter.post(
   handleUploadError,
   (req: Request, res: Response, next: NextFunction) =>
     confirmReturn(req as AuthenticatedRequest<ConfirmConditionBody>, res, next),
+);
+
+// The side that didn't confirm a pickup or return adds their own photos, within a day.
+equipmentBookingRouter.post(
+  "/equipment-bookings/:bookingId/condition-report",
+  protect,
+  bookingConditionPhotoUpload.array("photos", 4),
+  handleUploadError,
+  (req: Request, res: Response, next: NextFunction) =>
+    addConditionReport(req as AuthenticatedRequest<{ stage?: unknown; notes?: unknown }>, res, next),
 );
 
 equipmentBookingRouter.patch(

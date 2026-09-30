@@ -11,11 +11,35 @@ export type PhasePlanStatus =
   | "pending_client_approval"
   | "approved";
 export type PaymentPlan = "phase_by_phase" | "full_upfront";
+/**
+ * When the client pays for work. "before_work": each phase (or, on the full
+ * upfront plan, the whole balance) is paid into CivilHub's hold before work
+ * starts and released on approval. "on_approval": the older rule, where the
+ * client pays as they approve; projects planned before the change keep it.
+ */
+export type FundingRule = "before_work" | "on_approval";
 
 /** Why the client sent the phase plan back, kept so the engineer sees it while revising. */
 export interface PhasePlanFeedback {
   note: string;
   rejectedAt: Date;
+}
+
+/** One side's offer to end the project early and split the money CivilHub holds. */
+export interface CancellationProposal {
+  proposedBy: Types.ObjectId;
+  /** Of the held money, what the provider keeps; the client is refunded the rest. */
+  providerAmount: number;
+  note?: string;
+  proposedAt: Date;
+}
+
+/** How a cancelled project's held money was split. */
+export interface ProjectCancellation {
+  by: "agreement" | "admin";
+  held: number;
+  providerAmount: number;
+  refundAmount: number;
 }
 
 export interface IProject extends Document {
@@ -53,11 +77,18 @@ export interface IProject extends Document {
   totalAgreedValue?: number;
   paymentPlan?: PaymentPlan | null;
   advanceRequiredAmount?: number | null;
+  /** Unset on projects planned before funding existed: those are "on_approval". */
+  fundingRule?: FundingRule | null;
   advancePaid: boolean;
   advancePaidAt?: Date;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt?: Date;
   completedAt?: Date;
+  /** Paused while CivilHub reviews a dispute: no phase actions or payments. */
+  disputeOpen?: boolean;
+  cancellationProposal?: CancellationProposal | null;
+  cancelledAt?: Date;
+  cancellation?: ProjectCancellation | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -229,6 +260,11 @@ const projectSchema = new Schema<IProject>(
       default: null,
       min: 0,
     },
+    fundingRule: {
+      type: String,
+      enum: ["before_work", "on_approval"],
+      default: null,
+    },
     advancePaid: {
       type: Boolean,
       default: false,
@@ -246,12 +282,42 @@ const projectSchema = new Schema<IProject>(
     completedAt: {
       type: Date,
     },
+    disputeOpen: { type: Boolean, default: false },
+    cancellationProposal: {
+      type: new Schema<CancellationProposal>(
+        {
+          proposedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+          providerAmount: { type: Number, min: 0, required: true },
+          note: { type: String, trim: true, maxlength: 1000 },
+          proposedAt: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    cancelledAt: { type: Date },
+    cancellation: {
+      type: new Schema<ProjectCancellation>(
+        {
+          by: { type: String, enum: ["agreement", "admin"], required: true },
+          held: { type: Number, min: 0, required: true },
+          providerAmount: { type: Number, min: 0, required: true },
+          refundAmount: { type: Number, min: 0, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
   },
   { timestamps: true },
 );
 
 // Lets the marketplace find briefs near an engineer later without exposing pins.
 projectSchema.index({ "site.approxPoint": "2dsphere" });
+
+/** Whether work on this project has to be paid for before it starts. */
+export const fundsBeforeWork = (project: Pick<IProject, "fundingRule">): boolean =>
+  project.fundingRule === "before_work";
 
 export const Project: Model<IProject> = model<IProject>(
   "Project",

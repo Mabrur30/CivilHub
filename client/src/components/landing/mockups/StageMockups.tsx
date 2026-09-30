@@ -10,8 +10,9 @@ import { StatTile } from "./StatTile";
  * primitives but shaped differently — a form, a list, a progress view, a
  * close-out — so the four sections do not read as the same card four times.
  *
- * Deliberately narrower in scope than the hero's Northline card: that one is the
- * whole project dashboard, these are each a single moment from it.
+ * Deliberately narrower in scope than the hero's project card: that one is the
+ * whole project at a glance, these are each a single moment from it. They show
+ * kinds of people and round figures, never invented names or ratings.
  */
 
 function FieldRow({
@@ -36,9 +37,9 @@ export function PostBriefMockup(): ReactElement {
     <MockFrame eyebrow="New project" title="Project brief" status="Draft">
       <div className="space-y-2.5">
         <FieldRow label="Type" value="Roads & transport" />
-        <FieldRow label="Scope" value="Road widening, 4.2 km" />
-        <FieldRow label="Site" value="Mirpur, Dhaka · area only" />
-        <FieldRow label="Timeline" value="Start November · 14 weeks" />
+        <FieldRow label="Scope" value="Road widening" />
+        <FieldRow label="Site" value="Area only, pin private" />
+        <FieldRow label="Timeline" value="Start date · weeks" />
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/3 p-4">
@@ -66,28 +67,25 @@ export function PostBriefMockup(): ReactElement {
 
 export function MatchingMockup(): ReactElement {
   return (
-    <MockFrame eyebrow="Marketplace" title="Bids received" status="6 bids">
+    <MockFrame eyebrow="Marketplace" title="Bids received" status="3 bids">
       <div className="space-y-2.5">
         <MatchRow
-          name="Tanvir Rahman"
-          specialities={["Roads & transport", "Structural"]}
-          rating={4.9}
-          reviewCount={34}
-          bidAmount="৳18.5 lakh"
+          name="Structural engineer"
+          specialities={["Structural", "Roads & transport"]}
+          verified
+          bidAmount="Bid 1"
         />
         <MatchRow
-          name="Sadia Karim"
+          name="Geotechnical engineer"
           specialities={["Geotechnical", "Civil & site works"]}
-          rating={4.8}
-          reviewCount={21}
-          bidAmount="৳17.2 lakh"
+          verified
+          bidAmount="Bid 2"
         />
         <MatchRow
-          name="Delta Earthworks Ltd."
+          name="Civil works company"
           specialities={["Civil & site works", "Water & drainage"]}
-          rating={4.7}
-          reviewCount={47}
-          bidAmount="৳19.8 lakh"
+          verified={false}
+          bidAmount="Bid 3"
         />
       </div>
 
@@ -105,16 +103,16 @@ export function ProgressMockup(): ReactElement {
       <ProgressRow label="Phase 2 — earthworks" percent={64} />
 
       <div className="space-y-2.5">
-        <MilestoneRow label="Phase 1 · Survey" state="done" stateLabel="Paid" />
+        <MilestoneRow label="Phase 1 · Survey" state="done" stateLabel="Released" />
         <MilestoneRow
           label="Phase 2 · Earthworks"
           state="awaiting"
-          stateLabel="Awaiting approval"
+          stateLabel="Funded · awaiting approval"
         />
         <MilestoneRow
           label="Phase 3 · Paving"
           state="pending"
-          stateLabel="Upcoming"
+          stateLabel="Not funded yet"
         />
       </div>
 
@@ -123,7 +121,7 @@ export function ProgressMockup(): ReactElement {
           Handover note · 3 files
         </span>
         <span className="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-on-primary">
-          Approve &amp; pay
+          Approve &amp; release
         </span>
       </div>
     </MockFrame>

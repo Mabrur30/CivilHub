@@ -136,6 +136,19 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   verification_rejected: "network",
   verification_lapsed: "network",
   verification_expiring: "network",
+  project_dispute_opened: "projects",
+  project_dispute_resolved: "projects",
+  project_cancellation_proposed: "projects",
+  project_cancellation_declined: "projects",
+  project_cancelled: "projects",
+  phase_approval_reminder: "projects",
+  phase_funding_reminder: "projects",
+  // Disputes can be about a project or a rental; projects is the usual case.
+  dispute_message: "projects",
+  dispute_reply_reminder: "projects",
+  dispute_decided: "projects",
+  dispute_appealed: "projects",
+  dispute_appeal_decided: "projects",
   refund_issued: "projects",
 
   equipment_booking_request: "bookings",
@@ -150,6 +163,7 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   equipment_deposit_disputed: "bookings",
   equipment_deposit_decided: "bookings",
   equipment_deposit_reminder: "bookings",
+  equipment_condition_report: "bookings",
 };
 
 export const getFeedEntryCategory = (entry: FeedEntry): ActivityCategory => {

@@ -70,6 +70,8 @@ export interface EquipmentListing extends EquipmentRentalTerms {
   location: string;
   photos: EquipmentPhoto[];
   status: EquipmentStatus;
+  /** Paused by CivilHub; only CivilHub can reopen it. */
+  pausedByCivilHub?: { reason: string; at: string } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -443,6 +445,17 @@ export type EquipmentDepositResolution = "pending" | "released" | "claimed";
 /** A renter's objection to the owner's deposit claim, decided by CivilHub. */
 export interface EquipmentDepositDispute {
   status: "open" | "decided";
+  /** While open: under review, a decision waiting to take effect, or appealed. */
+  stage?: "review" | "awaiting_final" | "appealed";
+  /** The decision waiting out its appeal window; `amount` is what the owner would keep. */
+  pendingDecision?: {
+    decision: "upheld" | "reduced" | "rejected";
+    amount: number;
+    note: string;
+    appealDeadline: string;
+    acceptedBy: string[];
+  } | null;
+  appeal?: { role: string; reason: string; openedAt: string; decision: "upheld" | "changed" | null; note: string | null } | null;
   reason: string;
   openedAt: string;
   decision: "upheld" | "reduced" | "rejected" | null;
@@ -450,6 +463,17 @@ export interface EquipmentDepositDispute {
   decisionNote: string | null;
   decidedAt: string | null;
 }
+
+export interface EquipmentConditionReport {
+  stage: "pickup" | "return";
+  role: "renter" | "owner";
+  notes: string | null;
+  photos: EquipmentBookingConditionPhoto[];
+  at: string;
+}
+
+/** How long the side that didn't confirm a pickup or return has to add their own record. */
+export const CONDITION_REPORT_HOURS = 24;
 
 export interface EquipmentBookingConditionPhoto {
   url: string;
@@ -491,9 +515,14 @@ export interface EquipmentBookingBase {
   pickupConditionNotes: string | null;
   pickupConditionPhotos: EquipmentBookingConditionPhoto[];
   pickupConfirmedAt: string | null;
+  /** Who confirmed the pickup; the other side can add their own record for a day. */
+  pickupConfirmedBy?: "renter" | "owner" | null;
   returnConditionNotes: string | null;
   returnConditionPhotos: EquipmentBookingConditionPhoto[];
   returnConfirmedAt: string | null;
+  returnConfirmedBy?: "renter" | "owner" | null;
+  /** The other side's own photos and notes of the pickup or return. */
+  counterReports?: EquipmentConditionReport[];
   depositResolution: EquipmentDepositResolution;
   depositClaimNotes: string | null;
   depositClaimAmount: number | null;
@@ -1087,6 +1116,28 @@ export const confirmEquipmentReturn = async (
 
   if (!response.ok) {
     throw new Error(getErrorMessage(body, "Unable to confirm return."));
+  }
+};
+
+/** The side that didn't confirm a pickup or return adds their own photos and notes. */
+export const addConditionReport = async (
+  bookingId: string,
+  stage: "pickup" | "return",
+  notes: string,
+  photos: File[],
+): Promise<void> => {
+  const formData = new FormData();
+  formData.append("stage", stage);
+  if (notes.trim()) formData.append("notes", notes.trim());
+  photos.forEach((file) => formData.append("photos", file));
+  const response = await fetch(`${API_BASE_URL}/api/equipment-bookings/${bookingId}/condition-report`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  const body = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(getErrorMessage(body, "Unable to add your photos."));
   }
 };
 

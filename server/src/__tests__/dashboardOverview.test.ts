@@ -55,6 +55,9 @@ const explainWinningPlanJson = (explanation: unknown): string =>
 beforeAll(async () => {
   memoryServer = await MongoMemoryServer.create();
   await mongoose.connect(memoryServer.getUri());
+  // The index tests below explain queries, so every index must exist first.
+  // Mongoose builds them in the background on connect; wait for all of them.
+  await Promise.all(mongoose.modelNames().map((name) => mongoose.model(name).init()));
 });
 
 afterAll(async () => {

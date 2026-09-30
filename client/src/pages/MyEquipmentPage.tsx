@@ -634,8 +634,13 @@ export function MyEquipmentPage(): ReactElement {
                       <span
                         className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${listingStatusClassName[item.status]}`}
                       >
-                        {listingStatusLabel[item.status]}
+                        {item.pausedByCivilHub ? "Paused by CivilHub" : listingStatusLabel[item.status]}
                       </span>
+                      {item.pausedByCivilHub ? (
+                        <span className="mt-1 block text-xs text-amber-200/80">
+                          {item.pausedByCivilHub.reason} Only CivilHub can reopen it.
+                        </span>
+                      ) : null}
                     </div>
                   </Link>
 
@@ -692,7 +697,8 @@ export function MyEquipmentPage(): ReactElement {
                         <button
                           type="button"
                           onClick={() => void toggleStatus(item)}
-                          disabled={updatingStatusId === item.id}
+                          disabled={updatingStatusId === item.id || Boolean(item.pausedByCivilHub)}
+                          title={item.pausedByCivilHub ? "Paused by CivilHub" : undefined}
                           className={rowButtonClassName}
                         >
                           {updatingStatusId === item.id

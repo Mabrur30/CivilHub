@@ -43,6 +43,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "refund.manual": "Recorded a manual refund",
   "refund.check": "Checked a refund",
   "deposit.decide": "Decided a deposit dispute",
+  "project.dispute_resolve": "Decided a project dispute",
+  "review.remove": "Removed a review",
+  "review.reply_remove": "Removed a reply to a review",
+  "listing.pause": "Paused a listing",
+  "listing.unpause": "Reopened a listing",
+  "settings.commission": "Changed the commission rate",
+  "dispute.message": "Wrote to one side of a dispute",
+  "project.dispute_appeal": "Decided an appeal on a project dispute",
+  "deposit.appeal": "Decided an appeal on a deposit dispute",
   "verification.approve": "Verified an account",
   "verification.reject": "Rejected a verification",
   "verification.revoke": "Revoked a Verified badge",
@@ -59,6 +68,20 @@ export const DOCUMENT_LABELS: Record<string, string> = {
   ieb_certificate: "IEB certificate",
   trade_licence: "Trade licence",
   nid: "National ID",
+};
+
+export const OUTCOME_LABELS: Record<string, string> = {
+  resumed: "Resumed",
+  phase_approved: "Phase approved for the client",
+  cancelled: "Project cancelled",
+};
+
+export const PHASE_STATUS_LABELS: Record<string, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  awaiting_approval: "Waiting for the client",
+  completed: "Approved",
+  delayed: "Delayed",
 };
 
 export const DECISION_LABELS: Record<string, string> = {

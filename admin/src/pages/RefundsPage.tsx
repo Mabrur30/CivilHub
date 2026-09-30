@@ -21,7 +21,11 @@ interface RefundQueue {
 
 type Pending = { item: RefundDue; method: "sslcommerz" | "manual" };
 
-const KIND_LABELS = { overpayment: "Duplicate payment", deposit: "Rental deposit" } as const;
+const KIND_LABELS = {
+  overpayment: "Duplicate payment",
+  deposit: "Rental deposit",
+  cancellation: "Cancelled project",
+} as const;
 
 function RefundDialog({
   pending,
@@ -169,7 +173,7 @@ export function RefundsPage(): ReactElement {
     <>
       <PageHeader
         title="Refunds"
-        intro="Money CivilHub owes back: payments that arrived twice or too late, and rental deposits the owner has released."
+        intro="Money CivilHub owes back: payments that arrived twice or too late, rental deposits the owner has released, and the client's share of cancelled projects."
       />
       <ErrorNote message={error} />
       {notice ? (

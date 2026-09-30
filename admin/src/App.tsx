@@ -9,6 +9,10 @@ import { PayeePage } from "./pages/PayeePage";
 import { DepositDetailPage } from "./pages/DepositDetailPage";
 import { DepositsPage } from "./pages/DepositsPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
+import { ContentPage } from "./pages/ContentPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { ProjectDisputeDetailPage } from "./pages/ProjectDisputeDetailPage";
+import { ProjectDisputesPage } from "./pages/ProjectDisputesPage";
 import { VerificationDetailPage } from "./pages/VerificationDetailPage";
 import { VerificationsPage } from "./pages/VerificationsPage";
 import { PayoutsPage } from "./pages/PayoutsPage";
@@ -48,9 +52,13 @@ export function App(): ReactElement {
         <Route path="refunds" element={<RefundsPage />} />
         <Route path="verifications" element={<VerificationsPage />} />
         <Route path="verifications/:userId" element={<VerificationDetailPage />} />
+        <Route path="project-disputes" element={<ProjectDisputesPage />} />
+        <Route path="project-disputes/:disputeId" element={<ProjectDisputeDetailPage />} />
         <Route path="deposits" element={<DepositsPage />} />
         <Route path="deposits/:bookingId" element={<DepositDetailPage />} />
         <Route path="payments" element={<PaymentsPage />} />
+        <Route path="content" element={<ContentPage />} />
+        <Route path="settings" element={<SettingsPage />} />
         <Route path="log" element={<ActionLogPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

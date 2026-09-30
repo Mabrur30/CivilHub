@@ -5,14 +5,16 @@ import { type DepositDisputeRow, type Paged, adminApi } from "../lib/api";
 import { DECISION_LABELS, formatDate, formatTaka } from "../lib/format";
 
 const TABS = [
-  { value: "open", label: "Waiting for a decision" },
+  { value: "open", label: "Open" },
+  { value: "appealed", label: "Appeals" },
   { value: "decided", label: "Decided" },
 ] as const;
+type Tab = (typeof TABS)[number]["value"];
 
 /** Deposit claims renters have disputed, oldest open one first. */
 export function DepositsPage(): ReactElement {
   const [params, setParams] = useSearchParams();
-  const status = params.get("status") === "decided" ? "decided" : "open";
+  const status: Tab = TABS.find((tab) => tab.value === params.get("status"))?.value ?? "open";
   const page = Number(params.get("page") ?? "1") || 1;
   const [data, setData] = useState<Paged<DepositDisputeRow> | null>(null);
   const [error, setError] = useState<string>("");
@@ -36,7 +38,7 @@ export function DepositsPage(): ReactElement {
     <>
       <PageHeader
         title="Deposits"
-        intro="Renters can dispute an owner's damage claim within 3 days. The claimed amount stays on hold until you decide."
+        intro="Renters can dispute an owner's damage claim within 3 days. The claimed amount stays on hold until a decision takes effect: 3 days after it's made, unless a side appeals."
       />
       <div role="tablist" aria-label="Dispute status" className="mb-4 flex gap-2">
         {TABS.map((tab) => (
@@ -71,10 +73,17 @@ export function DepositsPage(): ReactElement {
                 className={`${panel} block p-5 transition-colors hover:border-primary`}
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-semibold text-white">{row.equipment}</p>
+                  <p className="font-semibold text-white">
+                    {row.equipment}
+                    {row.newReply ? <span className="ml-2 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">New reply</span> : null}
+                  </p>
                   <p className="text-xs text-white/50">
                     {row.dispute.status === "open"
-                      ? `Disputed ${formatDate(row.dispute.openedAt)}`
+                      ? row.dispute.stage === "appealed" && row.dispute.appeal
+                        ? `Appealed by the ${row.dispute.appeal.role} ${formatDate(row.dispute.appeal.openedAt)}`
+                        : row.dispute.stage === "awaiting_final" && row.dispute.pendingDecision
+                          ? `Decided; takes effect ${formatDate(row.dispute.pendingDecision.appealDeadline)}`
+                          : `Disputed ${formatDate(row.dispute.openedAt)}`
                       : `${DECISION_LABELS[row.dispute.decision ?? ""] ?? "Decided"} ${row.dispute.decidedAt ? formatDate(row.dispute.decidedAt) : ""}`}
                   </p>
                 </div>

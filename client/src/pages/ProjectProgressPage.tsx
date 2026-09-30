@@ -48,6 +48,7 @@ import {
   useProjectCriteria,
 } from "../lib/projectCriteria";
 import { type PrivateSite, type PublicSite, toSite } from "../lib/siteDetails";
+import { ProjectProblemPanel } from "../components/project/dispute/ProjectProblemPanel";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -106,6 +107,11 @@ interface PhasePlan {
   advancePaidAt?: string;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt?: string;
+  /**
+   * Work is paid into CivilHub's hold before it starts and released on
+   * approval. False only for projects planned before funding existed.
+   */
+  fundsBeforeWork?: boolean;
   /** The advance this plan needs; known before the client approves it. */
   advanceAmount: number;
   remainingBalance: number;
@@ -401,6 +407,7 @@ export function ProjectProgressPage(): ReactElement {
   // Rejection feedback
   const [rejectFeedback, setRejectFeedback] = useState<string>("");
   const [isRejectingPlan, setIsRejectingPlan] = useState<boolean>(false);
+  const [actionsLocked, setActionsLocked] = useState<boolean>(false);
 
   const isCompleted = projectProgress?.project.status === "completed";
   // A finished project leaves the Projects list for Project history, so the
@@ -793,6 +800,18 @@ export function ProjectProgressPage(): ReactElement {
     }
   };
 
+  // Pays a phase into CivilHub's hold so work on it can start.
+  const handleFundPhase = async (phaseId: string): Promise<void> => {
+    if (!projectId) return;
+    setUpdatingPhaseId(phaseId);
+    setUpdateError("");
+    const error = await startCheckout({ purpose: "phase", projectId, phaseId });
+    if (error) {
+      setUpdateError(error);
+      setUpdatingPhaseId(null);
+    }
+  };
+
   // Approving completes the phase. When approval costs something (every phase
   // on the phase-by-phase plan, or the final full-upfront phase with the
   // balance unpaid), it's "Approve & pay": the phase completes once
@@ -806,8 +825,10 @@ export function ProjectProgressPage(): ReactElement {
     const phases = projectProgress.phases;
     const phase = phases.find((item) => item.id === phaseId);
     const isFinalPhase = phases[phases.length - 1]?.id === phaseId;
-    const needsPayment =
-      phasePlan.paymentPlan === "phase_by_phase"
+    // Funded work was paid for before it started.
+    const needsPayment = phasePlan.fundsBeforeWork
+      ? false
+      : phasePlan.paymentPlan === "phase_by_phase"
         ? (phase?.amountDue ?? 0) > 0
         : isFinalPhase &&
           !phasePlan.fullPaymentPaid &&
@@ -926,6 +947,7 @@ export function ProjectProgressPage(): ReactElement {
 
   const isEngineerViewer = isProviderRole(currentUser?.role);
   const isClientViewer = currentUser?.role === "client";
+  // actionsLocked is set by the problem panel: paused for a dispute, or cancelled.
   const totalPhases = projectProgress?.phases.length ?? 0;
   const phasePaymentsPaid =
     projectProgress?.phases.reduce((sum, phase) => sum + phase.amountPaid, 0) ??
@@ -1036,6 +1058,20 @@ export function ProjectProgressPage(): ReactElement {
               })()}
             </div>
           </header>
+
+          {currentUser && (isClientViewer || projectProgress.canUpdate) && projectId ? (
+            <ProjectProblemPanel
+              projectId={projectId}
+              viewerId={currentUser.id}
+              viewerRole={isClientViewer ? "client" : "provider"}
+              otherName={
+                (isClientViewer ? projectProgress.provider?.name : projectProgress.client?.name) ??
+                "The other side"
+              }
+              onLockChange={setActionsLocked}
+              onSettled={() => void loadData()}
+            />
+          ) : null}
 
           {projectProgress.completion ? (
             <section
@@ -1274,7 +1310,7 @@ export function ProjectProgressPage(): ReactElement {
             <ProjectHandover phases={projectProgress.phases} />
           ) : null}
 
-          {isEngineerViewer &&
+          {isEngineerViewer && !actionsLocked &&
             (phasePlan.phasePlanStatus === "not_created" ||
               phasePlan.phasePlanStatus === "draft") && (
               <section className={`${panelClassName} p-6 sm:p-8`}>
@@ -1421,7 +1457,7 @@ export function ProjectProgressPage(): ReactElement {
               </section>
             )}
 
-          {isClientViewer &&
+          {isClientViewer && !actionsLocked &&
             phasePlan.phasePlanStatus === "pending_client_approval" && (
               <section className={`${panelClassName} border-t-2 border-t-primary p-6 sm:p-8`}>
                 <h2 className="font-heading text-2xl font-bold text-white">
@@ -1464,7 +1500,8 @@ export function ProjectProgressPage(): ReactElement {
                         {selectedPaymentPlan === "phase_by_phase" &&
                         typeof phase.amountDue === "number" ? (
                           <p className="mt-1 text-xs text-white/50">
-                            {formatCurrency(phase.amountDue)} when you approve it
+                            {formatCurrency(phase.amountDue)}{" "}
+                            {phasePlan.fundsBeforeWork ? "before it starts" : "when you approve it"}
                           </p>
                         ) : null}
                       </div>
@@ -1482,12 +1519,16 @@ export function ProjectProgressPage(): ReactElement {
                         {
                           key: "phase_by_phase",
                           title: "Phase by phase",
-                          body: `${formatCurrency(phasePlan.advanceAmount)} advance now, then the rest of each phase's price when you approve it.`,
+                          body: phasePlan.fundsBeforeWork
+                            ? `${formatCurrency(phasePlan.advanceAmount)} advance now, then the rest of each phase's price before it starts. CivilHub holds it until you approve the phase.`
+                            : `${formatCurrency(phasePlan.advanceAmount)} advance now, then the rest of each phase's price when you approve it.`,
                         },
                         {
                           key: "full_upfront",
                           title: "Full upfront",
-                          body: `${formatCurrency(phasePlan.advanceAmount)} advance now, then ${formatCurrency(phasePlan.remainingBalance)} any time before you approve the final phase.`,
+                          body: phasePlan.fundsBeforeWork
+                            ? `${formatCurrency(phasePlan.advanceAmount)} advance now, then ${formatCurrency(phasePlan.remainingBalance)} before work starts. CivilHub releases it as you approve each phase.`
+                            : `${formatCurrency(phasePlan.advanceAmount)} advance now, then ${formatCurrency(phasePlan.remainingBalance)} any time before you approve the final phase.`,
                         },
                       ] as const
                     ).map((option) => (
@@ -1584,7 +1625,7 @@ export function ProjectProgressPage(): ReactElement {
                   <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
                     {formatCurrency(phasePlan.advanceRequiredAmount || phasePlan.advanceAmount)}
                   </dd>
-                  {!phasePlan.advancePaid && isClientViewer ? (
+                  {!phasePlan.advancePaid && isClientViewer && !actionsLocked ? (
                     <dd>
                       <button
                         type="button"
@@ -1607,15 +1648,17 @@ export function ProjectProgressPage(): ReactElement {
                       <dd className={`mt-0.5 text-sm ${phasePlan.fullPaymentPaid ? "text-emerald-200" : "text-white/55"}`}>
                         {phasePlan.fullPaymentPaid
                           ? `Paid${phasePlan.fullPaymentPaidAt ? ` on ${formatDate(phasePlan.fullPaymentPaidAt)}` : ""}${paidDetail(remainingPayment)}`
-                          : phasePlan.advancePaid
-                            ? "Pay now, or when you approve the final phase"
-                            : "Due after the advance"}
+                          : phasePlan.fundsBeforeWork
+                            ? "Due before work starts; CivilHub releases it as phases are approved"
+                            : phasePlan.advancePaid
+                              ? "Pay now, or when you approve the final phase"
+                              : "Due after the advance"}
                       </dd>
                     </div>
                     <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
                       {formatCurrency(phasePlan.remainingBalance)}
                     </dd>
-                    {phasePlan.advancePaid && !phasePlan.fullPaymentPaid && isClientViewer ? (
+                    {phasePlan.advancePaid && !phasePlan.fullPaymentPaid && isClientViewer && !actionsLocked ? (
                       <dd>
                         <button
                           type="button"
@@ -1635,7 +1678,9 @@ export function ProjectProgressPage(): ReactElement {
                     <div>
                       <dt className="font-semibold text-white">Phase payments</dt>
                       <dd className="mt-0.5 text-sm text-white/55">
-                        Paid as {isClientViewer ? "you approve" : "the client approves"} each phase
+                        {phasePlan.fundsBeforeWork
+                          ? `Funded before each phase starts; CivilHub holds it until ${isClientViewer ? "you approve" : "the client approves"} the phase`
+                          : `Paid as ${isClientViewer ? "you approve" : "the client approves"} each phase`}
                       </dd>
                     </div>
                     <dd className="text-lg font-semibold tabular-nums text-white sm:text-right">
@@ -1712,7 +1757,10 @@ export function ProjectProgressPage(): ReactElement {
                       phasePlan.paymentPlan === "phase_by_phase";
                     const isLocked =
                       !phasePlan.advancePaid && phase.status === "not_started";
-                    const viewer = projectProgress.canUpdate
+                    // Nobody acts on phases while the project is paused or cancelled.
+                    const viewer = actionsLocked
+                      ? "other"
+                      : projectProgress.canUpdate
                       ? "engineer"
                       : currentUser?.role === "client"
                         ? "client"
@@ -1752,7 +1800,9 @@ export function ProjectProgressPage(): ReactElement {
                               {isPhaseByPhase &&
                               phase.paymentStatus === "paid" ? (
                                 <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2 py-0.5 text-emerald-200">
-                                  Paid {formatCurrency(phase.amountPaid)}
+                                  {phasePlan.fundsBeforeWork && phase.status !== "completed"
+                                    ? `Funded ${formatCurrency(phase.amountPaid)}, held by CivilHub`
+                                    : `Paid ${formatCurrency(phase.amountPaid)}`}
                                   {paidDetail(paymentFor("phase", phase.id))}
                                 </span>
                               ) : isPhaseByPhase ? (
@@ -1760,8 +1810,8 @@ export function ProjectProgressPage(): ReactElement {
                                   className="text-white/50"
                                   title={`The advance already covers ${formatCurrency(Math.max(0, phase.price - phase.amountDue))} of this phase.`}
                                 >
-                                  {formatCurrency(phase.amountDue)} due when
-                                  approved
+                                  {formatCurrency(phase.amountDue)}{" "}
+                                  {phasePlan.fundsBeforeWork ? "to fund before it starts" : "due when approved"}
                                 </span>
                               ) : null}
                             </div>
@@ -1805,10 +1855,12 @@ export function ProjectProgressPage(): ReactElement {
                             advancePaid={phasePlan.advancePaid}
                             fullPaymentPaid={phasePlan.fullPaymentPaid}
                             remainingBalance={phasePlan.remainingBalance}
+                            fundsBeforeWork={Boolean(phasePlan.fundsBeforeWork)}
                             isBusy={isUpdating}
                             onSetStatus={(status) =>
                               void handleUpdatePhase(phase.id, status)
                             }
+                            onFund={() => void handleFundPhase(phase.id)}
                             onSubmitPhase={(note, files, onProgress) =>
                               handleSubmitPhase(phase.id, note, files, onProgress)
                             }

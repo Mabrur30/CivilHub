@@ -1,20 +1,19 @@
+import { HardHatIcon } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
-import { Avatar } from "../../Avatar";
-import { RatingBadge } from "../../RatingBadge";
+import { VerifiedBadge } from "../../VerifiedBadge";
 
 export interface MatchRowProps {
+  /** A kind of bidder, not a person: the landing page shows no invented people. */
   name: string;
   /** The bidder's own chosen specialities — main one first. */
   specialities: string[];
-  rating: number;
-  reviewCount: number;
+  verified: boolean;
   bidAmount: string;
 }
 
 /**
- * One bid in the "Bids received" mockup. Reuses the real Avatar and RatingBadge
- * components rather than restyling them, so this illustration stays in step
- * with the actual marketplace UI as that evolves.
+ * One bid in the "Bids received" mockup. Reuses the real VerifiedBadge rather
+ * than restyling it, so this illustration stays in step with the marketplace.
  *
  * Shows the bid amount rather than a "% match" score: the marketplace has no
  * matching score, and the landing page should not promise one.
@@ -22,13 +21,14 @@ export interface MatchRowProps {
 export function MatchRow({
   name,
   specialities,
-  rating,
-  reviewCount,
+  verified,
   bidAmount,
 }: MatchRowProps): ReactElement {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/3 p-3">
-      <Avatar name={name} size="sm" />
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/70">
+        <HardHatIcon className="h-4 w-4" aria-hidden="true" />
+      </span>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-white">{name}</p>
@@ -52,7 +52,7 @@ export function MatchRow({
         <span className="font-semibold tabular-nums text-sm text-white">
           {bidAmount}
         </span>
-        <RatingBadge rating={rating} reviewCount={reviewCount} size="sm" />
+        {verified ? <VerifiedBadge /> : <span className="text-[11px] text-white/40">Not verified</span>}
       </div>
     </div>
   );

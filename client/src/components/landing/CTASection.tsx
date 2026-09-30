@@ -14,10 +14,10 @@ export function CTASection(_props: CTASectionProps): ReactElement {
         <div className="flex flex-col items-center justify-between gap-8 text-center lg:flex-row lg:text-left">
           <div className="max-w-2xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-white/75">
-              Ready to scale delivery
+              Ready when you are
             </p>
             <h2 className="mt-4 font-heading text-4xl font-bold text-white sm:text-5xl">
-              Bring your next infrastructure project into focus.
+              Your next build starts here.
             </h2>
           </div>
 

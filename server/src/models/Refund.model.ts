@@ -4,8 +4,9 @@ import { Document, Model, Schema, Types, model } from "mongoose";
  * overpayment: a payment arrived for something already paid or withdrawn
  *   (Payment.refundDue); the whole amount goes back.
  * deposit: a rental's security deposit, less anything the owner claimed.
+ * cancellation: a cancelled project's held money, less the provider's share.
  */
-export type RefundKind = "overpayment" | "deposit";
+export type RefundKind = "overpayment" | "deposit" | "cancellation";
 
 /**
  * sslcommerz: CivilHub asked the gateway to return it to the card or wallet
@@ -39,7 +40,7 @@ const refundSchema = new Schema<IRefund>(
   {
     payment: { type: Schema.Types.ObjectId, ref: "Payment", required: true, index: true },
     payer: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    kind: { type: String, enum: ["overpayment", "deposit"], required: true },
+    kind: { type: String, enum: ["overpayment", "deposit", "cancellation"], required: true },
     equipmentBooking: { type: Schema.Types.ObjectId, ref: "EquipmentBooking" },
     amount: { type: Number, required: true, min: 0.01 },
     method: { type: String, enum: ["sslcommerz", "manual"], required: true },

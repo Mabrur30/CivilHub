@@ -10,7 +10,6 @@ import { MissionSection } from "../components/landing/MissionSection";
 import { Navbar } from "../components/landing/Navbar";
 import { PlatformFeatures } from "../components/landing/PlatformFeatures";
 import { Pricing } from "../components/landing/Pricing";
-import { Testimonials } from "../components/landing/Testimonials";
 import { TrustStats } from "../components/landing/TrustStats";
 
 export function LandingPage(): ReactElement {
@@ -37,7 +36,6 @@ export function LandingPage(): ReactElement {
       <MissionSection />
       <TrustStats />
       <PlatformFeatures />
-      <Testimonials />
       <ForClientsForEngineers />
       <Pricing />
       <CTASection />

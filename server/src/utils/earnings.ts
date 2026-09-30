@@ -10,12 +10,17 @@ import { isClaimSettled } from "./deposits";
  * What each payee has earned, and how much of it CivilHub can pay out.
  *
  * Money is released only once the work is accepted:
- * - a phase payment when it's paid, since the client pays as they approve;
+ * - a phase payment when its phase is approved. Clients now fund a phase
+ *   before work starts, so the money is held until then; under the older rule
+ *   they paid as they approved, which is the same moment;
  * - the advance and an upfront balance pro rata as phases are completed,
  *   and in full when the project completes;
  * - a rental when the booking is completed, plus any deposit the owner
  *   claimed for damage once the renter can no longer dispute it (or an
  *   admin has decided the dispute).
+ * On a cancelled project, the unreleased part of the advance or upfront
+ * balance, and any funded phase that wasn't approved, is split as agreed or decided: the provider's award is released and
+ * the rest is refunded to the client (see utils/projectMoney.ts).
  * Everything else is on hold. Owed = released − already paid out.
  */
 
@@ -28,6 +33,8 @@ export interface EarningLine {
   amount: number;
   released: number;
   onHold: number;
+  /** Refunded to the client when the project was cancelled; never theirs. */
+  refunded?: number;
 }
 
 export interface PayeeEarnings {
@@ -44,7 +51,7 @@ const fromPaisa = (paisa: number): number => paisa / 100;
 const emptyEarnings = (): PayeeEarnings => ({ released: 0, onHold: 0, paidOut: 0, owed: 0, lines: [] });
 
 /** Share of a project's work accepted so far, from 0 to 1. */
-const acceptedShareByProject = async (projectIds: Types.ObjectId[]): Promise<Map<string, number>> => {
+export const acceptedShareByProject = async (projectIds: Types.ObjectId[]): Promise<Map<string, number>> => {
   if (projectIds.length === 0) return new Map();
   const [projects, phases] = await Promise.all([
     Project.find({ _id: { $in: projectIds } }).select("status").lean().exec(),
@@ -77,7 +84,7 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
     : { payee: { $exists: true, $ne: null } };
   // A payment waiting to be refunded was never earned.
   const payments = await Payment.find({ status: "paid", refundDue: { $ne: true }, ...payeeFilter })
-    .select("type project equipmentBooking payee payeeAmount description paidAt createdAt")
+    .select("type project phase equipmentBooking payee payeeAmount description paidAt createdAt")
     .sort({ paidAt: -1, createdAt: -1 })
     .lean<IPayment[]>()
     .exec();
@@ -85,16 +92,22 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
   const projectIds = [
     ...new Map(
       payments
-        .filter((payment) => payment.project && payment.type !== "phase")
+        .filter((payment) => payment.project)
         .map((payment) => [payment.project!.toString(), payment.project as Types.ObjectId]),
     ).values(),
   ];
+  const phaseIds = payments
+    .filter((payment) => payment.type === "phase" && payment.phase)
+    .map((payment) => payment.phase as Types.ObjectId);
   const bookingIds = payments
     .filter((payment) => payment.equipmentBooking)
     .map((payment) => payment.equipmentBooking as Types.ObjectId);
 
-  const [shares, bookings, payoutRows] = await Promise.all([
+  const [shares, cancelledRows, bookings, payoutRows, phaseRows] = await Promise.all([
     acceptedShareByProject(projectIds),
+    projectIds.length
+      ? Project.find({ _id: { $in: projectIds }, status: "cancelled" }).select("cancellation").lean().exec()
+      : Promise.resolve([]),
     bookingIds.length
       ? EquipmentBooking.find({ _id: { $in: bookingIds } })
           .select("status depositResolution depositClaimAmount depositClaimedAt depositDispute")
@@ -105,8 +118,25 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
       { $match: payeeIds ? { payee: payeeFilter.payee } : {} },
       { $group: { _id: "$payee", total: { $sum: "$amount" } } },
     ]).exec(),
+    phaseIds.length
+      ? ProjectPhase.find({ _id: { $in: phaseIds } }).select("status").lean().exec()
+      : Promise.resolve([]),
   ]);
+  const completedPhases = new Set(
+    phaseRows.filter((phase) => phase.status === "completed").map((phase) => phase._id.toString()),
+  );
   const bookingById = new Map(bookings.map((booking) => [booking._id.toString(), booking]));
+  // For each cancelled project, the fraction of held money the provider kept.
+  const awardByProject = new Map(
+    cancelledRows.map((project) => {
+      const cancellation = project.cancellation;
+      const fraction =
+        cancellation && cancellation.held > 0
+          ? Math.min(1, Math.max(0, cancellation.providerAmount / cancellation.held))
+          : 0;
+      return [project._id.toString(), fraction];
+    }),
+  );
 
   const result = new Map<string, PayeeEarnings>();
   for (const id of payeeIds ?? []) result.set(id, emptyEarnings());
@@ -123,9 +153,17 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
     const earnings = forPayee(payment.payee.toString());
     const amountPaisa = toPaisa(payment.payeeAmount ?? 0);
     let releasedPaisa = 0;
+    let refundedPaisa = 0;
 
     if (payment.type === "phase") {
-      releasedPaisa = amountPaisa;
+      // Old phase payments may not name their phase; they were paid on approval.
+      const approved = !payment.phase || completedPhases.has(payment.phase.toString());
+      releasedPaisa = approved ? amountPaisa : 0;
+      const award = awardByProject.get(payment.project?.toString() ?? "");
+      if (!approved && award !== undefined) {
+        releasedPaisa = Math.round(amountPaisa * award);
+        refundedPaisa = amountPaisa - releasedPaisa;
+      }
     } else if (payment.type === "equipment_booking") {
       const booking = payment.equipmentBooking
         ? bookingById.get(payment.equipmentBooking.toString())
@@ -147,8 +185,16 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
         });
       }
     } else {
-      const share = payment.project ? (shares.get(payment.project.toString()) ?? 0) : 0;
+      const projectKey = payment.project?.toString() ?? "";
+      const share = shares.get(projectKey) ?? 0;
       releasedPaisa = Math.round(amountPaisa * share);
+      const award = awardByProject.get(projectKey);
+      if (award !== undefined) {
+        const heldPaisa = amountPaisa - releasedPaisa;
+        const awardPaisa = Math.round(heldPaisa * award);
+        releasedPaisa += awardPaisa;
+        refundedPaisa = heldPaisa - awardPaisa;
+      }
     }
 
     earnings.lines.push({
@@ -158,7 +204,8 @@ export const getEarnings = async (payeeIds?: string[]): Promise<Map<string, Paye
       paidAt: payment.paidAt?.toISOString() ?? null,
       amount: fromPaisa(amountPaisa),
       released: fromPaisa(releasedPaisa),
-      onHold: fromPaisa(amountPaisa - releasedPaisa),
+      onHold: fromPaisa(amountPaisa - releasedPaisa - refundedPaisa),
+      ...(refundedPaisa > 0 ? { refunded: fromPaisa(refundedPaisa) } : {}),
     });
   }
 

@@ -39,6 +39,7 @@ import {
   type GatewayTransaction,
 } from "../services/sslcommerz";
 import { formatTaka } from "../utils/money";
+import { getCommissionRate } from "../utils/platformSettings";
 
 interface PaymentError extends Error {
   statusCode: number;
@@ -181,7 +182,7 @@ export const startCheckout = async (
       tranId: newTranId(),
       description: charge.productName.slice(0, 300),
       returnPath: charge.returnPath,
-      ...splitPayment(charge.amount, charge.depositAmount, config.commissionRate),
+      ...splitPayment(charge.amount, charge.depositAmount, await getCommissionRate()),
     });
     const tranId = payment.tranId as string;
 

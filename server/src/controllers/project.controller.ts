@@ -9,6 +9,7 @@ import {
 } from "../models/Notification.model";
 import {
   Project,
+  fundsBeforeWork,
   type IProject,
   type PhasePlanStatus,
   type PaymentPlan,
@@ -47,6 +48,8 @@ import {
   type PrivateSiteResponse,
   type PublicSiteResponse,
 } from "../utils/projectSite";
+import { projectLockReason } from "../utils/projectMoney";
+import { getCommissionRate } from "../utils/platformSettings";
 
 export interface CreateProjectRequestBody {
   title: string;
@@ -469,9 +472,10 @@ export const getMyProjects = async (
   try {
     await assertCanTakeProjects(req.user);
 
+    // Work under way; finished and cancelled projects live in history.
     const projects = await Project.find({
       assignedEngineer: req.user.userId,
-      status: { $ne: "completed" },
+      status: { $nin: ["completed", "cancelled"] },
     })
       .sort({ nextMilestoneDueDate: 1 })
       .exec();
@@ -714,6 +718,11 @@ export interface PhasePlanResponse {
   advancePaidAt: string | undefined;
   fullPaymentPaid: boolean;
   fullPaymentPaidAt: string | undefined;
+  /**
+   * Work is paid into CivilHub's hold before it starts. True for every plan
+   * approved from now on; false only for projects planned under the old rule.
+   */
+  fundsBeforeWork: boolean;
   /** The advance this plan needs, known before the client approves it. */
   advanceAmount: number;
   /** Everything after the advance. */
@@ -762,6 +771,7 @@ const toPhasePlanResponse = (
     advancePaidAt: project.advancePaidAt?.toISOString(),
     fullPaymentPaid: project.fullPaymentPaid,
     fullPaymentPaidAt: project.fullPaymentPaidAt?.toISOString(),
+    fundsBeforeWork: project.phasePlanStatus !== "approved" || fundsBeforeWork(project),
     advanceAmount: getAdvanceAmount(project),
     remainingBalance: getRemainingBalance(project),
     phasePlanFeedback: project.phasePlanFeedback
@@ -816,6 +826,8 @@ export const createPhasePlan = async (
     if (project.assignedEngineer?.toString() !== req.user.userId) {
       throw createProjectError("You are not assigned to this project", 403);
     }
+    const lockReason = projectLockReason(project);
+    if (lockReason) throw createProjectError(lockReason, 409);
 
     if (
       project.phasePlanStatus !== "not_created" &&
@@ -905,6 +917,8 @@ export const submitPhasePlanForApproval = async (
     if (project.assignedEngineer?.toString() !== req.user.userId) {
       throw createProjectError("You are not assigned to this project", 403);
     }
+    const lockReason = projectLockReason(project);
+    if (lockReason) throw createProjectError(lockReason, 409);
 
     if (project.phasePlanStatus !== "draft") {
       throw createProjectError(
@@ -999,7 +1013,7 @@ export const getPhasePlan = async (
 
     res.status(200).json({
       ...toPhasePlanResponse(project, phases),
-      commissionRate: getPaymentConfig().commissionRate,
+      commissionRate: await getCommissionRate(),
       payments: payments.map(toProjectPaymentResponse),
     });
   } catch (error: unknown) {
@@ -1030,6 +1044,8 @@ export const approvePhasePlan = async (
     if (project.client?.toString() !== req.user.userId) {
       throw createProjectError("You do not own this project", 403);
     }
+    const lockReason = projectLockReason(project);
+    if (lockReason) throw createProjectError(lockReason, 409);
 
     if (project.phasePlanStatus !== "pending_client_approval") {
       throw createProjectError("Phase plan is not awaiting approval", 409);
@@ -1046,6 +1062,8 @@ export const approvePhasePlan = async (
     project.phasePlanStatus = "approved";
     project.paymentPlan = paymentPlan;
     project.advanceRequiredAmount = getAdvanceAmount(project);
+    // Work approved from now on is paid into CivilHub's hold before it starts.
+    project.fundingRule = "before_work";
     project.phasePlanFeedback = null;
 
     await project.save();
@@ -1094,6 +1112,8 @@ export const rejectPhasePlan = async (
     if (project.client?.toString() !== req.user.userId) {
       throw createProjectError("You do not own this project", 403);
     }
+    const lockReason = projectLockReason(project);
+    if (lockReason) throw createProjectError(lockReason, 409);
 
     if (project.phasePlanStatus !== "pending_client_approval") {
       throw createProjectError("Phase plan is not awaiting approval", 409);

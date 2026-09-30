@@ -1,21 +1,25 @@
 import { Types } from "mongoose";
 import { Payment } from "../models/Payment.model";
-import { type IProject } from "../models/Project.model";
+import { type IProject, fundsBeforeWork } from "../models/Project.model";
 import { type IProjectPhase } from "../models/ProjectPhase.model";
 
 /** Share of the agreed value the client pays up front, on either payment plan. */
 export const ADVANCE_SHARE = 0.2;
 
 const toCents = (amount: number): number => Math.round(amount * 100);
+
+/** The project fields the money rules read; lean documents fit too. */
+type MoneyProject = Pick<IProject, "advanceRequiredAmount" | "totalAgreedValue">;
+type MoneyPhase = Pick<IProjectPhase, "_id" | "order" | "price">;
 const fromCents = (cents: number): number => cents / 100;
 
-export const getAdvanceAmount = (project: IProject): number =>
+export const getAdvanceAmount = (project: MoneyProject): number =>
   typeof project.advanceRequiredAmount === "number"
     ? project.advanceRequiredAmount
     : fromCents(Math.round(toCents(project.totalAgreedValue ?? 0) * ADVANCE_SHARE));
 
 /** What is left after the advance: paid phase by phase, or in one go on full upfront. */
-export const getRemainingBalance = (project: IProject): number =>
+export const getRemainingBalance = (project: MoneyProject): number =>
   fromCents(
     toCents(project.totalAgreedValue ?? 0) - toCents(getAdvanceAmount(project)),
   );
@@ -29,8 +33,8 @@ export const getRemainingBalance = (project: IProject): number =>
  * advance plus every phase adds up to exactly the agreed value.
  */
 export const getPhaseAmountsDue = (
-  project: IProject,
-  phases: IProjectPhase[],
+  project: MoneyProject,
+  phases: MoneyPhase[],
 ): Map<string, number> => {
   const ordered = [...phases].sort((a, b) => a.order - b.order);
   const remainingCents = toCents(getRemainingBalance(project));
@@ -52,6 +56,24 @@ export const getPhaseAmountsDue = (
     amounts.set(phase._id.toString(), fromCents(cents));
   });
   return amounts;
+};
+
+/**
+ * Whether the money for this phase is in CivilHub's hold. Always true under
+ * the older pay-on-approval rule, where nothing is paid before work starts.
+ * A phase with nothing due (the advance covers it) counts as funded.
+ */
+export const isPhaseFunded = (
+  project: MoneyProject & Pick<IProject, "fundingRule" | "paymentPlan" | "fullPaymentPaid">,
+  phase: MoneyPhase & Pick<IProjectPhase, "paymentStatus">,
+  phases: MoneyPhase[],
+): boolean => {
+  if (!fundsBeforeWork(project)) return true;
+  if (project.paymentPlan === "full_upfront") return project.fullPaymentPaid;
+  return (
+    phase.paymentStatus === "paid" ||
+    (getPhaseAmountsDue(project, phases).get(phase._id.toString()) ?? 0) <= 0
+  );
 };
 
 /** What was actually charged per phase, including phases paid under older rules. */

@@ -1,4 +1,5 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
+import { type EvidenceFacts, evidenceFactFields } from "../utils/evidence";
 
 export type ProjectPhaseStatus =
   | "not_started"
@@ -16,7 +17,7 @@ export interface PhaseChangeRequest {
 }
 
 /** A file handed over with a phase: a photo, drawing, report or spreadsheet. */
-export interface DeliverableFile {
+export interface DeliverableFile extends EvidenceFacts {
   url: string;
   publicId: string;
   resourceType: "image" | "raw";
@@ -51,6 +52,14 @@ export interface IProjectPhase extends Document {
   paidAt?: Date;
   changeRequest?: PhaseChangeRequest | null;
   submissions: PhaseSubmission[];
+  /** The client was reminded that this hand-over is waiting for them. */
+  approvalReminderSentAt?: Date | null;
+  /** The provider was told they can ask CivilHub to step in. */
+  escalationNoticeSentAt?: Date | null;
+  /** The client was reminded to fund this phase so work can start. */
+  fundingReminderSentAt?: Date | null;
+  /** The provider was told the client hasn't funded it and they can ask CivilHub to step in. */
+  fundingEscalationSentAt?: Date | null;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -113,6 +122,10 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
       type: Date,
       required: false,
     },
+    approvalReminderSentAt: { type: Date, default: null },
+    escalationNoticeSentAt: { type: Date, default: null },
+    fundingReminderSentAt: { type: Date, default: null },
+    fundingEscalationSentAt: { type: Date, default: null },
     changeRequest: {
       type: new Schema<PhaseChangeRequest>(
         {
@@ -147,6 +160,7 @@ const projectPhaseSchema = new Schema<IProjectPhase>(
                     name: { type: String, required: true, trim: true },
                     mimeType: { type: String, required: true },
                     size: { type: Number, required: true, min: 0 },
+                    ...evidenceFactFields,
                   },
                   { _id: false },
                 ),

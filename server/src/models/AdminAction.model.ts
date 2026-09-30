@@ -17,6 +17,15 @@ export const ADMIN_ACTIONS = [
   "verification.approve",
   "verification.reject",
   "verification.revoke",
+  "project.dispute_resolve",
+  "review.remove",
+  "review.reply_remove",
+  "listing.pause",
+  "listing.unpause",
+  "settings.commission",
+  "dispute.message",
+  "project.dispute_appeal",
+  "deposit.appeal",
 ] as const;
 export type AdminActionType = (typeof ADMIN_ACTIONS)[number];
 
@@ -27,7 +36,7 @@ export type AdminActionType = (typeof ADMIN_ACTIONS)[number];
 export interface IAdminAction extends Document {
   admin: Types.ObjectId;
   action: AdminActionType;
-  targetType?: "user" | "post" | "comment" | "report" | "payment" | "payout" | "refund" | "booking";
+  targetType?: "user" | "post" | "comment" | "report" | "payment" | "payout" | "refund" | "booking" | "project" | "review" | "equipment";
   targetId?: Types.ObjectId;
   /** The account the action was about, for the user's history. */
   subjectUser?: Types.ObjectId;
@@ -42,7 +51,7 @@ const adminActionSchema = new Schema<IAdminAction>(
     action: { type: String, enum: ADMIN_ACTIONS, required: true },
     targetType: {
       type: String,
-      enum: ["user", "post", "comment", "report", "payment", "payout", "refund", "booking"],
+      enum: ["user", "post", "comment", "report", "payment", "payout", "refund", "booking", "project", "review", "equipment"],
     },
     targetId: { type: Schema.Types.ObjectId },
     subjectUser: { type: Schema.Types.ObjectId, ref: "User", index: true },

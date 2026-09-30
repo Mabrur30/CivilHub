@@ -56,11 +56,16 @@ interface PhaseInput {
   price: number;
 }
 
-/** Runs a project through planning to an approved plan, ready for the advance. */
+/**
+ * Runs a project through planning to an approved plan, ready for the advance.
+ * Most tests here cover the older pay-on-approval rule, which projects
+ * planned before phase funding keep; `fundsBeforeWork` keeps today's rule.
+ */
 const createApprovedProject = async (
   total: number,
   phases: PhaseInput[],
   paymentPlan: "phase_by_phase" | "full_upfront",
+  { fundsBeforeWork = false }: { fundsBeforeWork?: boolean } = {},
 ): Promise<{ project: IProject; phaseIds: string[] }> => {
   const project = await Project.create({
     title: "Duplex in Mirpur",
@@ -85,6 +90,10 @@ const createApprovedProject = async (
   expect(
     (await asClient(request(app).post(`${base}/phase-plan/approve`)).send({ paymentPlan })).status,
   ).toBe(200);
+  expect((await Project.findById(project._id).lean().exec())?.fundingRule).toBe("before_work");
+  if (!fundsBeforeWork) {
+    await Project.updateOne({ _id: project._id }, { $set: { fundingRule: "on_approval" } }).exec();
+  }
 
   const phaseIds = (plan.body.phases as Array<{ id: string }>).map((phase) => phase.id);
   return { project, phaseIds };
@@ -330,6 +339,67 @@ describe("Phase-by-phase payments", () => {
     expectPaid(await payPhase(id, phaseIds[0]));
     expect((await ProjectPhase.findById(phaseIds[0]).exec())?.paymentStatus).toBe("paid");
     expect(await totalPaid(id)).toBe(1000);
+  });
+});
+
+describe("Funding a phase before work", () => {
+  test("each phase is funded before it starts, and approving it is free", async () => {
+    const { project, phaseIds } = await createApprovedProject(
+      100000,
+      [
+        { title: "Foundation", price: 50000 },
+        { title: "Frame", price: 50000 },
+      ],
+      "phase_by_phase",
+      { fundsBeforeWork: true },
+    );
+    const id = project._id.toString();
+    const [foundation, frame] = phaseIds;
+    expect((await asClient(request(app).get(`/api/projects/${id}/phase-plan`))).body.fundsBeforeWork).toBe(true);
+    expectPaid(await payAdvance(id));
+
+    expect((await setStatus(id, foundation, "in_progress")).status).toBe(409);
+    // Phases are funded in order.
+    expect((await payPhase(id, frame)).checkout.status).toBe(409);
+    expectPaid(await payPhase(id, foundation));
+    expect(await ProjectPhase.findById(foundation).lean()).toMatchObject({ status: "not_started", paymentStatus: "paid" });
+    expect((await payPhase(id, foundation)).checkout.status).toBe(409);
+
+    await submitPhase(id, foundation);
+    expect((await approve(id, foundation)).status).toBe(200);
+    expect(await phaseStatus(foundation)).toBe("completed");
+
+    // Funding the last phase ahead is fine; the project completes on approval.
+    expectPaid(await payPhase(id, frame));
+    await submitPhase(id, frame);
+    expect((await approve(id, frame)).status).toBe(200);
+    expect(await Project.findById(id).lean()).toMatchObject({ status: "completed" });
+    expect(await totalPaid(id)).toBe(100000);
+  });
+
+  test("on the full upfront plan, the balance is paid before work starts", async () => {
+    const { project, phaseIds } = await createApprovedProject(
+      60000,
+      [
+        { title: "Excavation", price: 30000 },
+        { title: "Pour", price: 30000 },
+      ],
+      "full_upfront",
+      { fundsBeforeWork: true },
+    );
+    const id = project._id.toString();
+    expectPaid(await payAdvance(id));
+    expect((await setStatus(id, phaseIds[0], "in_progress")).status).toBe(409);
+    expect((await payPhase(id, phaseIds[0])).checkout.status).toBe(409);
+    expectPaid(await pay({ purpose: "full_remaining", projectId: id }));
+
+    await submitPhase(id, phaseIds[0]);
+    expect((await approve(id, phaseIds[0])).status).toBe(200);
+    await submitPhase(id, phaseIds[1]);
+    // The final phase costs nothing more: the balance was paid up front.
+    expect((await approve(id, phaseIds[1])).status).toBe(200);
+    expect(await Project.findById(id).lean()).toMatchObject({ status: "completed" });
+    expect(await totalPaid(id)).toBe(60000);
   });
 });
 

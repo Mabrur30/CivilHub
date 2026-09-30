@@ -6,7 +6,7 @@ import {
   type NotificationType,
 } from "../models/Notification.model";
 import { Payment, type IPayment, type PaymentType } from "../models/Payment.model";
-import { Project, type IProject } from "../models/Project.model";
+import { Project, fundsBeforeWork, type IProject } from "../models/Project.model";
 import {
   ProjectPhase,
   SUBMISSION_FILE_LIMIT,
@@ -25,11 +25,13 @@ import {
 import { User, type UserRole } from "../models/User.model";
 import { messageAttachmentTypes } from "../middleware/upload.middleware";
 import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
+import { factsForUpload } from "../utils/evidence";
 import {
   getAdvanceAmount,
   getAmountsPaidByPhase,
   getPhaseAmountsDue,
   getRemainingBalance,
+  isPhaseFunded,
 } from "../utils/phasePayments";
 import {
   describePaymentMethod,
@@ -43,6 +45,7 @@ import {
   type PrivateSiteResponse,
 } from "../utils/projectSite";
 import { type ProjectRequirements } from "../utils/projectCriteria";
+import { projectLockReason } from "../utils/projectMoney";
 
 interface ProjectProgressError extends Error {
   statusCode: number;
@@ -472,6 +475,12 @@ const loadOwnedProject = async (
   return project;
 };
 
+/** Refuses changes to a paused (disputed) or cancelled project. */
+const assertProjectUnlocked = (project: IProject): void => {
+  const reason = projectLockReason(project);
+  if (reason) throw createProjectProgressError(reason, 409);
+};
+
 const loadPhase = async (
   req: AuthenticatedRequest,
   project: IProject,
@@ -628,6 +637,7 @@ export const updateProjectPhase = async (
     await assertCanTakeProjects(req.user);
 
     const { project, canUpdate } = await loadProjectForViewer(req);
+    assertProjectUnlocked(project);
     if (!canUpdate) {
       throw createProjectProgressError("Forbidden", 403);
     }
@@ -667,6 +677,14 @@ export const updateProjectPhase = async (
       if (!project.advancePaid) {
         throw createProjectProgressError(
           "Advance payment required before work can begin",
+          409,
+        );
+      }
+      if (!isPhaseFunded(project, phase, await ProjectPhase.find({ project: project._id }).exec())) {
+        throw createProjectProgressError(
+          project.paymentPlan === "full_upfront"
+            ? "The client needs to pay the remaining balance before work starts"
+            : `The client needs to fund ${phase.name} before work starts`,
           409,
         );
       }
@@ -734,17 +752,22 @@ export const updateProjectPhase = async (
 // raw file so it downloads unchanged, with its original name.
 const uploadDeliverable = async (
   file: Express.Multer.File,
+  uploadedBy: string,
 ): Promise<DeliverableFile> => {
   const name = file.originalname.trim() || "file";
   const mimeType = file.mimetype.split(";")[0].trim().toLowerCase();
   const resourceType = mimeType.startsWith("image/") ? "image" : "raw";
-  const result = await uploadBuffer(file.buffer, {
-    folder: "civilhub/project-deliverables",
-    resource_type: resourceType,
-    ...(resourceType === "raw"
-      ? { use_filename: true, unique_filename: true, filename_override: name }
-      : {}),
-  });
+  const [result, facts] = await Promise.all([
+    uploadBuffer(file.buffer, {
+      folder: "civilhub/project-deliverables",
+      resource_type: resourceType,
+      ...(resourceType === "raw"
+        ? { use_filename: true, unique_filename: true, filename_override: name }
+        : {}),
+    }),
+    // Who handed it over, and for photos the camera's date and place.
+    factsForUpload(file, uploadedBy),
+  ]);
   return {
     url: result.secure_url,
     publicId: result.public_id,
@@ -752,6 +775,7 @@ const uploadDeliverable = async (
     name,
     mimeType,
     size: file.size,
+    ...facts,
   };
 };
 
@@ -776,6 +800,7 @@ export const submitPhase = async (
     await assertCanTakeProjects(req.user);
 
     const { project, canUpdate } = await loadProjectForViewer(req);
+    assertProjectUnlocked(project);
     if (!canUpdate) {
       throw createProjectProgressError("Forbidden", 403);
     }
@@ -827,14 +852,18 @@ export const submitPhase = async (
       );
     }
 
-    const files = await Promise.all(uploads.map(uploadDeliverable));
+    const files = await Promise.all(uploads.map((file) => uploadDeliverable(file, req.user.userId)));
     const submission: PhaseSubmission = { note, files, submittedAt: new Date() };
 
     // Conditional on the status we checked, so a double submit can't add two
     // handovers or skip the client's decision.
     const updated = await ProjectPhase.findOneAndUpdate(
       { _id: phase._id, status: from },
-      { $set: { status: "awaiting_approval" }, $push: { submissions: submission } },
+      {
+        // A fresh hand-over starts the reminder clock again.
+        $set: { status: "awaiting_approval", approvalReminderSentAt: null, escalationNoticeSentAt: null },
+        $push: { submissions: submission },
+      },
       { returnDocument: "after" },
     ).exec();
     if (!updated) {
@@ -889,6 +918,10 @@ const getPhaseCharge = (
   phase: IProjectPhase,
   phases: IProjectPhase[],
 ): PhaseCharge | null => {
+  // Funded work was paid for before it started, so approving it is free.
+  if (fundsBeforeWork(project) && isPhaseFunded(project, phase, phases)) {
+    return null;
+  }
   if (project.paymentPlan === "phase_by_phase") {
     return {
       type: "phase",
@@ -958,7 +991,8 @@ const completePhase = (
         status: "completed",
         completedAt: isLegacyUnpaid ? (phase.completedAt ?? now) : now,
         changeRequest: null,
-        ...(project.paymentPlan === "phase_by_phase"
+        // A funded phase keeps the date it was funded.
+        ...(project.paymentPlan === "phase_by_phase" && phase.paymentStatus !== "paid"
           ? { paymentStatus: "paid", paidAt: now }
           : {}),
       },
@@ -984,6 +1018,50 @@ const claimRemainingBalance = async (
  * upfront plan except a final one with the balance still unpaid. Phases that
  * need a payment are approved by paying for them (see payment.controller).
  */
+/**
+ * Whether CivilHub can approve this handed-over phase for the client: it's
+ * waiting for approval and approving it needs no new payment.
+ */
+export const canApproveWithoutPayment = (
+  project: IProject,
+  phase: IProjectPhase,
+  phases: IProjectPhase[],
+): boolean => {
+  if (phase.status !== "awaiting_approval" || !project.advancePaid) return false;
+  const charge = getPhaseCharge(project, phase, phases);
+  return !charge || charge.amount <= 0;
+};
+
+/**
+ * An admin approves a handed-over phase on the client's behalf, after a
+ * dispute. Only where no payment is due; returns false if it can't be done.
+ */
+export const approvePhaseForClient = async (projectId: Types.ObjectId, phaseId: string): Promise<boolean> => {
+  const project = await Project.findById(projectId).exec();
+  if (!project || !Types.ObjectId.isValid(phaseId)) return false;
+  const phases = await ProjectPhase.find({ project: project._id }).exec();
+  const phase = phases.find((item) => item._id.toString() === phaseId);
+  if (!phase || !canApproveWithoutPayment(project, phase, phases)) return false;
+
+  const now = new Date();
+  const charge = getPhaseCharge(project, phase, phases);
+  const approved = await completePhase(project, phase, false, now);
+  if (!approved) return false;
+  if (charge?.type === "full_remaining") {
+    await claimRemainingBalance(project._id, now);
+  }
+  if (project.assignedEngineer) {
+    await Notification.create({
+      recipient: project.assignedEngineer,
+      type: "project_phase_updated",
+      message: `CivilHub approved ${phase.name} on ${projectLabel(project, "your project")}.${fundsBeforeWork(project) ? " The money CivilHub held for it is released to you." : ""}`,
+      project: project._id,
+    });
+  }
+  await refreshProjectState(project._id);
+  return true;
+};
+
 export const approvePhase = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -991,6 +1069,7 @@ export const approvePhase = async (
 ): Promise<void> => {
   try {
     const project = await loadOwnedProject(req);
+    assertProjectUnlocked(project);
     requireApprovedPlan(project);
     const phase = await loadPhase(req, project);
     const { isLegacyUnpaid } = assertPhaseApprovable(project, phase);
@@ -1021,7 +1100,7 @@ export const approvePhase = async (
       await Notification.create({
         recipient: project.assignedEngineer,
         type: "project_phase_updated",
-        message: `The client approved ${phase.name} on ${projectLabel(project, "your project")}.`,
+        message: `The client approved ${phase.name} on ${projectLabel(project, "your project")}.${fundsBeforeWork(project) ? " The money CivilHub held for it is released to you." : ""}`,
         project: project._id,
       });
     }
@@ -1047,6 +1126,7 @@ export const requestPhaseChanges = async (
 ): Promise<void> => {
   try {
     const project = await loadOwnedProject(req);
+    assertProjectUnlocked(project);
     requireApprovedPlan(project);
     const phase = await loadPhase(req, project);
     if (await hasCheckoutInFlight({ phase: phase._id })) {
@@ -1141,6 +1221,53 @@ const findClientProject = async (
   return project;
 };
 
+/**
+ * Paying a phase into CivilHub's hold before work on it starts. Phases are
+ * funded in order, though a client may fund several ahead.
+ */
+const fundingCharge = (
+  project: IProject,
+  phase: IProjectPhase,
+  phases: IProjectPhase[],
+  label: string,
+): Pick<ProjectCharge, "phase" | "type" | "amount" | "productName"> => {
+  if (project.paymentPlan !== "phase_by_phase") {
+    throw createProjectProgressError(
+      "On the full upfront plan, pay the remaining balance instead",
+      409,
+    );
+  }
+  if (!project.advancePaid) {
+    throw createProjectProgressError("Pay the advance first", 409);
+  }
+  if (phase.status === "completed" || phase.paymentStatus === "paid") {
+    throw createProjectProgressError(`${phase.name} is already funded`, 409);
+  }
+  const unfundedBefore = phases.find(
+    (item) =>
+      item.order < phase.order && !isPhaseFunded(project, item, phases),
+  );
+  if (unfundedBefore) {
+    throw createProjectProgressError(
+      `Fund ${unfundedBefore.name} first; phases are funded in order`,
+      409,
+    );
+  }
+  const amount = getPhaseAmountsDue(project, phases).get(phase._id.toString()) ?? 0;
+  if (amount <= 0) {
+    throw createProjectProgressError(
+      `${phase.name} has nothing to pay; the advance covers it`,
+      409,
+    );
+  }
+  return {
+    phase,
+    type: "phase",
+    amount,
+    productName: `Funding for ${phase.name} - ${label}`,
+  };
+};
+
 /** Works out what the client owes for this purpose, or explains why nothing is due. */
 export const prepareProjectCharge = async (
   userId: string,
@@ -1150,6 +1277,7 @@ export const prepareProjectCharge = async (
   phaseId: unknown,
 ): Promise<ProjectCharge> => {
   const project = await findClientProject(userId, role, projectId);
+  assertProjectUnlocked(project);
   if (!project.assignedEngineer) {
     throw createProjectProgressError(
       "This project has no engineer to pay yet",
@@ -1224,8 +1352,11 @@ export const prepareProjectCharge = async (
   if (!phase) {
     throw createProjectProgressError("Project phase not found", 404);
   }
-  assertPhaseApprovable(project, phase);
   const phases = await ProjectPhase.find({ project: project._id }).exec();
+  if (fundsBeforeWork(project) && phase.status !== "awaiting_approval") {
+    return { ...base, ...fundingCharge(project, phase, phases, label) };
+  }
+  assertPhaseApprovable(project, phase);
   const charge = getPhaseCharge(project, phase, phases);
   if (!charge || charge.amount <= 0) {
     throw createProjectProgressError(
@@ -1275,6 +1406,21 @@ export const applyProjectPayment = async (
   } else if (payment.type === "full_remaining" && !payment.phase) {
     applied = await claimRemainingBalance(project._id, paidAt);
     type = "full_payment_received";
+  } else if (payment.phase && payment.type === "phase" && fundsBeforeWork(project)) {
+    // Funding: the money is held until the client approves the phase.
+    const funded = await ProjectPhase.findOneAndUpdate(
+      { _id: payment.phase, paymentStatus: "unpaid", status: { $ne: "completed" } },
+      { $set: { paymentStatus: "paid", paidAt } },
+      { returnDocument: "after" },
+    ).exec();
+    applied = Boolean(funded);
+    if (funded) {
+      message = `The client funded ${funded.name} on ${label} with ${formatTaka(payment.amount)}${via}. You can start work; CivilHub holds the money until they approve the phase.${share}`;
+      // Funded while already handed over (it shouldn't happen): paying was the approval.
+      if (funded.status === "awaiting_approval") {
+        await completePhase(project, funded, false, paidAt);
+      }
+    }
   } else if (payment.phase) {
     const phase = await ProjectPhase.findById(payment.phase).exec();
     let approvable: { isLegacyUnpaid: boolean } | null = null;

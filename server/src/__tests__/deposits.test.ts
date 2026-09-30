@@ -16,7 +16,8 @@ import { Refund } from "../models/Refund.model";
 import { type IUser, User } from "../models/User.model";
 import adminRouter from "../routes/admin.routes";
 import equipmentBookingRouter from "../routes/equipmentBooking.routes";
-import { settleDueDeposits } from "../utils/deposits";
+import { disputeDeadline, settleDueDeposits } from "../utils/deposits";
+import { finalizeDueDecisions } from "../utils/disputeDecisions";
 import { getPayeeEarnings } from "../utils/earnings";
 import { getRefundsDue } from "../utils/refunds";
 
@@ -190,6 +191,8 @@ describe("Admin decisions", () => {
   };
   const decide = (agent: ReturnType<typeof request.agent>, booking: IEquipmentBooking, body: object) =>
     agent.post(`/api/admin/deposits/${booking._id.toString()}/decide`).send(body);
+  /** The appeal window passes unused. */
+  const takeEffect = () => finalizeDueDecisions(new Date(Date.now() + 4 * DAY_MS));
 
   test("users can't reach the deposit queue", async () => {
     expect((await as(renter, request(app).get("/api/admin/deposits"))).status).toBe(401);
@@ -217,8 +220,21 @@ describe("Admin decisions", () => {
     expect((await decide(agent, booking, { decision: "upheld" })).status).toBe(400); // note required
     const res = await decide(agent, booking, { decision: "upheld", note: "Pickup photos show no dent" });
     expect(res.status).toBe(200);
-    expect(res.body.dispute).toMatchObject({ status: "decided", decision: "upheld" });
+    expect(res.body.dispute).toMatchObject({
+      status: "open",
+      stage: "awaiting_final",
+      pendingDecision: { decision: "upheld", amount: 4000 },
+    });
+    // Nothing moves while either side can still appeal.
+    expect(await getPayeeEarnings(owner._id.toString())).toMatchObject({ released: 9000, onHold: 4000 });
+    expect(await depositRefund()).toBeUndefined();
+    expect(await Notification.countDocuments({ type: "dispute_decided" })).toBe(2);
+    expect((await decide(agent, booking, { decision: "rejected", note: "Changed my mind" })).status).toBe(409);
 
+    expect(await takeEffect()).toBe(1);
+    expect(await EquipmentBooking.findById(booking._id).lean()).toMatchObject({
+      depositDispute: { status: "decided", decision: "upheld" },
+    });
     expect(await getPayeeEarnings(owner._id.toString())).toMatchObject({ released: 13000, onHold: 0 });
     expect(await depositRefund()).toBe(6000);
     expect(await Notification.countDocuments({ type: "equipment_deposit_decided" })).toBe(2);
@@ -234,7 +250,12 @@ describe("Admin decisions", () => {
     expect((await decide(agent, booking, { decision: "reduced", amount: 4000, note: "x" })).status).toBe(400);
     const res = await decide(agent, booking, { decision: "reduced", amount: 1500, note: "Only the panel, not the paint" });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ claimAmount: 1500, dispute: { originalClaimAmount: 4000, decision: "reduced" } });
+    expect(res.body).toMatchObject({ claimAmount: 4000, dispute: { pendingDecision: { decision: "reduced", amount: 1500 } } });
+    await takeEffect();
+    expect(await EquipmentBooking.findById(booking._id).lean()).toMatchObject({
+      depositClaimAmount: 1500,
+      depositDispute: { originalClaimAmount: 4000, decision: "reduced" },
+    });
     expect(await getPayeeEarnings(owner._id.toString())).toMatchObject({ released: 10500 });
     expect(await depositRefund()).toBe(8500);
   });
@@ -243,6 +264,8 @@ describe("Admin decisions", () => {
     const booking = await disputed();
     const agent = await signedInAdmin();
     expect((await decide(agent, booking, { decision: "rejected", note: "Dent visible at pickup" })).status).toBe(200);
+    expect(await EquipmentBooking.findById(booking._id).lean()).toMatchObject({ depositResolution: "claimed" });
+    await takeEffect();
     expect(await EquipmentBooking.findById(booking._id).lean()).toMatchObject({ depositResolution: "released" });
     expect(await getPayeeEarnings(owner._id.toString())).toMatchObject({ released: 9000, onHold: 0 });
     expect(await depositRefund()).toBe(10000);
@@ -269,5 +292,20 @@ describe("Unsettled deposits", () => {
 
     expect(await Notification.countDocuments({ type: "equipment_deposit_reminder", equipmentBooking: nearly._id })).toBe(1);
     expect(await Notification.countDocuments({ type: "equipment_deposit_released", equipmentBooking: overdue._id })).toBe(2);
+  });
+});
+
+describe("The renter's dispute window", () => {
+  test("restarts when the owner adds their own return photos after claiming", () => {
+    const claimedAt = new Date("2026-09-10T10:00:00Z");
+    const reportedAt = new Date("2026-09-11T08:00:00Z");
+    const base = { depositResolution: "claimed" as const, depositClaimedAt: claimedAt };
+    expect(disputeDeadline(base)?.toISOString()).toBe("2026-09-13T10:00:00.000Z");
+    expect(
+      disputeDeadline({
+        ...base,
+        counterReports: [{ stage: "return", role: "owner", at: reportedAt, by: owner?._id, photos: [] }],
+      })?.toISOString(),
+    ).toBe("2026-09-14T08:00:00.000Z");
   });
 });

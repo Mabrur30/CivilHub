@@ -10,7 +10,7 @@ export interface MockFrameProps {
 
 /**
  * The shared shell for every How It Works mockup — the same double-bordered,
- * blurred card the hero uses for the Northline project, so the illustrations on
+ * blurred card the hero uses for its example project, so the illustrations on
  * the page read as the product rather than as generic marketing art.
  *
  * Mockups are decorative: every caller marks the frame aria-hidden, because the

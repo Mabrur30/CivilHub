@@ -28,6 +28,10 @@ import { blocksRouter, reportsRouter } from "./routes/safety.routes";
 import adminRouter from "./routes/admin.routes";
 import payoutsRouter from "./routes/payouts.routes";
 import verificationRouter from "./routes/verification.routes";
+import disputeCasesRouter from "./routes/disputeCases.routes";
+import publicRouter from "./routes/public.routes";
+import { settleCaseReplyReminders } from "./utils/disputeCases";
+import { finalizeDueDecisions } from "./utils/disputeDecisions";
 import { getAdminSecret } from "./middleware/adminAuth.middleware";
 import { authLimiter, socialWriteLimiter } from "./middleware/rateLimit";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
@@ -35,6 +39,7 @@ import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
 import { settleDueDepositsQuietly } from "./utils/deposits";
 import { settleVerificationExpiries } from "./utils/verification";
+import { settleApprovalReminders, settleFundingReminders } from "./utils/projectMoney";
 
 dotenv.config();
 
@@ -97,6 +102,8 @@ app.use("/api/blocks", blocksRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/payouts", payoutsRouter);
 app.use("/api/verification", verificationRouter);
+app.use("/api/dispute-cases", disputeCasesRouter);
+app.use("/api/public", publicRouter);
 app.use("/api/admin", adminRouter);
 app.use(errorHandler);
 
@@ -122,11 +129,25 @@ const startServer = async (): Promise<void> => {
     console.log(`Server running on port ${port}`);
   });
   // Hourly housekeeping: remind owners about unsettled deposits and release
-  // overdue ones; remind companies about expiring licences and lapse expired ones.
+  // overdue ones; remind companies about expiring licences and lapse expired
+  // ones; remind clients about hand-overs they haven't answered and phases
+  // they haven't funded.
   const sweep = (): void => {
     settleDueDepositsQuietly();
     settleVerificationExpiries().catch((error: unknown) => {
       console.error("Verification expiry sweep failed", error);
+    });
+    settleApprovalReminders().catch((error: unknown) => {
+      console.error("Phase approval reminder sweep failed", error);
+    });
+    settleFundingReminders().catch((error: unknown) => {
+      console.error("Phase funding reminder sweep failed", error);
+    });
+    settleCaseReplyReminders().catch((error: unknown) => {
+      console.error("Dispute reply reminder sweep failed", error);
+    });
+    finalizeDueDecisions().catch((error: unknown) => {
+      console.error("Dispute decision sweep failed", error);
     });
   };
   sweep();

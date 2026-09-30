@@ -19,30 +19,30 @@ interface HowItWorksProps {}
 const steps: Step[] = [
   {
     number: "01",
-    title: "Post a project brief",
+    title: "Post the brief",
     description:
-      "Pick the project type, answer the questions engineers need to price that kind of work, and pin the site on a map. Only the district and area are public; the exact location waits until you hire.",
+      "Answer the questions engineers need to price your kind of job, and pin the site. Only the area is public until you hire.",
     mockup: PostBriefMockup,
   },
   {
     number: "02",
-    title: "Compare bids and talk it through",
+    title: "Compare bids",
     description:
-      "Engineers and companies in the right speciality send bids. Message any of them before you decide — contact details stay hidden until you hire, so nobody is chased off the platform.",
+      "Specialities, reviews and the Verified badge, side by side. Chat with anyone who bids; phone numbers stay hidden until you hire.",
     mockup: MatchingMockup,
   },
   {
     number: "03",
-    title: "Approve and pay phase by phase",
+    title: "Fund, build, approve",
     description:
-      "Each phase is submitted with a handover note and files. Review them, request changes, or approve and pay in one step through SSLCommerz.",
+      "Fund the phase and CivilHub holds the money. The engineer delivers with notes and files. Approve it, and the money's released. Not happy? Ask for changes.",
     mockup: ProgressMockup,
   },
   {
     number: "04",
-    title: "Hand over with a full record",
+    title: "Close out on record",
     description:
-      "Every phase's files are gathered into one handover record when the project closes, and both sides leave a review for the next job.",
+      "Every file from every phase in one handover. Both sides leave a review for the next job.",
     mockup: HandoverMockup,
   },
 ];
@@ -56,7 +56,7 @@ export function HowItWorks(_props: HowItWorksProps): ReactElement {
             How it works
           </p>
           <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
-            A clearer path from scope to site delivery.
+            From brief to handover. No chasing.
           </h2>
         </Reveal>
 

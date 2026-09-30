@@ -47,6 +47,8 @@ export interface IEquipment extends Document {
   location: string;
   photos: EquipmentPhoto[];
   status: EquipmentStatus;
+  /** Paused by CivilHub; the owner can't reopen it until CivilHub lifts it. */
+  adminHold?: { reason: string; at: Date } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -128,6 +130,16 @@ const equipmentSchema = new Schema<IEquipment>(
       enum: ["active", "paused"],
       default: "active",
       required: true,
+    },
+    adminHold: {
+      type: new Schema(
+        {
+          reason: { type: String, trim: true, maxlength: 500, required: true },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
     },
   },
   { timestamps: true },

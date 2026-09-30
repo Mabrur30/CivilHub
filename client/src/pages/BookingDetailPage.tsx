@@ -15,6 +15,7 @@ import {
   createEquipmentReview,
   confirmEquipmentPickup,
   confirmEquipmentReturn,
+  CONDITION_REPORT_HOURS,
   disputeEquipmentDeposit,
   fetchBookingReviewEligibility,
   fetchEquipmentBookingById,
@@ -25,6 +26,9 @@ import {
 } from "./equipment.api";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { ConfirmDialog } from "../components/dashboard/ui/ConfirmDialog";
+import { CaseThread } from "../components/disputes/CaseThread";
+import { DecisionNotice } from "../components/disputes/DecisionNotice";
+import { ConditionReportForm } from "../components/dashboard/equipment/ConditionReportForm";
 import { formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
 import { startCheckout } from "../lib/payments";
@@ -254,6 +258,49 @@ export function BookingDetailPage(): ReactElement {
   }
 
   const otherParty = viewerRole === "owner" ? booking.renter : booking.owner;
+
+  /**
+   * One stage's records: the confirmer's photos and notes, the other side's
+   * own record if they added one, and, for the side that didn't confirm,
+   * the chance to add theirs within CONDITION_REPORT_HOURS.
+   */
+  const renderConditionStage = (stage: "pickup" | "return"): ReactElement => {
+    const confirmedAt = stage === "pickup" ? booking.pickupConfirmedAt : booking.returnConfirmedAt;
+    const confirmedBy = stage === "pickup" ? booking.pickupConfirmedBy : booking.returnConfirmedBy;
+    const notes = stage === "pickup" ? booking.pickupConditionNotes : booking.returnConditionNotes;
+    const photos = stage === "pickup" ? booking.pickupConditionPhotos : booking.returnConditionPhotos;
+    const reports = (booking.counterReports ?? []).filter((report) => report.stage === stage);
+    const until = confirmedAt ? new Date(new Date(confirmedAt).getTime() + CONDITION_REPORT_HOURS * 60 * 60 * 1000) : null;
+    const canAdd =
+      (viewerRole === "renter" || viewerRole === "owner") &&
+      until !== null &&
+      until.getTime() > Date.now() &&
+      confirmedBy !== viewerRole &&
+      !reports.some((report) => report.role === viewerRole);
+    return (
+      <div className="mt-2 space-y-2">
+        {confirmedBy ? (
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+            {confirmedBy === viewerRole ? "Your record" : `The ${confirmedBy}'s record`}
+          </p>
+        ) : null}
+        {notes ? <p className="text-xs text-white/65">{notes}</p> : null}
+        {renderTimelinePhotos(photos)}
+        {reports.map((report) => (
+          <div key={`${report.role}-${report.at}`} className="border-t border-white/10 pt-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+              {report.role === viewerRole ? "Your record" : `The ${report.role}'s record`} · {formatDateTime(report.at)}
+            </p>
+            {report.notes ? <p className="mt-1 text-xs text-white/65">{report.notes}</p> : null}
+            {renderTimelinePhotos(report.photos)}
+          </div>
+        ))}
+        {canAdd && until ? (
+          <ConditionReportForm bookingId={booking.id} stage={stage} until={until} onAdded={() => void loadBooking()} />
+        ) : null}
+      </div>
+    );
+  };
   const total = bookingTotalDue(booking);
 
   const renderTimelinePhotos = (
@@ -350,16 +397,7 @@ export function BookingDetailPage(): ReactElement {
         ? formatDateTime(booking.pickupConfirmedAt)
         : "Pickup not confirmed yet",
       details:
-        booking.pickupConfirmedAt || booking.pickupConditionNotes ? (
-          <div className="mt-2 space-y-2">
-            {booking.pickupConditionNotes ? (
-              <p className="text-xs text-white/65">
-                {booking.pickupConditionNotes}
-              </p>
-            ) : null}
-            {renderTimelinePhotos(booking.pickupConditionPhotos)}
-          </div>
-        ) : undefined,
+        booking.pickupConfirmedAt || booking.pickupConditionNotes ? renderConditionStage("pickup") : undefined,
     },
     {
       key: "return",
@@ -373,16 +411,7 @@ export function BookingDetailPage(): ReactElement {
         ? formatDateTime(booking.returnConfirmedAt)
         : "Return not confirmed yet",
       details:
-        booking.returnConfirmedAt || booking.returnConditionNotes ? (
-          <div className="mt-2 space-y-2">
-            {booking.returnConditionNotes ? (
-              <p className="text-xs text-white/65">
-                {booking.returnConditionNotes}
-              </p>
-            ) : null}
-            {renderTimelinePhotos(booking.returnConditionPhotos)}
-          </div>
-        ) : undefined,
+        booking.returnConfirmedAt || booking.returnConditionNotes ? renderConditionStage("return") : undefined,
     },
     {
       key: "deposit",
@@ -398,7 +427,11 @@ export function BookingDetailPage(): ReactElement {
               : "upcoming",
       subtitle:
         dispute?.status === "open"
-          ? `Claim of ${formatCurrency(booking.depositClaimAmount ?? 0)} disputed; CivilHub is reviewing it`
+          ? dispute.stage === "awaiting_final" && dispute.pendingDecision
+            ? `CivilHub decided; it takes effect on ${formatDay(dispute.pendingDecision.appealDeadline)} unless appealed`
+            : dispute.stage === "appealed"
+              ? "The decision was appealed; another CivilHub admin is reviewing it"
+              : `Claim of ${formatCurrency(booking.depositClaimAmount ?? 0)} disputed; CivilHub is reviewing it`
           : booking.depositResolution === "released"
             ? "Security deposit released"
             : booking.depositResolution === "claimed"
@@ -1074,6 +1107,39 @@ export function BookingDetailPage(): ReactElement {
               >
                 Dispute this claim
               </button>
+            </section>
+          ) : null}
+
+          {dispute?.status === "open" && (viewerRole === "renter" || viewerRole === "owner") ? (
+            <section className="rounded-2xl border border-white/10 bg-surface p-5" aria-labelledby="deposit-case-heading">
+              <h2 id="deposit-case-heading" className="font-heading text-xl font-bold text-white">
+                Deposit dispute
+              </h2>
+              <p className="mt-2 text-sm text-white/70">
+                CivilHub is reviewing the {formatCurrency(dispute.originalClaimAmount)} claim. It may ask you questions here,
+                and you can add photos or anything else that helps.
+              </p>
+              {dispute.pendingDecision && dispute.stage && dispute.stage !== "review" ? (
+                <DecisionNotice
+                  caseType="deposit"
+                  caseId={booking.id}
+                  viewerRole={viewerRole}
+                  stage={dispute.stage}
+                  what={
+                    dispute.pendingDecision.decision === "upheld"
+                      ? `CivilHub decided to uphold the ${formatCurrency(dispute.originalClaimAmount)} claim: the owner keeps it, and the renter gets ${formatCurrency(booking.securityDeposit - dispute.pendingDecision.amount)} back.`
+                      : dispute.pendingDecision.decision === "reduced"
+                        ? `CivilHub decided to reduce the claim from ${formatCurrency(dispute.originalClaimAmount)} to ${formatCurrency(dispute.pendingDecision.amount)}: the renter gets ${formatCurrency(booking.securityDeposit - dispute.pendingDecision.amount)} back.`
+                        : `CivilHub decided to reject the ${formatCurrency(dispute.originalClaimAmount)} claim: the whole ${formatCurrency(booking.securityDeposit)} deposit goes back to the renter.`
+                  }
+                  note={dispute.pendingDecision.note}
+                  appealDeadline={dispute.pendingDecision.appealDeadline}
+                  acceptedBy={dispute.pendingDecision.acceptedBy}
+                  appeal={dispute.appeal ?? null}
+                  onChanged={() => void loadBooking()}
+                />
+              ) : null}
+              <CaseThread caseType="deposit" caseId={booking.id} />
             </section>
           ) : null}
 

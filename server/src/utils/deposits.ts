@@ -21,14 +21,21 @@ const addDays = (date: Date, days: number): Date => new Date(date.getTime() + da
 
 type DepositFields = Pick<
   IEquipmentBooking,
-  "depositResolution" | "depositClaimedAt" | "depositDispute" | "returnConfirmedAt" | "updatedAt" | "status"
+  "depositResolution" | "depositClaimedAt" | "depositDispute" | "returnConfirmedAt" | "updatedAt" | "status" | "counterReports"
 >;
 
-/** The last moment the renter can dispute a claim, or null if there's no open window. */
-export const disputeDeadline = (booking: Partial<DepositFields>): Date | null =>
-  booking.depositResolution === "claimed" && booking.depositClaimedAt
-    ? addDays(booking.depositClaimedAt, DEPOSIT_DISPUTE_DAYS)
-    : null;
+/**
+ * The last moment the renter can dispute a claim, or null if there's no open
+ * window. If the owner added their own return photos after claiming, the
+ * renter gets the full window from then, to answer them.
+ */
+export const disputeDeadline = (booking: Partial<DepositFields>): Date | null => {
+  if (booking.depositResolution !== "claimed" || !booking.depositClaimedAt) return null;
+  const ownerReport = (booking.counterReports ?? []).find((report) => report.stage === "return" && report.role === "owner");
+  const from =
+    ownerReport && ownerReport.at.getTime() > booking.depositClaimedAt.getTime() ? ownerReport.at : booking.depositClaimedAt;
+  return addDays(from, DEPOSIT_DISPUTE_DAYS);
+};
 
 /**
  * Whether a claim is final: its dispute window passed unused, or an admin

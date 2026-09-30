@@ -1,7 +1,8 @@
 import { type NextFunction, type Response } from "express";
-import { type UploadApiOptions, type UploadApiResponse } from "cloudinary";
+import { factsForUpload } from "../utils/evidence";
+import { type AppealView, type PendingDecisionView, finalizeDueDecisions, toAppealView } from "../utils/disputeDecisions";
 import { Types } from "mongoose";
-import cloudinary from "../config/cloudinary";
+import { uploadBuffer } from "../utils/cloudinaryUpload";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { CustomerReview } from "../models/CustomerReview.model";
 import {
@@ -12,6 +13,7 @@ import { Engineer } from "../models/Engineer.model";
 import { Equipment, type IEquipment } from "../models/Equipment.model";
 import {
   EquipmentBooking,
+  type BookingConditionPhoto,
   type DepositResolutionStatus,
   type EquipmentBookingStatus,
   type EquipmentFulfilment,
@@ -102,6 +104,15 @@ interface BookingPhotoResponse {
   publicId: string;
 }
 
+/** One side's own photos and notes of a pickup or return the other side confirmed. */
+interface ConditionReportResponse {
+  stage: "pickup" | "return";
+  role: "renter" | "owner";
+  notes: string | null;
+  photos: BookingPhotoResponse[];
+  at: string;
+}
+
 interface BookingParticipant {
   userId: string;
   name: string;
@@ -139,9 +150,13 @@ interface BookingViewResponse {
   pickupConditionNotes: string | null;
   pickupConditionPhotos: BookingPhotoResponse[];
   pickupConfirmedAt: string | null;
+  /** Who confirmed the pickup; the other side can add their own record for a day. */
+  pickupConfirmedBy: "renter" | "owner" | null;
   returnConditionNotes: string | null;
   returnConditionPhotos: BookingPhotoResponse[];
   returnConfirmedAt: string | null;
+  returnConfirmedBy: "renter" | "owner" | null;
+  counterReports: ConditionReportResponse[];
   depositResolution: DepositResolutionStatus;
   depositClaimNotes: string | null;
   depositClaimAmount: number | null;
@@ -161,6 +176,11 @@ interface BookingViewResponse {
 
 interface DepositDisputeView {
   status: "open" | "decided";
+  /** While open: under review, a decision waiting to take effect, or appealed. */
+  stage: "review" | "awaiting_final" | "appealed";
+  /** The decision waiting out its appeal window, with what the owner would keep. */
+  pendingDecision: (PendingDecisionView & { decision: "upheld" | "reduced" | "rejected"; amount: number }) | null;
+  appeal: AppealView | null;
   reason: string;
   openedAt: string;
   decision: "upheld" | "reduced" | "rejected" | null;
@@ -172,8 +192,21 @@ interface DepositDisputeView {
 const toDepositDisputeView = (booking: IEquipmentBooking): DepositDisputeView | null => {
   const dispute = booking.depositDispute;
   if (!dispute?.status) return null;
+  const pending = dispute.pendingDecision;
+  const renterId = ((booking.renter as unknown as { _id?: unknown })?._id ?? booking.renter)?.toString();
   return {
     status: dispute.status,
+    stage: dispute.stage ?? "review",
+    pendingDecision: pending
+      ? {
+          decision: pending.decision,
+          amount: pending.amount,
+          note: pending.note,
+          appealDeadline: pending.appealDeadline.toISOString(),
+          acceptedBy: pending.acceptedBy.map((id) => (id.toString() === renterId ? "renter" : "owner")),
+        }
+      : null,
+    appeal: toAppealView(dispute.appeal),
     reason: dispute.reason,
     openedAt: dispute.openedAt.toISOString(),
     decision: dispute.decision ?? null,
@@ -525,50 +558,42 @@ const getBookingBucket = (
   return "history";
 };
 
-const uploadBuffer = (
-  buffer: Buffer,
-  options: UploadApiOptions,
-): Promise<UploadApiResponse> =>
-  new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      options,
-      (error, result) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        if (!result) {
-          reject(new Error("Cloudinary did not return an upload result"));
-          return;
-        }
-        resolve(result);
-      },
-    );
-
-    stream.end(buffer);
-  });
-
+/** Uploads condition photos, keeping who took them and the camera's date and place. */
 const uploadConditionPhotos = async (
   files: Express.Multer.File[],
-): Promise<BookingPhotoResponse[]> => {
+  uploadedBy: string,
+): Promise<BookingConditionPhoto[]> => {
   if (files.length === 0) {
     return [];
   }
 
-  const uploads = await Promise.all(
-    files.map((file) =>
-      uploadBuffer(file.buffer, {
-        folder: "civilhub/equipment-booking",
-        resource_type: "image",
-      }),
-    ),
+  const uploadedAt = new Date();
+  return Promise.all(
+    files.map(async (file) => {
+      const [upload, facts] = await Promise.all([
+        uploadBuffer(file.buffer, {
+          folder: "civilhub/equipment-booking",
+          resource_type: "image",
+        }),
+        factsForUpload(file, uploadedBy, uploadedAt),
+      ]);
+      return { url: upload.secure_url, publicId: upload.public_id, ...facts };
+    }),
   );
-
-  return uploads.map((upload) => ({
-    url: upload.secure_url,
-    publicId: upload.public_id,
-  }));
 };
+
+/** How long the side that didn't confirm a pickup or return has to add their own record. */
+export const CONDITION_REPORT_HOURS = 24;
+
+const roleOf = (booking: IEquipmentBooking, userId: Types.ObjectId | string | null | undefined): "renter" | "owner" | null => {
+  if (!userId) return null;
+  return toBookingUserId(booking.renter)?.toString() === userId.toString() ? "renter" : "owner";
+};
+
+const toPhotoResponse = (photo: BookingConditionPhoto): BookingPhotoResponse => ({
+  url: photo.url,
+  publicId: photo.publicId,
+});
 
 const normalizeBookingEquipmentTitle = (booking: IEquipmentBooking): string => {
   const equipment = toPopulatedBookingEquipment(booking.equipment);
@@ -655,21 +680,24 @@ const mapBookingRowsToResponse = async (
         paymentStatus: row.paymentStatus,
         paidAt: row.paidAt ? row.paidAt.toISOString() : null,
         pickupConditionNotes: row.pickupConditionNotes ?? null,
-        pickupConditionPhotos: row.pickupConditionPhotos.map((photo) => ({
-          url: photo.url,
-          publicId: photo.publicId,
-        })),
+        pickupConditionPhotos: row.pickupConditionPhotos.map(toPhotoResponse),
         pickupConfirmedAt: row.pickupConfirmedAt
           ? row.pickupConfirmedAt.toISOString()
           : null,
+        pickupConfirmedBy: roleOf(row, row.pickupConfirmedBy),
         returnConditionNotes: row.returnConditionNotes ?? null,
-        returnConditionPhotos: row.returnConditionPhotos.map((photo) => ({
-          url: photo.url,
-          publicId: photo.publicId,
-        })),
+        returnConditionPhotos: row.returnConditionPhotos.map(toPhotoResponse),
         returnConfirmedAt: row.returnConfirmedAt
           ? row.returnConfirmedAt.toISOString()
           : null,
+        returnConfirmedBy: roleOf(row, row.returnConfirmedBy),
+        counterReports: (row.counterReports ?? []).map((report) => ({
+          stage: report.stage,
+          role: report.role,
+          notes: report.notes ?? null,
+          photos: report.photos.map(toPhotoResponse),
+          at: report.at.toISOString(),
+        })),
         depositResolution: row.depositResolution,
         depositClaimNotes: row.depositClaimNotes ?? null,
         depositClaimAmount:
@@ -990,6 +1018,8 @@ export const getBookingByIdForUser = async (
       throw createBookingError("Booking ID is required", 400);
     }
 
+    // A dispute decision whose appeal window has passed takes effect first.
+    await finalizeDueDecisions();
     const booking = await getBookingByIdOrFail(bookingId);
     assertBookingParticipant(booking, userId);
 
@@ -1326,11 +1356,12 @@ export const confirmPickup = async (
     }
 
     const files = Array.isArray(req.files) ? req.files : [];
-    const photos = await uploadConditionPhotos(files);
+    const photos = await uploadConditionPhotos(files, userId);
 
     booking.pickupConditionNotes = req.body.conditionNotes?.trim() || undefined;
     booking.pickupConditionPhotos = photos;
     booking.pickupConfirmedAt = new Date();
+    booking.pickupConfirmedBy = new Types.ObjectId(userId);
     booking.status = "in_progress";
     await booking.save();
 
@@ -1380,11 +1411,12 @@ export const confirmReturn = async (
     }
 
     const files = Array.isArray(req.files) ? req.files : [];
-    const photos = await uploadConditionPhotos(files);
+    const photos = await uploadConditionPhotos(files, userId);
 
     booking.returnConditionNotes = req.body.conditionNotes?.trim() || undefined;
     booking.returnConditionPhotos = photos;
     booking.returnConfirmedAt = new Date();
+    booking.returnConfirmedBy = new Types.ObjectId(userId);
     booking.status = "completed";
     await booking.save();
 
@@ -1402,6 +1434,75 @@ export const confirmReturn = async (
       status: booking.status,
       returnConfirmedAt: booking.returnConfirmedAt.toISOString(),
     });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+/**
+ * The side that didn't confirm a pickup or return adds their own photos and
+ * notes of it, once, within CONDITION_REPORT_HOURS. Both records then stand
+ * side by side if the deposit is ever disputed.
+ */
+export const addConditionReport = async (
+  req: AuthenticatedRequest<{ stage?: unknown; notes?: unknown }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = requireRenterUserId(req);
+    const { bookingId } = getBookingParams(req);
+    if (!bookingId) {
+      throw createBookingError("Booking ID is required", 400);
+    }
+    const booking = await getBookingByIdOrFail(bookingId);
+    assertBookingParticipant(booking, userId);
+
+    const stage = req.body.stage === "pickup" || req.body.stage === "return" ? req.body.stage : null;
+    if (!stage) throw createBookingError("Say whether this is about the pickup or the return.", 400);
+    const confirmedAt = stage === "pickup" ? booking.pickupConfirmedAt : booking.returnConfirmedAt;
+    const confirmedBy = stage === "pickup" ? booking.pickupConfirmedBy : booking.returnConfirmedBy;
+    if (!confirmedAt) throw createBookingError(`The ${stage} hasn't been confirmed yet.`, 409);
+    if (confirmedBy && confirmedBy.toString() === userId) {
+      throw createBookingError(`You confirmed the ${stage}; your photos are already on it.`, 409);
+    }
+    if (Date.now() - confirmedAt.getTime() > CONDITION_REPORT_HOURS * 60 * 60 * 1000) {
+      throw createBookingError(`Your own ${stage} photos had to be added within ${CONDITION_REPORT_HOURS} hours of it.`, 409);
+    }
+    if ((booking.counterReports ?? []).some((report) => report.stage === stage && report.by.toString() === userId)) {
+      throw createBookingError(`You've already added your ${stage} record.`, 409);
+    }
+    const files = Array.isArray(req.files) ? req.files : [];
+    const notes = typeof req.body.notes === "string" ? req.body.notes.trim().slice(0, 2000) : "";
+    if (files.length === 0 && !notes) {
+      throw createBookingError("Add photos, notes, or both.", 400);
+    }
+
+    const role = roleOf(booking, userId) ?? "owner";
+    const report = {
+      stage,
+      by: new Types.ObjectId(userId),
+      role,
+      ...(notes ? { notes } : {}),
+      photos: await uploadConditionPhotos(files, userId),
+      at: new Date(),
+    };
+    const updated = await EquipmentBooking.findOneAndUpdate(
+      { _id: booking._id, counterReports: { $not: { $elemMatch: { stage, by: report.by } } } },
+      { $push: { counterReports: report } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!updated) throw createBookingError(`You've already added your ${stage} record.`, 409);
+
+    const equipmentId = toBookingEquipmentId(booking.equipment);
+    await Notification.create({
+      recipient: getOtherPartyId(booking, userId),
+      type: "equipment_condition_report",
+      message: `The ${role} added their own ${stage} photos and notes for ${normalizeBookingEquipmentTitle(booking)}.`,
+      ...(equipmentId ? { equipment: equipmentId } : {}),
+      equipmentBooking: booking._id,
+    });
+    res.status(201).json({ success: true, stage, role, at: report.at.toISOString() });
   } catch (error: unknown) {
     next(error);
   }

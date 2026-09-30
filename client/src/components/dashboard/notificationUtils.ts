@@ -45,7 +45,24 @@ export type NotificationType =
   | "verification_approved"
   | "verification_rejected"
   | "verification_lapsed"
-  | "verification_expiring";
+  | "verification_expiring"
+  /** Project disputes, ending a project early, and hand-overs left waiting. */
+  | "project_dispute_opened"
+  | "project_dispute_resolved"
+  | "project_cancellation_proposed"
+  | "project_cancellation_declined"
+  | "project_cancelled"
+  | "phase_approval_reminder"
+  /** The next phase is waiting for the client to fund it. */
+  | "phase_funding_reminder"
+  /** Disputes, on a project or a rental: CivilHub wrote, a decision, an appeal. */
+  | "dispute_message"
+  | "dispute_reply_reminder"
+  | "dispute_decided"
+  | "dispute_appealed"
+  | "dispute_appeal_decided"
+  /** The other side added their own pickup or return photos. */
+  | "equipment_condition_report";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -112,6 +129,19 @@ const notificationTypes: NotificationType[] = [
   "verification_rejected",
   "verification_lapsed",
   "verification_expiring",
+  "project_dispute_opened",
+  "project_dispute_resolved",
+  "project_cancellation_proposed",
+  "project_cancellation_declined",
+  "project_cancelled",
+  "phase_approval_reminder",
+  "phase_funding_reminder",
+  "dispute_message",
+  "dispute_reply_reminder",
+  "dispute_decided",
+  "dispute_appealed",
+  "dispute_appeal_decided",
+  "equipment_condition_report",
 ];
 
 export const isNotificationType = (value: unknown): value is NotificationType =>
@@ -240,7 +270,8 @@ export const getNotificationTargetPath = (
     notification.type.startsWith("equipment_") ||
     ((notification.type === "payment_refund_due" ||
       notification.type === "refund_issued" ||
-      notification.type === "customer_review_received") &&
+      notification.type === "customer_review_received" ||
+      notification.type.startsWith("dispute_")) &&
       notification.equipmentBookingId)
   ) {
     const equipment = equipmentPathsFor(role);
@@ -269,7 +300,12 @@ export const getNotificationTargetPath = (
       notification.type === "review_received" ||
       notification.type === "review_reply" ||
       notification.type === "project_completed" ||
-      notification.type === "customer_review_received") &&
+      notification.type === "customer_review_received" ||
+      notification.type.startsWith("project_dispute") ||
+      notification.type.startsWith("project_cancel") ||
+      notification.type.startsWith("dispute_") ||
+      notification.type === "phase_approval_reminder" ||
+      notification.type === "phase_funding_reminder") &&
     notification.projectId
   ) {
     return `${dashboardBase(role)}/projects/${notification.projectId}`;

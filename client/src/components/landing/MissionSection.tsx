@@ -43,8 +43,7 @@ export function MissionSection(_props: MissionSectionProps): ReactElement {
       <div className="relative mx-auto flex max-w-4xl items-center justify-center px-4 py-28 sm:px-6 sm:py-36 lg:px-8">
         <Reveal variant="head">
           <p className="text-center font-heading text-4xl font-bold leading-[1.14] text-white sm:text-5xl lg:text-6xl">
-            Infrastructure is built on coordination long before it is built on
-            concrete.
+            Concrete sets in a day. Trust takes longer. We built the trust part.
           </p>
         </Reveal>
       </div>

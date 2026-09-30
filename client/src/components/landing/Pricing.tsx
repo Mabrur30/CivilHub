@@ -1,4 +1,5 @@
 import { type ReactElement } from "react";
+import { formatRate, useCommissionRate } from "../../lib/platform";
 import { Reveal } from "./Reveal";
 
 interface PricingProps {}
@@ -10,32 +11,32 @@ interface Plan {
   highlight?: boolean;
 }
 
-// The 10% mirrors the server default (PLATFORM_COMMISSION_RATE in
-// server/src/config/payments.ts). The landing page is public and the rate
-// endpoints sit behind login, so it is written here — change both together.
-const plans: Plan[] = [
-  {
-    figure: "Free",
-    title: "To join and to post",
-    description:
-      "Create an account, post briefs, receive bids, message providers and browse equipment without paying anything.",
-  },
-  {
-    figure: "10%",
-    title: "Only when you get paid",
-    description:
-      "Clients pay the listed price. CivilHub keeps 10% of each payment before it reaches the engineer, company or equipment owner.",
-    highlight: true,
-  },
-  {
-    figure: "0%",
-    title: "On security deposits",
-    description:
-      "An equipment deposit is held, not earned, so no commission is ever taken from it.",
-  },
-];
+// The commission is the live rate an admin set (GET /api/public/platform).
+const plansFor = (rate: number | null): Plan[] => {
+  const figure = rate === null ? "…" : formatRate(rate);
+  return [
+    {
+      figure: "Free",
+      title: "To join, post and bid",
+      description: "Post briefs, send bids, message and browse equipment. No subscription.",
+    },
+    {
+      figure,
+      title: "Only when you get paid",
+      description: `Clients pay the agreed price. CivilHub keeps ${figure} of each payment before it reaches the engineer, company or equipment owner.`,
+      highlight: true,
+    },
+    {
+      figure: "0%",
+      title: "On security deposits",
+      description: "A deposit is held, not earned. We never take a cut of it.",
+    },
+  ];
+};
 
 export function Pricing(_props: PricingProps): ReactElement {
+  const rate = useCommissionRate();
+
   return (
     <section id="pricing" className="bg-surface px-4 py-20 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
@@ -44,17 +45,17 @@ export function Pricing(_props: PricingProps): ReactElement {
             Pricing
           </p>
           <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
-            No subscription. We earn when the work does.
+            Free to join. We earn when you do.
           </h2>
         </Reveal>
 
         <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
-          {plans.map((plan) => (
+          {plansFor(rate).map((plan) => (
             <div
               key={plan.title}
               className={`rounded-[28px] border p-6 sm:p-8 ${
                 plan.highlight
-                  ? "border-primary/50 bg-primary/[0.06]"
+                  ? "border-primary/50 bg-primary/6"
                   : "border-white/10 bg-void"
               }`}
             >
@@ -72,8 +73,7 @@ export function Pricing(_props: PricingProps): ReactElement {
         </Reveal>
 
         <p className="mt-8 text-center text-sm text-white/50">
-          All amounts are in Taka. Payments are processed securely by
-          SSLCommerz.
+          All amounts in Taka. Payments run through SSLCommerz: bKash, Nagad, cards and internet banking.
         </p>
       </div>
     </section>

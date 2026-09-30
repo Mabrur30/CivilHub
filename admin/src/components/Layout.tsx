@@ -1,10 +1,13 @@
 import {
   ArrowUUpLeftIcon,
   ClipboardTextIcon,
+  GearIcon,
+  StackIcon,
   FlagIcon,
   GaugeIcon,
   HandCoinsIcon,
   ReceiptIcon,
+  HandshakeIcon,
   ScalesIcon,
   SealCheckIcon,
   SignOutIcon,
@@ -21,8 +24,11 @@ const links = [
   { to: "/payouts", label: "Payouts", icon: HandCoinsIcon, end: false },
   { to: "/refunds", label: "Refunds", icon: ArrowUUpLeftIcon, end: false },
   { to: "/verifications", label: "Verification", icon: SealCheckIcon, end: false },
+  { to: "/project-disputes", label: "Project disputes", icon: HandshakeIcon, end: false },
   { to: "/deposits", label: "Deposits", icon: ScalesIcon, end: false },
   { to: "/payments", label: "Payments", icon: ReceiptIcon, end: false },
+  { to: "/content", label: "Content", icon: StackIcon, end: false },
+  { to: "/settings", label: "Settings", icon: GearIcon, end: false },
   { to: "/log", label: "Action log", icon: ClipboardTextIcon, end: false },
 ];
 

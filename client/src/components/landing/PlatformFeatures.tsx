@@ -1,11 +1,11 @@
 import {
-  CalculatorIcon,
   ChatCircleTextIcon,
-  CreditCardIcon,
   FilesIcon,
+  GavelIcon,
   type Icon,
+  LockKeyIcon,
   MapPinIcon,
-  StarIcon,
+  SealCheckIcon,
 } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { Reveal } from "./Reveal";
@@ -19,43 +19,41 @@ interface Feature {
 }
 
 // Each card describes something the product does today. Keep it that way:
-// anything still on the roadmap (verification, payouts, disputes) stays off.
+// nothing on the roadmap goes here.
 const features: Feature[] = [
   {
-    icon: CreditCardIcon,
-    title: "Payments per phase",
+    icon: LockKeyIcon,
+    title: "Held until approved",
     description:
-      "Advances, phase payments and equipment bookings all go through SSLCommerz, and a phase only completes once its payment is verified.",
+      "Clients fund each phase up front, so engineers know the money's there. CivilHub releases it only for work the client approves.",
+  },
+  {
+    icon: SealCheckIcon,
+    title: "Verified badge",
+    description:
+      "Engineers show their IEB membership, companies their trade licence. CivilHub checks both before the badge goes up.",
   },
   {
     icon: MapPinIcon,
-    title: "Private site locations",
-    description:
-      "Public briefs show the district and a rough area. The exact pin, address and directions go only to the engineer you hire.",
+    title: "Private site location",
+    description: "Briefs show the area. The exact pin and directions go only to the engineer you hire.",
   },
   {
     icon: ChatCircleTextIcon,
     title: "Protected contacts",
+    description: "Chat before you hire. Phone numbers and emails stay masked until you have a deal.",
+  },
+  {
+    icon: GavelIcon,
+    title: "A fair referee",
     description:
-      "Chat before you hire, tied to the project. Phone numbers and emails stay masked until the two of you have a deal.",
+      "Stuck? Ask CivilHub to step in. We pause the project, hear both sides and decide, and either side can appeal once.",
   },
   {
     icon: FilesIcon,
-    title: "Handover you can open",
+    title: "Handover on record",
     description:
-      "Every phase arrives with a note and up to five files. Resubmissions are kept, and the finished project gathers them all.",
-  },
-  {
-    icon: StarIcon,
-    title: "Reviews both ways",
-    description:
-      "Clients rate engineers and companies, providers rate their clients, and equipment owners rate the people who rent from them.",
-  },
-  {
-    icon: CalculatorIcon,
-    title: "Estimator and network",
-    description:
-      "Rough out a cost before you post, then connect with engineers and firms and share work in the professional feed.",
+      "Every phase arrives with notes and files, kept for good. Reviews go both ways, so good clients get noticed too.",
   },
 ];
 
@@ -68,7 +66,7 @@ export function PlatformFeatures(_props: PlatformFeaturesProps): ReactElement {
             Built in
           </p>
           <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
-            The safeguards a site deal needs, without the paperwork.
+            Safeguards built in. Paperwork left out.
           </h2>
         </Reveal>
 

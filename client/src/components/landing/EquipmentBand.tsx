@@ -8,9 +8,9 @@ import { Reveal } from "./Reveal";
 interface EquipmentBandProps {}
 
 const points = [
-  "Clients, engineers and companies can all rent — for a day, a week or a month.",
-  "Engineers and companies list their own plant with photos, day, week and month rates, an optional operator and a security deposit.",
-  "Bookings are paid through SSLCommerz. The deposit is held, never charged commission, and owners and renters review each other afterwards.",
+  "Rent by the day, week or month. Clients, engineers and firms alike.",
+  "List your fleet with photos, rates, an operator and a deposit.",
+  "Deposits are held and never charged commission. Disagree with a damage claim? CivilHub decides.",
 ];
 
 function BookingMockup(): ReactElement {
@@ -25,7 +25,7 @@ function BookingMockup(): ReactElement {
             Excavator · 20 tonne
           </p>
           <p className="truncate text-xs text-white/50">
-            Delta Earthworks Ltd. · Gazipur
+            Plant-hire company · Verified
           </p>
         </div>
         <span className="shrink-0 text-sm font-semibold tabular-nums text-white">
@@ -55,7 +55,7 @@ export function EquipmentBand(_props: EquipmentBandProps): ReactElement {
             Equipment rental
           </p>
           <h2 className="mt-4 text-balance font-heading text-4xl font-bold text-white sm:text-5xl">
-            The plant for the job, from the people already on the platform.
+            Need an excavator? Someone here has one.
           </h2>
 
           <ul className="mt-8 space-y-4">

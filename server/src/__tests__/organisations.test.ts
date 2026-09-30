@@ -346,8 +346,17 @@ describe("A company wins and runs a project", () => {
     expect(payment?.payee?.toString()).toBe(builder._id.toString());
     expect(payment).toMatchObject({ status: "paid", amount: 100000, platformFee: 10000, payeeAmount: 90000 });
 
+    // Work starts once the client has funded the phase into CivilHub's hold.
     const phases = (plan.body.phases as Array<{ id: string }>).map((phase) => phase.id);
-    const started = await as(builder, request(app).patch(`${base}/phases/${phases[0]}`)).send({ status: "in_progress" });
-    expect(started.status).toBe(200);
+    const start = () => as(builder, request(app).patch(`${base}/phases/${phases[0]}`)).send({ status: "in_progress" });
+    expect((await start()).status).toBe(409);
+    const funded = await payViaGateway(app, gateway, cookieFor(client), {
+      purpose: "phase",
+      projectId: project._id.toString(),
+      phaseId: phases[0],
+    });
+    expect(funded.callback?.status).toBe(303);
+    expect((await Payment.findOne({ tranId: funded.tranId }).exec())?.payee?.toString()).toBe(builder._id.toString());
+    expect((await start()).status).toBe(200);
   });
 });

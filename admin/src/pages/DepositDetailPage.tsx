@@ -1,29 +1,61 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { CaseThreads } from "../components/CaseThreads";
+import { DecisionStatus } from "../components/DecisionStatus";
 import { DialogActions, ErrorNote, Loading, Modal, PageHeader, panel, primaryButton } from "../components/ui";
-import { type ConditionRecord, type DepositDisputeDetail, type DisputeDecision, adminApi } from "../lib/api";
+import { EvidenceFile } from "../components/EvidenceFile";
+import {
+  type ConditionPhoto,
+  type ConditionRecord,
+  type ConditionReport,
+  type DepositDisputeDetail,
+  type DisputeDecision,
+  adminApi,
+} from "../lib/api";
 import { DECISION_LABELS, formatDate, formatDateTime, formatTaka } from "../lib/format";
 
-function Condition({ title, record }: { title: string; record: ConditionRecord }): ReactElement {
+function ConditionPhotos({ title, photos }: { title: string; photos: ConditionPhoto[] }): ReactElement {
+  return photos.length > 0 ? (
+    <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {photos.map((photo) => (
+        <li key={photo.url}>
+          <EvidenceFile file={{ ...photo, uploadedByLabel: photo.uploadedByRole ?? undefined }} label={`${title} photo`} />
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="mt-3 text-xs text-white/45">No photos.</p>
+  );
+}
+
+/** One stage of the rental: the confirmer's record, and the other side's own, if they added one. */
+function Condition({
+  title,
+  record,
+  reports,
+}: {
+  title: string;
+  record: ConditionRecord;
+  reports: ConditionReport[];
+}): ReactElement {
   return (
     <section className={`${panel} p-5`} aria-label={title}>
       <h3 className="font-heading text-lg font-bold text-white">{title}</h3>
-      <p className="mt-0.5 text-xs text-white/45">{record.at ? formatDateTime(record.at) : "Not confirmed"}</p>
+      <p className="mt-0.5 text-xs text-white/45">
+        {record.at ? `${formatDateTime(record.at)}${record.by ? ` · confirmed by the ${record.by}` : ""}` : "Not confirmed"}
+      </p>
       <p className="mt-3 text-sm text-white/75">{record.notes || "No notes written."}</p>
-      {record.photos.length > 0 ? (
-        <ul className="mt-3 grid grid-cols-3 gap-2">
-          {record.photos.map((url) => (
-            <li key={url}>
-              <a href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-white/10 hover:border-primary">
-                <img src={url} alt={`${title} photo`} className="aspect-square w-full object-cover" loading="lazy" />
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-3 text-xs text-white/45">No photos.</p>
-      )}
+      <ConditionPhotos title={title} photos={record.photos} />
+      {reports.map((report) => (
+        <div key={`${report.by}-${report.at}`} className="mt-4 border-t border-white/10 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/45">
+            The {report.by}’s own record · {formatDateTime(report.at)}
+          </p>
+          <p className="mt-2 text-sm text-white/75">{report.notes || "No notes written."}</p>
+          <ConditionPhotos title={`${title} (${report.by})`} photos={report.photos} />
+        </div>
+      ))}
     </section>
   );
 }
@@ -34,15 +66,28 @@ const OPTIONS: Array<{ value: DisputeDecision; label: string; hint: string }> = 
   { value: "rejected", label: "Reject the claim", hint: "The whole deposit goes back to the renter." },
 ];
 
+/** In words, what a deposit decision does. */
+const describeDecision = (detail: DepositDisputeDetail, decision: DisputeDecision, amount: number): string =>
+  decision === "upheld"
+    ? `Uphold the ${formatTaka(detail.dispute.originalClaimAmount)} claim.`
+    : decision === "reduced"
+      ? `Reduce the claim to ${formatTaka(amount)}; the renter gets ${formatTaka(detail.securityDeposit - amount)} back.`
+      : `Reject the claim; the whole ${formatTaka(detail.securityDeposit)} deposit goes back to the renter.`;
+
 function DecideDialog({
   detail,
+  mode = "decide",
   onDone,
   onClose,
 }: {
   detail: DepositDisputeDetail;
+  /** "appeal": another admin upholds or changes a decision that was appealed. */
+  mode?: "decide" | "appeal";
   onDone: () => void;
   onClose: () => void;
 }): ReactElement {
+  const [appealChoice, setAppealChoice] = useState<"uphold" | "change">("uphold");
+  const upholding = mode === "appeal" && appealChoice === "uphold";
   const [decision, setDecision] = useState<DisputeDecision>("upheld");
   const [amount, setAmount] = useState<string>("");
   const [note, setNote] = useState<string>("");
@@ -55,7 +100,7 @@ function DecideDialog({
   const renterGets = detail.securityDeposit - ownerGets;
 
   const submit = async (): Promise<void> => {
-    if (decision === "reduced" && !(reduced > 0 && reduced < claimed)) {
+    if (!upholding && decision === "reduced" && !(reduced > 0 && reduced < claimed)) {
       setError(`Enter an amount more than 0 and less than ${formatTaka(claimed)}.`);
       return;
     }
@@ -66,9 +111,15 @@ function DecideDialog({
     setIsBusy(true);
     setError("");
     try {
-      await adminApi(`/deposits/${detail.bookingId}/decide`, {
+      const chosen = decision === "reduced" ? { amount: reduced } : {};
+      await adminApi(`/deposits/${detail.bookingId}/${mode === "appeal" ? "appeal" : "decide"}`, {
         method: "POST",
-        body: { decision, note: note.trim(), ...(decision === "reduced" ? { amount: reduced } : {}) },
+        body:
+          mode === "appeal"
+            ? upholding
+              ? { decision: "uphold", note: note.trim() }
+              : { decision: "change", newDecision: decision, note: note.trim(), ...chosen }
+            : { decision, note: note.trim(), ...chosen },
       });
       onDone();
     } catch (caught: unknown) {
@@ -79,12 +130,53 @@ function DecideDialog({
 
   return (
     <Modal
-      title="Decide the dispute"
-      description={`${detail.owner?.name ?? "The owner"} claimed ${formatTaka(claimed)} of a ${formatTaka(detail.securityDeposit)} deposit.`}
+      title={mode === "appeal" ? "Decide the appeal" : "Decide the dispute"}
+      description={
+        mode === "appeal"
+          ? "Your decision is final and takes effect at once."
+          : `${detail.owner?.name ?? "The owner"} claimed ${formatTaka(claimed)} of a ${formatTaka(detail.securityDeposit)} deposit. Your decision takes effect in 3 days unless a side appeals.`
+      }
       isBusy={isBusy}
       onClose={onClose}
     >
-      <fieldset className="mt-5 grid gap-2">
+      {mode === "appeal" && detail.dispute.pendingDecision ? (
+        <fieldset className="mt-5 grid gap-2">
+          <legend className="sr-only">Uphold or change</legend>
+          {(
+            [
+              {
+                value: "uphold",
+                label: "Uphold the decision",
+                hint: describeDecision(detail, detail.dispute.pendingDecision.decision, detail.dispute.pendingDecision.amount),
+              },
+              { value: "change", label: "Change it", hint: "Choose a different decision below." },
+            ] as const
+          ).map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer gap-3 rounded-xl border p-3 text-sm ${
+                appealChoice === option.value ? "border-primary bg-primary/5" : "border-white/10 hover:border-white/30"
+              }`}
+            >
+              <input
+                type="radio"
+                name="appeal-choice"
+                checked={appealChoice === option.value}
+                onChange={() => {
+                  setAppealChoice(option.value);
+                  setError("");
+                }}
+                className="mt-1"
+              />
+              <span>
+                <span className="block font-semibold text-white">{option.label}</span>
+                <span className="text-white/55">{option.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      <fieldset className={`mt-5 grid gap-2 ${upholding ? "hidden" : ""}`}>
         <legend className="sr-only">Decision</legend>
         {OPTIONS.map((option) => (
           <label
@@ -111,7 +203,7 @@ function DecideDialog({
           </label>
         ))}
       </fieldset>
-      {decision === "reduced" ? (
+      {!upholding && decision === "reduced" ? (
         <label className="mt-4 grid gap-1.5 text-sm font-semibold text-white/80">
           The owner keeps (৳)
           <input
@@ -129,7 +221,7 @@ function DecideDialog({
           />
         </label>
       ) : null}
-      <p className="mt-4 rounded-xl bg-white/5 p-3 text-sm text-white/70">
+      <p className={`mt-4 rounded-xl bg-white/5 p-3 text-sm text-white/70 ${upholding ? "hidden" : ""}`}>
         The owner is paid <span className="font-semibold text-white tabular-nums">{formatTaka(ownerGets)}</span>, and the renter is
         refunded <span className="font-semibold text-white tabular-nums">{formatTaka(renterGets)}</span>.
       </p>
@@ -185,13 +277,30 @@ export function DepositDetailPage(): ReactElement {
             title={detail.equipment}
             intro={`Rented ${formatDate(detail.startDate)} to ${formatDate(detail.endDate)} · ${formatTaka(detail.securityDeposit)} deposit`}
             action={
-              dispute.status === "open" ? (
+              dispute.status === "open" && dispute.stage === "review" ? (
                 <button type="button" className={primaryButton} onClick={() => setIsDeciding(true)}>
                   Decide
+                </button>
+              ) : dispute.status === "open" && dispute.stage === "appealed" && detail.review?.mayReview ? (
+                <button type="button" className={primaryButton} onClick={() => setIsDeciding(true)}>
+                  Decide the appeal
                 </button>
               ) : undefined
             }
           />
+
+          {dispute.status === "open" && dispute.stage !== "review" && dispute.pendingDecision ? (
+            <DecisionStatus
+              stage={dispute.stage}
+              summary={describeDecision(detail, dispute.pendingDecision.decision, dispute.pendingDecision.amount)}
+              note={dispute.pendingDecision.note}
+              decidedAt={dispute.pendingDecision.decidedAt}
+              appealDeadline={dispute.pendingDecision.appealDeadline}
+              acceptedBy={dispute.pendingDecision.acceptedBy}
+              appeal={dispute.appeal}
+              review={detail.review}
+            />
+          ) : null}
 
           {dispute.status === "decided" ? (
             <div className="mb-6 rounded-2xl border border-emerald-300/30 bg-emerald-300/5 p-5 text-sm text-white/80">
@@ -238,8 +347,8 @@ export function DepositDetailPage(): ReactElement {
               </p>
               <p className="mt-3 whitespace-pre-line text-sm text-white/75">{dispute.reason}</p>
             </section>
-            <Condition title="At pickup" record={detail.pickup} />
-            <Condition title="At return" record={detail.return} />
+            <Condition title="At pickup" record={detail.pickup} reports={detail.counterReports.filter((report) => report.stage === "pickup")} />
+            <Condition title="At return" record={detail.return} reports={detail.counterReports.filter((report) => report.stage === "return")} />
           </div>
 
           {detail.payment ? (
@@ -249,9 +358,21 @@ export function DepositDetailPage(): ReactElement {
             </p>
           ) : null}
 
+          <CaseThreads
+            threads={detail.threads}
+            sides={[
+              { role: "renter", label: "renter", name: detail.renter?.name ?? null },
+              { role: "owner", label: "owner", name: detail.owner?.name ?? null },
+            ]}
+            postPath={`/deposits/${detail.bookingId}/messages`}
+            isOpen={dispute.status === "open"}
+            onSent={load}
+          />
+
           {isDeciding ? (
             <DecideDialog
               detail={detail}
+              mode={dispute.stage === "appealed" ? "appeal" : "decide"}
               onClose={() => setIsDeciding(false)}
               onDone={() => {
                 setIsDeciding(false);
