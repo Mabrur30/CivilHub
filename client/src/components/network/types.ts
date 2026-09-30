@@ -29,4 +29,6 @@ export interface PersonResult {
   /** The line under the name: a bio, or why they're suggested. */
   bio: string;
   location: string | null;
+  /** Verified by CivilHub; only sent by search. */
+  verified?: boolean;
 }

@@ -261,7 +261,7 @@ describe("Disciplines", () => {
       certificateCount: 1,
       location: "Mirpur, Dhaka",
     });
-    expect(search.body.engineers[0]).not.toHaveProperty("isVerified");
+    expect(search.body.engineers[0]).toMatchObject({ verified: false });
 
     const none = await as(client, request(app).get("/api/engineers/search?category=MEP"));
     expect(none.body.engineers).toHaveLength(0);

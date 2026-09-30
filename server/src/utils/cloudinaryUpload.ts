@@ -30,3 +30,27 @@ export const deleteCloudinaryAsset = async (
 ): Promise<void> => {
   await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 };
+
+/**
+ * Private files (verification documents) are uploaded with
+ * `type: "authenticated"`: they have no public URL, and can only be fetched
+ * through a signed link like this one, which stops working after `seconds`.
+ */
+export const privateDownloadUrl = (
+  publicId: string,
+  resourceType: "image" | "raw",
+  format: string,
+  seconds = 600,
+): string =>
+  cloudinary.utils.private_download_url(publicId, resourceType === "raw" ? "" : format, {
+    resource_type: resourceType,
+    type: "authenticated",
+    expires_at: Math.floor(Date.now() / 1000) + seconds,
+  });
+
+export const deletePrivateAsset = async (
+  publicId: string,
+  resourceType: "image" | "raw",
+): Promise<void> => {
+  await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type: "authenticated" });
+};

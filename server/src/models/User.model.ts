@@ -21,6 +21,8 @@ export interface IUser extends Document {
   suspendedUntil?: Date | null;
   /** The admin's reason, shown to the person when they try to sign in. */
   statusReason?: string | null;
+  /** Set while CivilHub has verified this engineer or company: the badge. */
+  verifiedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +58,7 @@ const userSchema = new Schema<IUser>(
     },
     suspendedUntil: { type: Date, default: null },
     statusReason: { type: String, trim: true, maxlength: 500, default: null },
+    verifiedAt: { type: Date, default: null },
   },
   {
     timestamps: true,

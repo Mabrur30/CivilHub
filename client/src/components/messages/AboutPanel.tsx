@@ -7,6 +7,7 @@ import { API_BASE_URL } from "./api";
 import { type UserRole } from "../../context/AuthContext";
 import { projectPathFor, relationLabel } from "./projectContext";
 import { type ConversationProject, type Participant } from "./types";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 interface AboutRow {
   label: string;
@@ -179,8 +180,9 @@ export function AboutPanel({
           size="sm"
         />
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">
-            {participant.name}
+          <p className="flex min-w-0 items-center gap-1 text-sm font-semibold text-white">
+            <span className="truncate">{participant.name}</span>
+            {participant.verified ? <VerifiedBadge compact /> : null}
           </p>
           <p className="text-xs capitalize text-white/55">{participant.role}</p>
         </div>

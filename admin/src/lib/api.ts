@@ -60,6 +60,8 @@ export interface AdminIdentity {
   email: string;
 }
 
+export type VerificationStatus = "pending" | "verified" | "rejected" | "lapsed";
+
 export interface Overview {
   users: {
     total: number;
@@ -68,6 +70,7 @@ export interface Overview {
     restricted: number;
   };
   openReports: number;
+  verificationsPending: number;
   projects: { openBriefs: number; active: number };
   activeBookings: number;
   money: {
@@ -218,6 +221,8 @@ export interface UserDetail {
   suspendedUntil: string | null;
   statusReason: string | null;
   createdAt: string;
+  verifiedAt: string | null;
+  verificationStatus: VerificationStatus | null;
   activity: Record<
     "posts" | "comments" | "projectsPosted" | "projectsHired" | "bids" | "listings" | "bookings",
     number
@@ -282,4 +287,29 @@ export interface DepositDisputeDetail extends DepositDisputeRow {
   return: ConditionRecord;
   payment: { id: string; amount: number; depositAmount: number; tranId: string | null } | null;
   refund: { amount: number; status: string; method: string } | null;
+}
+
+export interface VerificationRow {
+  userId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  kind: "engineer" | "organisation";
+  status: VerificationStatus;
+  iebNumber: string | null;
+  tradeLicenceNo: string | null;
+  nameAtSubmission: string;
+  submittedAt: string;
+  reviewedAt: string | null;
+  note: string | null;
+  licenceExpiresAt: string | null;
+}
+
+export interface VerificationDetail extends VerificationRow {
+  joinedAt: string | null;
+  verifiedAt: string | null;
+  accountStatus: AccountStatus;
+  profile: { location: string | null; tradeLicenceNo: string | null; certificateCount: number | null };
+  documents: Array<{ kind: "ieb_certificate" | "trade_licence" | "nid"; name: string; isImage: boolean; uploadedAt: string; url: string }>;
+  history: Array<{ action: string; reason: string | null; admin: string; at: string }>;
 }

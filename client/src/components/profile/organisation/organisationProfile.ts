@@ -3,6 +3,7 @@ import {
   type DeliveredProject,
   type ProfileListing,
 } from "../shared/profileTypes";
+import { type OwnVerificationStatus } from "../../verification/GetVerifiedLink";
 
 export const TEAM_SIZES = ["1-10", "11-50", "51-200", "200+"] as const;
 export type TeamSize = (typeof TEAM_SIZES)[number];
@@ -46,6 +47,11 @@ export interface CompanyPublicProfile {
   name: string;
   role: "organisation";
   memberSince: string;
+  /** Verified by CivilHub, and since when. */
+  verified?: boolean;
+  verifiedAt?: string | null;
+  /** Only on the owner's own profile: where their verification request stands. */
+  ownVerificationStatus?: OwnVerificationStatus;
   profilePhotoUrl: string | null;
   connectionsCount: number;
   connectionStatus: ConnectionStatus;

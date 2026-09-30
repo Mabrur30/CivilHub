@@ -14,6 +14,9 @@ export const ADMIN_ACTIONS = [
   "refund.manual",
   "refund.check",
   "deposit.decide",
+  "verification.approve",
+  "verification.reject",
+  "verification.revoke",
 ] as const;
 export type AdminActionType = (typeof ADMIN_ACTIONS)[number];
 

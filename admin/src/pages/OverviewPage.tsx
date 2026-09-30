@@ -64,8 +64,9 @@ export function OverviewPage(): ReactElement {
             <h2 id="attention-heading" className="mb-3 font-heading text-xl font-bold text-white">
               Needs attention
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <Attention count={data.openReports} label="Reported posts, comments or people" to="/reports" />
+              <Attention count={data.verificationsPending} label="Engineers and companies waiting to be verified" to="/verifications" />
               <Attention count={data.users.restricted} label="Suspended or banned accounts" to="/users?status=restricted" />
               <Attention
                 count={data.money.payeesOwed}

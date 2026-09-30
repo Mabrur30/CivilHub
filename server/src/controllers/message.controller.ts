@@ -54,6 +54,7 @@ interface PopulatedUser {
   _id: Types.ObjectId;
   name: string;
   role: UserRole;
+  verifiedAt?: Date | null;
 }
 
 const createMessageError = (
@@ -324,11 +325,13 @@ const toUserView = (
   name: string;
   role: UserRole;
   profilePhotoUrl: string | null;
+  verified: boolean;
 } => ({
   userId: user._id.toString(),
   name: user.name,
   role: user.role,
   profilePhotoUrl: photoByUser.get(user._id.toString()) ?? null,
+  verified: Boolean(user.verifiedAt),
 });
 
 export const getOrCreateConversation = async (
@@ -488,7 +491,7 @@ export const getMyConversations = async (
     const userId = requireUser(req);
 
     const conversations = await Conversation.find({ participants: userId })
-      .populate("participants", "name role")
+      .populate("participants", "name role verifiedAt")
       .populate({
         path: "lastMessage",
         select:
@@ -568,6 +571,7 @@ export const getMyConversations = async (
               name: "Unknown user",
               role: "client" as UserRole,
               profilePhotoUrl: null,
+              verified: false,
             },
             lastMessage: null,
             unreadCount: 0,
@@ -644,7 +648,7 @@ export const getMessages = async (
     const participants = await User.find({
       _id: { $in: conversation.participants },
     })
-      .select("name role")
+      .select("name role verifiedAt")
       .exec();
     const typedParticipants = participants as unknown as PopulatedUser[];
     const otherParticipant = typedParticipants.find(

@@ -3,6 +3,7 @@ import { type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { type PersonResult } from "./types";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 export type PersonStatus = "self" | "connected" | "received" | "sent" | "none";
 
@@ -154,8 +155,9 @@ export function SuggestionsPanel({
                   size="sm"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white transition-colors duration-200 group-hover:text-primary">
-                    {person.name}
+                  <p className="flex min-w-0 items-center gap-1 text-sm font-semibold text-white transition-colors duration-200 group-hover:text-primary">
+                    <span className="truncate">{person.name}</span>
+                    {person.verified ? <VerifiedBadge compact /> : null}
                   </p>
                   <p className="truncate text-[11px] text-white/50">
                     {person.bio || "No bio provided"}

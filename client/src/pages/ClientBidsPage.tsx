@@ -28,6 +28,7 @@ import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
+import { VerifiedBadge } from "../components/VerifiedBadge";
 
 type BidStatus = "pending" | "accepted" | "declined";
 
@@ -45,6 +46,8 @@ interface ClientBid {
   engineerCompletedProjects: number;
   /** The bid is from a company rather than an individual engineer. */
   isCompany?: boolean;
+  /** CivilHub has verified the bidder. */
+  engineerVerified?: boolean;
 }
 
 interface ProjectBids {
@@ -208,6 +211,7 @@ function BidRow({ bid, project, onHire, onDecline }: BidRowProps): ReactElement 
               >
                 {bid.engineerName}
               </Link>
+              {bid.engineerVerified ? <VerifiedBadge /> : null}
               {bid.isCompany ? (
                 <span className="rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
                   Company

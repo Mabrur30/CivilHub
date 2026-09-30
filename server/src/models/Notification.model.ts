@@ -42,7 +42,12 @@ export type NotificationType =
   /** CivilHub sent a payee what they'd earned. */
   | "payout_sent"
   /** CivilHub refunded a payer. */
-  | "refund_issued";
+  | "refund_issued"
+  /** Verification: approved, rejected, lapsed, or a licence about to expire. */
+  | "verification_approved"
+  | "verification_rejected"
+  | "verification_lapsed"
+  | "verification_expiring";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -109,6 +114,10 @@ const notificationSchema = new Schema<INotification>(
         "moderation_notice",
         "payout_sent",
         "refund_issued",
+        "verification_approved",
+        "verification_rejected",
+        "verification_lapsed",
+        "verification_expiring",
       ],
       required: true,
     },

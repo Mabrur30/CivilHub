@@ -132,6 +132,10 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   // Notes from the CivilHub team are usually about posts and comments.
   moderation_notice: "network",
   payout_sent: "projects",
+  verification_approved: "network",
+  verification_rejected: "network",
+  verification_lapsed: "network",
+  verification_expiring: "network",
   refund_issued: "projects",
 
   equipment_booking_request: "bookings",

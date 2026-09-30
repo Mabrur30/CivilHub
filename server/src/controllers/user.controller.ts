@@ -21,6 +21,7 @@ import { getProviderRatings, type ProviderRatings } from "../utils/providerRatin
 import { getCustomerRating } from "./customerReview.controller";
 import type { ConnectionViewStatus } from "./network.controller";
 import { budgetLabel } from "../utils/money";
+import { Verification } from "../models/Verification.model";
 
 interface UserParams {
   userId?: string;
@@ -212,6 +213,22 @@ const toDeliveredProject = (project: IProject) => ({
   ).toISOString(),
 });
 
+/**
+ * The Verified badge, and for the owner viewing their own page, where their
+ * request stands so the page can prompt them to get verified.
+ */
+const verificationFields = async (user: IUser, requesterId: string) => {
+  const isOwn = user._id.toString() === requesterId;
+  const request = isOwn
+    ? await Verification.findOne({ user: user._id }).select("status").lean().exec()
+    : null;
+  return {
+    verified: Boolean(user.verifiedAt),
+    verifiedAt: user.verifiedAt?.toISOString() ?? null,
+    ...(isOwn ? { ownVerificationStatus: request?.status ?? "none" } : {}),
+  };
+};
+
 // A company's page: who they are and what they offer (from their own
 // profile), plus proof from the platform: rating, delivered projects and the
 // machines they have for rent right now.
@@ -244,6 +261,7 @@ const buildOrganisationPublicProfile = async (
     name: user.name,
     role: user.role,
     memberSince: user.createdAt.toISOString(),
+    ...(await verificationFields(user, requesterId)),
     profilePhotoUrl: profile?.logoUrl ?? null,
     bio: profile?.about ?? "",
     connectionsCount,
@@ -461,7 +479,7 @@ export const getPublicProfile = async (
       throw createUserError("User not found", 404);
     }
     const user = await User.findById(userId)
-      .select("name role createdAt")
+      .select("name role createdAt verifiedAt")
       .exec();
     // Suspended and banned accounts are hidden, the same as a missing one.
     if (!user || isRestricted(await getAccountStanding(userId))) {
@@ -490,6 +508,7 @@ export const getPublicProfile = async (
         name: user.name,
         role: user.role,
         memberSince: user.createdAt.toISOString(),
+        ...(await verificationFields(user, requesterId)),
         profilePhotoUrl: engineer?.profilePhoto?.url ?? null,
         bio: engineer?.bio ?? "",
         disciplines: engineer?.disciplines ?? [],
@@ -501,8 +520,8 @@ export const getPublicProfile = async (
             imageUrl: item.imageUrl,
             uploadedAt: item.uploadedAt.toISOString(),
           })) ?? [],
-        // Anyone signed in can open a certificate and check it themselves;
-        // CivilHub doesn't verify them yet.
+        // Anyone signed in can open a certificate and check it themselves.
+        // The Verified badge covers IEB membership and ID, not these files.
         certificates:
           engineer?.certificates.map((certificate) => ({
             title: certificate.title,

@@ -17,6 +17,7 @@ import { groupMessages } from "./groupMessages";
 import { DayDivider, MessageGroup, ProjectDivider } from "./MessageGroup";
 import { type ConversationsState } from "./useConversations";
 import { useChatThread } from "./useChatThread";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 interface ThreadViewProps {
   targetId: string;
@@ -125,12 +126,15 @@ export function ThreadView({
               size="sm"
             />
             <div className="min-w-0">
-              <Link
-                to={`/profile/${other.userId}`}
-                className="block truncate text-[15px] font-semibold text-white underline decoration-white/25 underline-offset-4 hover:decoration-white/70"
-              >
-                {other.name}
-              </Link>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Link
+                  to={`/profile/${other.userId}`}
+                  className="block truncate text-[15px] font-semibold text-white underline decoration-white/25 underline-offset-4 hover:decoration-white/70"
+                >
+                  {other.name}
+                </Link>
+                {other.verified ? <VerifiedBadge compact className="text-[15px]" /> : null}
+              </span>
               <p className="text-xs capitalize text-white/50">{other.role}</p>
             </div>
           </div>

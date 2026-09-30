@@ -40,7 +40,12 @@ export type NotificationType =
   /** CivilHub sent a payee what they'd earned. */
   | "payout_sent"
   /** CivilHub refunded a payer. */
-  | "refund_issued";
+  | "refund_issued"
+  /** Verification: approved, rejected, lapsed, or a licence about to expire. */
+  | "verification_approved"
+  | "verification_rejected"
+  | "verification_lapsed"
+  | "verification_expiring";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -103,6 +108,10 @@ const notificationTypes: NotificationType[] = [
   "moderation_notice",
   "payout_sent",
   "refund_issued",
+  "verification_approved",
+  "verification_rejected",
+  "verification_lapsed",
+  "verification_expiring",
 ];
 
 export const isNotificationType = (value: unknown): value is NotificationType =>
@@ -166,7 +175,7 @@ const activityColors: Record<string, string> = {
 export const mapNotificationTypeToActivityType = (
   type: NotificationType,
 ): string => {
-  if (type === "bid_accepted" || type === "project_completed") return "success";
+  if (type === "bid_accepted" || type === "project_completed" || type === "verification_approved") return "success";
   if (type === "new_message") return "message";
   if (type === "connection_accepted" || type === "connection_request") return "milestone";
   if (type === "connection_post") return "review";
@@ -266,9 +275,13 @@ export const getNotificationTargetPath = (
     return `${dashboardBase(role)}/projects/${notification.projectId}`;
   }
 
-  // Payouts are listed with the payout account, under Settings.
+  // Payouts are listed with the payout account, under Settings, and
+  // verification lives there too.
   if (notification.type === "payout_sent") {
     return "/settings";
+  }
+  if (notification.type.startsWith("verification_")) {
+    return "/settings#verification";
   }
 
   if (

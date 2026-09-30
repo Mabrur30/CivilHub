@@ -30,6 +30,8 @@ interface ClientBidResponse {
   engineerName: string;
   /** The bid comes from a company rather than an individual engineer. */
   isCompany: boolean;
+  /** CivilHub has verified the bidder. */
+  engineerVerified: boolean;
   amount: number;
   message: string;
   submittedDate: string;
@@ -186,7 +188,7 @@ export const getBidsForMyProjects = async (
       .exec();
     const projectIds = projects.map((project) => project._id);
     const bids = await Bid.find({ project: { $in: projectIds } })
-      .populate("engineer", "name role")
+      .populate("engineer", "name role verifiedAt")
       .sort({ createdAt: -1 })
       .exec();
 
@@ -233,7 +235,7 @@ export const getBidsForMyProjects = async (
 
     const bidsByProject = new Map<string, ClientBidResponse[]>();
     bids.forEach((bid) => {
-      const engineer = bid.engineer as unknown as { name?: string; role?: string };
+      const engineer = bid.engineer as unknown as { name?: string; role?: string; verifiedAt?: Date | null };
       const projectId = bid.project.toString();
       const projectBids = bidsByProject.get(projectId) ?? [];
       const engineerId = extractUserId(bid.engineer);
@@ -243,6 +245,7 @@ export const getBidsForMyProjects = async (
         engineerId,
         engineerName: engineer.name ?? "Unknown engineer",
         isCompany: engineer.role === "organisation",
+        engineerVerified: Boolean(engineer.verifiedAt),
         amount: bid.amount,
         message: bid.message,
         submittedDate: bid.createdAt.toISOString(),

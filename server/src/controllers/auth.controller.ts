@@ -13,6 +13,7 @@ import { User, type IUser, type UserRole } from "../models/User.model";
 import { getProfilePhotoUrl } from "../utils/profilePhotos";
 import { onlyDisciplines, parseDisciplines } from "../utils/disciplines";
 import { getAccountStanding, restrictionMessage } from "../utils/accountStatus";
+import { requeueForReview } from "../utils/verification";
 
 export interface SignupRequestBody {
   name: string;
@@ -324,8 +325,13 @@ export const updateMyName = async (
         400,
       );
     }
+    const previousName = user.name;
     user.name = name;
     await user.save();
+    // A verified name can't be swapped for another without a fresh check.
+    if (previousName !== name) {
+      await requeueForReview(user._id, `You changed your name from "${previousName}" to "${name}"`);
+    }
     res.status(200).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);

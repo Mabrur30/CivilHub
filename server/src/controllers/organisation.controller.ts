@@ -12,6 +12,7 @@ import {
 import { User } from "../models/User.model";
 import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
 import { onlyDisciplines, parseDisciplines } from "../utils/disciplines";
+import { requeueForReview } from "../utils/verification";
 
 interface OrganisationError extends Error {
   statusCode: number;
@@ -231,6 +232,7 @@ export const updateMyOrganisationProfile = async (
     const serviceAreas = optionalList(body.serviceAreas, "Service areas");
     const specialties = parseDisciplines(body.specialties);
 
+    const previousLicence = organisation.tradeLicenceNo ?? "";
     if (services) organisation.services = services;
     if (serviceAreas) organisation.serviceAreas = serviceAreas;
     if (specialties) organisation.specialties = specialties;
@@ -248,9 +250,23 @@ export const updateMyOrganisationProfile = async (
     await organisation.save();
 
     const user = await User.findById(req.user.userId).select("name").exec();
+    const previousName = user?.name ?? "";
     if (user && name) {
       user.name = name;
       await user.save();
+    }
+
+    // Verification covers the name and licence number; changing either
+    // sends the company back for review.
+    const changes: string[] = [];
+    if (user && name && name !== previousName) {
+      changes.push(`changed the company name from "${previousName}" to "${name}"`);
+    }
+    if ((organisation.tradeLicenceNo ?? "") !== previousLicence) {
+      changes.push("changed the trade licence number");
+    }
+    if (changes.length > 0) {
+      await requeueForReview(req.user.userId, `You ${changes.join(" and ")}`);
     }
 
     res

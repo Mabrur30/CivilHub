@@ -22,6 +22,8 @@ import { REPORT_TARGETS, Report, type ReportTarget } from "../models/Report.mode
 import { type AccountStatus, User, type UserRole } from "../models/User.model";
 import { getAccountStanding } from "../utils/accountStatus";
 import { settleDueDeposits } from "../utils/deposits";
+import { settleVerificationExpiries } from "../utils/verification";
+import { Verification } from "../models/Verification.model";
 import { getEarnings } from "../utils/earnings";
 import { getRefundsDue } from "../utils/refunds";
 import { removePost } from "./post.controller";
@@ -131,7 +133,7 @@ export const getOverview = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    await settleDueDeposits();
+    await Promise.all([settleDueDeposits(), settleVerificationExpiries()]);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [
       roleRows,
@@ -144,6 +146,7 @@ export const getOverview = async (
       refundsDue,
       depositsPending,
       depositDisputes,
+      verificationsPending,
       feeRows,
       earnings,
     ] = await Promise.all([
@@ -169,6 +172,7 @@ export const getOverview = async (
         depositResolution: "pending",
       }).exec(),
       EquipmentBooking.countDocuments({ "depositDispute.status": "open" }).exec(),
+      Verification.countDocuments({ status: "pending" }).exec(),
       Payment.aggregate<{ fees: number; volume: number }>([
         { $match: { status: "paid", refundDue: { $ne: true } } },
         { $group: { _id: null, fees: { $sum: "$platformFee" }, volume: { $sum: "$amount" } } },
@@ -193,6 +197,7 @@ export const getOverview = async (
         restricted: restrictedUsers,
       },
       openReports: openReportTargets[0]?.count ?? 0,
+      verificationsPending,
       projects: { openBriefs, active: activeProjects },
       activeBookings,
       money: {
@@ -563,7 +568,7 @@ export const getUserDetail = async (
     // Reading the standing first lifts a suspension that has run out.
     await getAccountStanding(userId.toString());
     const user = await User.findById(userId)
-      .select("name email role status suspendedUntil statusReason createdAt")
+      .select("name email role status suspendedUntil statusReason createdAt verifiedAt")
       .lean()
       .exec();
     if (!user) throw adminError("User not found", 404);
@@ -582,6 +587,7 @@ export const getUserDetail = async (
       bookings,
       reports,
       actions,
+      verification,
     ] = await Promise.all([
       Promise.resolve(postIds.length),
       Promise.resolve(commentIds.length),
@@ -608,6 +614,7 @@ export const getUserDetail = async (
         .populate("admin", "name")
         .lean()
         .exec(),
+      Verification.findOne({ user: userId }).select("status").lean().exec(),
     ]);
 
     res.status(200).json({
@@ -619,6 +626,8 @@ export const getUserDetail = async (
       suspendedUntil: user.suspendedUntil?.toISOString() ?? null,
       statusReason: user.statusReason ?? null,
       createdAt: user.createdAt.toISOString(),
+      verifiedAt: user.verifiedAt?.toISOString() ?? null,
+      verificationStatus: verification?.status ?? null,
       activity: { posts, comments, projectsPosted, projectsHired, bids, listings, bookings },
       reports: reports.map((report) => ({
         id: report._id.toString(),

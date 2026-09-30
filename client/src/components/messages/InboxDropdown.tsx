@@ -5,6 +5,7 @@ import { Avatar } from "../Avatar";
 import { formatRelativeTime } from "../dashboard/notificationUtils";
 import { ConversationPreview } from "./ConversationPreview";
 import { type ConversationSummary } from "./types";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 const DROPDOWN_LIMIT = 6;
 
@@ -77,9 +78,10 @@ export function InboxDropdown({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
                       <span
-                        className={`truncate text-sm ${isUnread ? "font-bold text-white" : "font-semibold text-white/85"}`}
+                        className={`flex min-w-0 items-center gap-1 text-sm ${isUnread ? "font-bold text-white" : "font-semibold text-white/85"}`}
                       >
-                        {other.name}
+                        <span className="truncate">{other.name}</span>
+                        {other.verified ? <VerifiedBadge compact /> : null}
                       </span>
                       {isUnread ? (
                         <span

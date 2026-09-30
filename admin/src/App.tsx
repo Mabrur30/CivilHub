@@ -9,6 +9,8 @@ import { PayeePage } from "./pages/PayeePage";
 import { DepositDetailPage } from "./pages/DepositDetailPage";
 import { DepositsPage } from "./pages/DepositsPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
+import { VerificationDetailPage } from "./pages/VerificationDetailPage";
+import { VerificationsPage } from "./pages/VerificationsPage";
 import { PayoutsPage } from "./pages/PayoutsPage";
 import { RefundsPage } from "./pages/RefundsPage";
 import { ReportsPage } from "./pages/ReportsPage";
@@ -44,6 +46,8 @@ export function App(): ReactElement {
         <Route path="payouts" element={<PayoutsPage />} />
         <Route path="payouts/:userId" element={<PayeePage />} />
         <Route path="refunds" element={<RefundsPage />} />
+        <Route path="verifications" element={<VerificationsPage />} />
+        <Route path="verifications/:userId" element={<VerificationDetailPage />} />
         <Route path="deposits" element={<DepositsPage />} />
         <Route path="deposits/:bookingId" element={<DepositDetailPage />} />
         <Route path="payments" element={<PaymentsPage />} />

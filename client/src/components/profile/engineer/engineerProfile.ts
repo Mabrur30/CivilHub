@@ -1,5 +1,6 @@
 import { formatCurrency } from "../../../lib/format";
 import { type ProfileListing } from "../shared/profileTypes";
+import { type OwnVerificationStatus } from "../../verification/GetVerifiedLink";
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
@@ -81,6 +82,11 @@ export interface EngineerPublicProfile {
   certificates: EngineerCertificateItem[];
   completedWork: CompletedWorkItem[];
   memberSince?: string;
+  /** Verified by CivilHub, and since when. */
+  verified?: boolean;
+  verifiedAt?: string | null;
+  /** Only on the owner's own profile: where their verification request stands. */
+  ownVerificationStatus?: OwnVerificationStatus;
   disciplines?: string[];
   equipment?: ProfileListing[];
   /** Which reviews the headline rating comes from. */

@@ -42,6 +42,8 @@ import {
   websiteHref,
 } from "./organisationProfile";
 import { ProfileSafetyActions } from "../../safety/ProfileSafetyActions";
+import { VerifiedBadge } from "../../VerifiedBadge";
+import { GetVerifiedLink } from "../../verification/GetVerifiedLink";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -270,6 +272,8 @@ export function OrganisationProfileView({
                   <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-primary">
                     Company
                   </span>
+                  {profile.verified ? <VerifiedBadge /> : null}
+                  {isSelf ? <GetVerifiedLink status={profile.ownVerificationStatus} /> : null}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <RatingBadge rating={profile.rating} reviewCount={profile.reviewCount} />
@@ -501,7 +505,11 @@ export function OrganisationProfileView({
               <CertificateIcon className="mt-0.5 h-4 w-4 shrink-0 text-white/45" aria-hidden="true" />
               <span>
                 Trade licence <span className="font-semibold text-white/85">{company.tradeLicenceNo}</span>
-                <span className="block text-xs text-white/45">As provided by the company; not yet verified.</span>
+                <span className="block text-xs text-white/45">
+                  {profile.verified
+                    ? "Checked by CivilHub against the licence itself."
+                    : "As provided by the company; not checked by CivilHub."}
+                </span>
               </span>
             </p>
           ) : null}

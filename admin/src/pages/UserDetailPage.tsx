@@ -13,7 +13,14 @@ import {
   secondaryButton,
 } from "../components/ui";
 import { type AccountStatus, type UserDetail, adminApi } from "../lib/api";
-import { ACTION_LABELS, REASON_LABELS, ROLE_LABELS, formatDate, formatDateTime } from "../lib/format";
+import {
+  ACTION_LABELS,
+  REASON_LABELS,
+  ROLE_LABELS,
+  VERIFICATION_STATUS_LABELS,
+  formatDate,
+  formatDateTime,
+} from "../lib/format";
 
 const ACTIVITY_LABELS: Record<keyof UserDetail["activity"], string> = {
   posts: "Posts",
@@ -104,6 +111,13 @@ export function UserDetailPage(): ReactElement {
             <div className="flex flex-wrap items-center gap-3">
               <StatusBadge status={user.status} until={user.suspendedUntil} />
               {user.statusReason ? <p className="text-sm text-white/65">Reason: {user.statusReason}</p> : null}
+              {user.verificationStatus ? (
+                <Link to={`/verifications/${user.id}`} className="text-sm font-semibold text-primary hover:text-glow">
+                  {user.verifiedAt ? `Verified since ${formatDate(user.verifiedAt)}` : VERIFICATION_STATUS_LABELS[user.verificationStatus]} →
+                </Link>
+              ) : user.role !== "client" ? (
+                <p className="text-sm text-white/45">Hasn't asked to be verified</p>
+              ) : null}
             </div>
             <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
               {(Object.keys(ACTIVITY_LABELS) as Array<keyof UserDetail["activity"]>).map((key) => (

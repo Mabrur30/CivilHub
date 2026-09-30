@@ -27,12 +27,14 @@ import geoRouter from "./routes/geo.routes";
 import { blocksRouter, reportsRouter } from "./routes/safety.routes";
 import adminRouter from "./routes/admin.routes";
 import payoutsRouter from "./routes/payouts.routes";
+import verificationRouter from "./routes/verification.routes";
 import { getAdminSecret } from "./middleware/adminAuth.middleware";
 import { authLimiter, socialWriteLimiter } from "./middleware/rateLimit";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
 import { settleDueDepositsQuietly } from "./utils/deposits";
+import { settleVerificationExpiries } from "./utils/verification";
 
 dotenv.config();
 
@@ -94,10 +96,11 @@ app.use("/api/geo", geoRouter);
 app.use("/api/blocks", blocksRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/payouts", payoutsRouter);
+app.use("/api/verification", verificationRouter);
 app.use("/api/admin", adminRouter);
 app.use(errorHandler);
 
-const DEPOSIT_SWEEP_MS = 60 * 60 * 1000;
+const SWEEP_MS = 60 * 60 * 1000;
 
 const startServer = async (): Promise<void> => {
   // Admin routes can't work without their own secret; say so at start-up
@@ -118,9 +121,16 @@ const startServer = async (): Promise<void> => {
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });
-  // Remind owners about unsettled deposits and release overdue ones.
-  settleDueDepositsQuietly();
-  setInterval(settleDueDepositsQuietly, DEPOSIT_SWEEP_MS).unref();
+  // Hourly housekeeping: remind owners about unsettled deposits and release
+  // overdue ones; remind companies about expiring licences and lapse expired ones.
+  const sweep = (): void => {
+    settleDueDepositsQuietly();
+    settleVerificationExpiries().catch((error: unknown) => {
+      console.error("Verification expiry sweep failed", error);
+    });
+  };
+  sweep();
+  setInterval(sweep, SWEEP_MS).unref();
 };
 
 startServer().catch((error: unknown) => {

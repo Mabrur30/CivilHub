@@ -6,6 +6,7 @@ import {
   HandCoinsIcon,
   ReceiptIcon,
   ScalesIcon,
+  SealCheckIcon,
   SignOutIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
@@ -19,6 +20,7 @@ const links = [
   { to: "/users", label: "Accounts", icon: UsersThreeIcon, end: false },
   { to: "/payouts", label: "Payouts", icon: HandCoinsIcon, end: false },
   { to: "/refunds", label: "Refunds", icon: ArrowUUpLeftIcon, end: false },
+  { to: "/verifications", label: "Verification", icon: SealCheckIcon, end: false },
   { to: "/deposits", label: "Deposits", icon: ScalesIcon, end: false },
   { to: "/payments", label: "Payments", icon: ReceiptIcon, end: false },
   { to: "/log", label: "Action log", icon: ClipboardTextIcon, end: false },

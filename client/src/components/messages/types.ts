@@ -9,6 +9,8 @@ export interface Participant {
   name: string;
   role: "client" | "engineer" | "organisation";
   profilePhotoUrl: string | null;
+  /** Verified by CivilHub (engineers and companies). */
+  verified?: boolean;
 }
 
 export interface ChatMessage {

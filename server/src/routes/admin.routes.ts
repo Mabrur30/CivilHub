@@ -14,6 +14,13 @@ import {
 } from "../controllers/admin.controller";
 import { decideDeposit, getDeposit, listDeposits } from "../controllers/adminDeposits.controller";
 import {
+  approveVerification,
+  getVerification,
+  listVerifications,
+  rejectVerification,
+  revokeVerification,
+} from "../controllers/adminVerification.controller";
+import {
   checkRefund,
   getPayee,
   issueRefund,
@@ -63,5 +70,11 @@ adminRouter.get("/money/payments", handle(listPayments));
 adminRouter.get("/deposits", handle(listDeposits));
 adminRouter.get("/deposits/:bookingId", handle(getDeposit));
 adminRouter.post("/deposits/:bookingId/decide", handle(decideDeposit));
+
+adminRouter.get("/verifications", handle(listVerifications));
+adminRouter.get("/verifications/:userId", handle(getVerification));
+adminRouter.post("/verifications/:userId/approve", handle(approveVerification));
+adminRouter.post("/verifications/:userId/reject", handle(rejectVerification));
+adminRouter.post("/verifications/:userId/revoke", handle(revokeVerification));
 
 export default adminRouter;

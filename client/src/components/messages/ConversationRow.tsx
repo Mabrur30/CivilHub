@@ -11,6 +11,7 @@ import { formatRelativeTime } from "../dashboard/notificationUtils";
 import { ConversationPreview } from "./ConversationPreview";
 import { type ConversationSummary } from "./types";
 import { useDismiss } from "./useDismiss";
+import { VerifiedBadge } from "../VerifiedBadge";
 
 interface ConversationRowProps {
   conversation: ConversationSummary;
@@ -81,9 +82,10 @@ export function ConversationRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span
-              className={`truncate text-sm ${isUnread ? "font-bold text-white" : "font-semibold text-white/85"}`}
+              className={`flex min-w-0 items-center gap-1 text-sm ${isUnread ? "font-bold text-white" : "font-semibold text-white/85"}`}
             >
-              {other.name}
+              <span className="truncate">{other.name}</span>
+              {other.verified ? <VerifiedBadge compact /> : null}
             </span>
             <span className="shrink-0 text-[11px] text-white/45">{time}</span>
           </span>

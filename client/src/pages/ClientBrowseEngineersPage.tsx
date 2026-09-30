@@ -30,6 +30,7 @@ import { countOf, formatCurrency } from "../lib/format";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
 import { ENGINEER_DISCIPLINES } from "../lib/disciplines";
+import { VerifiedBadge } from "../components/VerifiedBadge";
 
 interface EngineerDirectoryItem {
   id: string;
@@ -46,6 +47,8 @@ interface EngineerDirectoryItem {
   rateMax: number | null;
   /** Certificates the engineer uploaded; clients can open them on the profile. */
   certificateCount: number;
+  /** CivilHub checked their IEB membership or trade licence, and their ID. */
+  verified?: boolean;
   /** Engineers and companies that take on projects share this directory. */
   role: "engineer" | "organisation";
   teamSize: string | null;
@@ -65,7 +68,7 @@ const TYPING_DELAY_MS = 300;
 
 // URL param -> API param. Filters live in the URL so a search can be
 // bookmarked, shared, or restored with the back button.
-const filterKeys = ["q", "category", "location", "minRating", "minRate", "maxRate", "type"] as const;
+const filterKeys = ["q", "category", "location", "minRating", "minRate", "maxRate", "type", "verified"] as const;
 
 const typeOptions = [
   { value: "", label: "Everyone" },
@@ -193,6 +196,7 @@ function EngineerCard({
               >
                 {engineer.name}
               </Link>
+              {engineer.verified ? <VerifiedBadge className="ml-2 align-middle" /> : null}
             </h2>
             <div className="mt-1">
               {engineer.rating !== null ? (
@@ -391,10 +395,11 @@ export function ClientBrowseEngineersPage(): ReactElement {
       />
 
       <section aria-label="Search filters" className={`${panelClassName} p-4 sm:p-5`}>
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-3">
         <div
           role="radiogroup"
           aria-label="Show"
-          className="mb-4 flex w-fit max-w-full gap-1 overflow-x-auto rounded-full border border-white/10 bg-void/60 p-1"
+          className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full border border-white/10 bg-void/60 p-1"
         >
           {typeOptions.map((option) => {
             const isActive = draft.type === option.value;
@@ -413,6 +418,16 @@ export function ClientBrowseEngineersPage(): ReactElement {
               </button>
             );
           })}
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-white/75">
+          <input
+            type="checkbox"
+            checked={draft.verified === "1"}
+            onChange={(event) => update("verified", event.target.checked ? "1" : "", true)}
+            className="h-4 w-4 accent-primary"
+          />
+          <VerifiedBadge compact /> Verified only
+        </label>
         </div>
         <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)]">
           <div className="grid gap-1.5">

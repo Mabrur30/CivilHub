@@ -30,6 +30,8 @@ import {
   hasStartingRate,
   validateFile,
 } from "./engineerProfile";
+import { VerifiedBadge } from "../../VerifiedBadge";
+import { GetVerifiedLink } from "../../verification/GetVerifiedLink";
 
 function DetailRow({
   icon,
@@ -159,6 +161,8 @@ export function EngineerSidebar({
           <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-bold text-white">{profile.name}</h1>
+              {profile.verified ? <VerifiedBadge /> : null}
+              {isSelf ? <GetVerifiedLink status={profile.ownVerificationStatus} /> : null}
               {profile.reviewCount > 0 ? (
                 <RatingBadge rating={profile.rating} reviewCount={profile.reviewCount} size="sm" />
               ) : null}

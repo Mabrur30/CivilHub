@@ -43,6 +43,22 @@ export const ACTION_LABELS: Record<string, string> = {
   "refund.manual": "Recorded a manual refund",
   "refund.check": "Checked a refund",
   "deposit.decide": "Decided a deposit dispute",
+  "verification.approve": "Verified an account",
+  "verification.reject": "Rejected a verification",
+  "verification.revoke": "Revoked a Verified badge",
+};
+
+export const VERIFICATION_STATUS_LABELS: Record<string, string> = {
+  pending: "Waiting for review",
+  verified: "Verified",
+  rejected: "Rejected",
+  lapsed: "Lapsed",
+};
+
+export const DOCUMENT_LABELS: Record<string, string> = {
+  ieb_certificate: "IEB certificate",
+  trade_licence: "Trade licence",
+  nid: "National ID",
 };
 
 export const DECISION_LABELS: Record<string, string> = {

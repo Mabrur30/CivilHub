@@ -67,6 +67,8 @@ interface SearchEngineersQuery {
   maxRate?: string;
   /** "engineer" or "company"; both when absent. */
   type?: string;
+  /** "1" or "true" for verified providers only. */
+  verified?: string;
 }
 
 interface SearchEngineersAggregationRow {
@@ -83,6 +85,7 @@ interface SearchEngineersAggregationRow {
   yearFounded?: number;
   startingRateMin?: number | null;
   startingRateMax?: number | null;
+  verified: boolean;
 }
 
 interface SearchResultView {
@@ -99,8 +102,10 @@ interface SearchResultView {
   /** The starting rate the engineer states, never amounts from won bids. */
   rateMin: number | null;
   rateMax: number | null;
-  /** Certificates the engineer uploaded. Nobody has checked them yet. */
+  /** Certificates the engineer uploaded. The files themselves aren't checked. */
   certificateCount: number;
+  /** CivilHub checked their IEB membership or trade licence, and their NID. */
+  verified: boolean;
   /** Disciplines or specialties from their profile. */
   tags: string[];
   teamSize: string | null;
@@ -601,6 +606,7 @@ export const searchEngineers = async (
                 userId: { $toString: "$userData._id" },
                 name: "$userData.name",
                 role: "engineer",
+                verified: { $gt: ["$userData.verifiedAt", null] },
                 profilePhotoUrl: "$profilePhoto.url",
                 bio: { $ifNull: ["$bio", ""] },
                 certificatesCount: {
@@ -644,6 +650,7 @@ export const searchEngineers = async (
                 userId: { $toString: "$userData._id" },
                 name: "$userData.name",
                 role: "organisation",
+                verified: { $gt: ["$userData.verifiedAt", null] },
                 profilePhotoUrl: "$logo.url",
                 bio: { $ifNull: ["$about", ""] },
                 certificatesCount: { $literal: 0 },
@@ -663,9 +670,11 @@ export const searchEngineers = async (
     ]);
     restricted.forEach((id) => hidden.add(id));
     hidden.add(req.user.userId);
+    const verifiedOnly = query.verified === "1" || query.verified === "true";
+    // Verified providers first, then by name.
     const rows = [...engineerRows, ...companyRows]
-      .filter((row) => !hidden.has(row.userId))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((row) => !hidden.has(row.userId) && (!verifiedOnly || row.verified))
+      .sort((a, b) => Number(b.verified) - Number(a.verified) || a.name.localeCompare(b.name));
 
     const engineerIds = rows.map((row) => row.userId);
     if (engineerIds.length === 0) {
@@ -801,6 +810,7 @@ export const searchEngineers = async (
           rateMin: row.startingRateMin ?? null,
           rateMax: row.startingRateMax ?? null,
           certificateCount: row.certificatesCount,
+          verified: Boolean(row.verified),
           tags,
           categories: projectFacets.categories,
         };
