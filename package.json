@@ -10,7 +10,10 @@
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
     "clinet": "npm --prefix client run dev",
+    "dev:admin": "npm --prefix admin run dev",
     "build": "npm --prefix server run build && npm --prefix client run build",
-    "db:reset": "npm --prefix server run db:reset"
+    "build:admin": "npm --prefix admin run build",
+    "db:reset": "npm --prefix server run db:reset",
+    "admin:create": "npm --prefix server run admin:create --"
   }
 }

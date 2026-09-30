@@ -10,6 +10,7 @@ import {
   confirmPickup,
   confirmReturn,
   createBookingRequest,
+  disputeDeposit,
   getBookingByIdForUser,
   getEquipmentAvailability,
   getEquipmentQuote,
@@ -20,6 +21,7 @@ import {
   respondToBookingRequest,
   type ConfirmConditionBody,
   type CreateBookingBody,
+  type DisputeDepositBody,
   type ResolveDepositBody,
   type RespondBookingBody,
 } from "../controllers/equipmentBooking.controller";
@@ -128,6 +130,13 @@ equipmentBookingRouter.patch(
   protect,
   (req, res, next) =>
     resolveDeposit(req as AuthenticatedRequest<ResolveDepositBody>, res, next),
+);
+
+equipmentBookingRouter.post(
+  "/equipment-bookings/:bookingId/deposit-dispute",
+  protect,
+  (req, res, next) =>
+    disputeDeposit(req as AuthenticatedRequest<DisputeDepositBody>, res, next),
 );
 
 export default equipmentBookingRouter;

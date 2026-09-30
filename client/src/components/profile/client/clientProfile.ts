@@ -83,6 +83,8 @@ export interface ClientPublicProfile {
   connectionId: string | null;
   /** The viewer has blocked this person. */
   blockedByMe?: boolean;
+  /** Either side blocked the other: nothing to connect, message or invite. */
+  blockedEitherWay?: boolean;
   connectionsCount: number;
   companyName: string;
   clientType: ClientType | null;

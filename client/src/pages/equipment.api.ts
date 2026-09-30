@@ -440,6 +440,17 @@ export type EquipmentBookingStatus =
 export type EquipmentBookingPaymentStatus = "unpaid" | "paid";
 export type EquipmentDepositResolution = "pending" | "released" | "claimed";
 
+/** A renter's objection to the owner's deposit claim, decided by CivilHub. */
+export interface EquipmentDepositDispute {
+  status: "open" | "decided";
+  reason: string;
+  openedAt: string;
+  decision: "upheld" | "reduced" | "rejected" | null;
+  originalClaimAmount: number;
+  decisionNote: string | null;
+  decidedAt: string | null;
+}
+
 export interface EquipmentBookingConditionPhoto {
   url: string;
   publicId: string;
@@ -486,6 +497,12 @@ export interface EquipmentBookingBase {
   depositResolution: EquipmentDepositResolution;
   depositClaimNotes: string | null;
   depositClaimAmount: number | null;
+  depositClaimedAt?: string | null;
+  /** Until when the renter can dispute the owner's claim. */
+  disputeDeadline?: string | null;
+  /** When an unsettled deposit is released to the renter by itself. */
+  autoReleaseAt?: string | null;
+  depositDispute?: EquipmentDepositDispute | null;
   createdAt: string;
   /** The settled payment; only sent on the single-booking view. */
   payment: EquipmentBookingPayment | null;
@@ -1070,6 +1087,20 @@ export const confirmEquipmentReturn = async (
 
   if (!response.ok) {
     throw new Error(getErrorMessage(body, "Unable to confirm return."));
+  }
+};
+
+/** Asks CivilHub to review the owner's deposit claim. */
+export const disputeEquipmentDeposit = async (bookingId: string, reason: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/api/equipment-bookings/${bookingId}/deposit-dispute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ reason }),
+  });
+  const body = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(getErrorMessage(body, "Unable to send your dispute."));
   }
 };
 

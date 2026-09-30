@@ -304,7 +304,7 @@ export function OrganisationProfileView({
                   </button>
                 ) : (
                   <>
-                    {profile.blockedByMe ? null : canMessage ? (
+                    {profile.blockedEitherWay ? null : canMessage ? (
                       <Link
                         to={`/messages/${profile.userId}`}
                         className={isClientViewer ? primaryButtonClassName : secondaryButtonClassName}
@@ -313,7 +313,7 @@ export function OrganisationProfileView({
                       </Link>
                     ) : null}
                     {/* Clients don't use connections; they message companies directly. */}
-                    {isClientViewer || profile.blockedByMe ? null : profile.connectionStatus === "not_connected" ? (
+                    {isClientViewer || profile.blockedEitherWay ? null : profile.connectionStatus === "not_connected" ? (
                       <button
                         type="button"
                         onClick={() => void connect()}

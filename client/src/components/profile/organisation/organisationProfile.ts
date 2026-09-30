@@ -52,6 +52,8 @@ export interface CompanyPublicProfile {
   connectionId: string | null;
   /** The viewer has blocked this person. */
   blockedByMe?: boolean;
+  /** Either side blocked the other: nothing to connect, message or invite. */
+  blockedEitherWay?: boolean;
   rating: number | null;
   reviewCount: number;
   /** Which reviews the headline rating comes from. */

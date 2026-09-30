@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
 import errorHandler from "../middleware/errorHandler";
+import { Bid } from "../models/Bid.model";
 import { CustomerReview } from "../models/CustomerReview.model";
 import { Engineer } from "../models/Engineer.model";
 import { Equipment } from "../models/Equipment.model";
@@ -132,7 +133,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await Promise.all(
-    [CustomerReview, Engineer, Equipment, EquipmentBooking, Notification, Organisation, Project, ProjectPhase, Review, User].map(
+    [Bid, CustomerReview, Engineer, Equipment, EquipmentBooking, Notification, Organisation, Project, ProjectPhase, Review, User].map(
       (model) => (model as unknown as { deleteMany: (filter: object) => Promise<unknown> }).deleteMany({}),
     ),
   );
@@ -176,6 +177,37 @@ describe("Public profiles", () => {
       fileUrl: "https://example.test/ieb.pdf",
     });
     expect(response.body.equipment).toEqual([]);
+  });
+
+  test("won bid amounts stay private; rates come from the engineer's own range", async () => {
+    const project = await finishedProject(engineer);
+    await Bid.create({
+      engineer: engineer._id,
+      project: project._id,
+      amount: 850000,
+      message: "Fixed price",
+      status: "accepted",
+    });
+    await Engineer.updateOne({ user: engineer._id }, { startingRateMin: 50000, startingRateMax: 90000 });
+
+    const profile = await profileOf(client, engineer);
+    expect(profile.body.acceptedBidCount).toBe(1);
+    expect(profile.body).not.toHaveProperty("typicalRate");
+    expect(profile.body).not.toHaveProperty("rateMin");
+    expect(JSON.stringify(profile.body)).not.toContain("850000");
+
+    const names = async (query: string): Promise<string[]> => {
+      const search = await as(client, request(app).get(`/api/engineers/search?${query}`));
+      return search.body.engineers.map((row: { name: string }) => row.name);
+    };
+    const [first] = (await as(client, request(app).get("/api/engineers/search?q=Tanvir"))).body.engineers;
+    expect(first).toMatchObject({ rateMin: 50000, rateMax: 90000 });
+    expect(first).not.toHaveProperty("typicalRate");
+    // Overlapping ranges match; ranges entirely outside don't.
+    expect(await names("minRate=80000")).toEqual(["Tanvir Alam"]);
+    expect(await names("maxRate=60000")).toEqual(["Tanvir Alam"]);
+    expect(await names("minRate=100000")).toEqual([]);
+    expect(await names("maxRate=40000")).toEqual([]);
   });
 
   test("a rental-only company leads with its equipment rating", async () => {
@@ -233,6 +265,58 @@ describe("Disciplines", () => {
 
     const none = await as(client, request(app).get("/api/engineers/search?category=MEP"));
     expect(none.body.engineers).toHaveLength(0);
+  });
+});
+
+describe("Editing portfolio and certificates", () => {
+  test("the owner can retitle a certificate and edit a portfolio item, keeping the file", async () => {
+    await Engineer.updateOne(
+      { user: engineer._id },
+      {
+        $push: {
+          portfolio: {
+            title: "Bridge deck",
+            description: "Design checks",
+            imageUrl: "https://example.test/deck.jpg",
+            fileUrl: "https://example.test/deck.jpg",
+            publicId: "deck",
+            resourceType: "image",
+          },
+        },
+      },
+    );
+    const own = await as(engineer, request(app).get("/api/engineers/me"));
+    const certificateId = own.body.certificates[0]._id as string;
+    const portfolioId = own.body.portfolio[0]._id as string;
+
+    const retitled = await as(engineer, request(app).patch(`/api/engineers/me/certificates/${certificateId}`)).send({
+      title: "IEB membership (2024)",
+    });
+    expect(retitled.status).toBe(200);
+    expect(retitled.body.certificates[0]).toMatchObject({
+      title: "IEB membership (2024)",
+      fileUrl: "https://example.test/ieb.pdf",
+    });
+
+    const edited = await as(engineer, request(app).patch(`/api/engineers/me/portfolio/${portfolioId}`)).send({
+      title: "Bridge deck, Sylhet",
+      description: "Load checks and rebar detailing",
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.portfolio[0]).toMatchObject({
+      title: "Bridge deck, Sylhet",
+      imageUrl: "https://example.test/deck.jpg",
+    });
+
+    const blank = await as(engineer, request(app).patch(`/api/engineers/me/portfolio/${portfolioId}`)).send({
+      title: " ",
+      description: "x",
+    });
+    expect(blank.status).toBe(400);
+    const missing = await as(engineer, request(app).patch("/api/engineers/me/certificates/not-an-id")).send({
+      title: "x",
+    });
+    expect(missing.status).toBe(404);
   });
 });
 

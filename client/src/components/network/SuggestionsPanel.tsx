@@ -1,9 +1,13 @@
-import { type ReactElement } from "react";
+import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+import { type ReactElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { type PersonResult } from "./types";
 
 export type PersonStatus = "self" | "connected" | "received" | "sent" | "none";
+
+const chipClassName =
+  "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold";
 
 /** People You May Know, which expands into search across engineers and companies. */
 export function SuggestionsPanel({
@@ -35,6 +39,45 @@ export function SuggestionsPanel({
   /** Present when search results run to more than one page. */
   pager: { page: number; totalPages: number; onPageChange: (page: number) => void } | null;
 }): ReactElement {
+  const renderAction = (person: PersonResult): ReactNode => {
+    switch (statusOf(person.id)) {
+      case "connected":
+        return (
+          <span className={`${chipClassName} border-white/15 bg-white/5 text-white/70`}>
+            Connected
+          </span>
+        );
+      case "self":
+        return (
+          <span className={`${chipClassName} border-white/20 text-white/60`}>You</span>
+        );
+      case "received":
+        return (
+          <span className={`${chipClassName} border-violet-300/30 bg-violet-300/10 text-violet-200`}>
+            Request received
+          </span>
+        );
+      case "sent":
+        return (
+          <span className={`${chipClassName} border-violet-300/30 bg-violet-300/10 text-violet-200`}>
+            Request sent
+          </span>
+        );
+      default:
+        return (
+          <button
+            type="button"
+            onClick={() => onConnect(person.id)}
+            disabled={activeUserId === person.id}
+            aria-label={`Connect with ${person.name}`}
+            className="shrink-0 rounded-full bg-primary px-3 py-1.5 text-[11px] font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
+          >
+            {activeUserId === person.id ? "Sending..." : "Connect"}
+          </button>
+        );
+    }
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-surface p-5 transition-all duration-200 hover:border-primary/25">
       <div className="flex items-center justify-between">
@@ -52,21 +95,35 @@ export function SuggestionsPanel({
       </div>
 
       {expanded ? (
-        <div className="mt-3 space-y-3">
+        <div className="relative mt-3">
+          <MagnifyingGlassIcon
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+          />
           <input
             type="search"
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder="Search by name or bio"
             aria-label="Search engineers and companies"
-            className="form-input"
+            className="form-input py-2.5! pl-10! pr-10! text-sm"
           />
+          {searchQuery ? (
+            <button
+              type="button"
+              onClick={() => onSearchQueryChange("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-glow"
+            >
+              <XIcon aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
       {isLoading ? (
         <p className="mt-3 text-sm text-white/50">
-          Loading suggestions...
+          {expanded && searchQuery ? "Searching..." : "Loading suggestions..."}
         </p>
       ) : null}
 
@@ -78,74 +135,36 @@ export function SuggestionsPanel({
 
       {!isLoading ? (
         <div
-          className={`mt-4 space-y-3 overflow-y-auto pr-1 ${
+          className={`mt-4 space-y-2 overflow-y-auto pr-1 ${
             expanded ? "max-h-[860px]" : "max-h-[420px]"
           }`}
         >
-          {people.map(
-            (person) => {
-              const status = statusOf(person.id);
-
-              return (
-                <article
-                  key={person.id}
-                  className="rounded-xl border border-white/10 bg-void/45 p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <Avatar
-                      name={person.name}
-                      photoUrl={person.profilePhotoUrl}
-                      size="sm"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-white">
-                        {person.name}
-                      </p>
-                      <p className="truncate text-[11px] text-white/50">
-                        {person.bio || "No bio provided"}
-                      </p>
-                    </div>
-                    <Link
-                      to={`/profile/${person.id}`}
-                      className="text-[11px] font-semibold text-primary transition-colors duration-200 hover:text-glow"
-                    >
-                      View
-                    </Link>
-                  </div>
-                  <div className="mt-3">
-                    {status === "connected" ? (
-                      <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/70">
-                        Connected
-                      </span>
-                    ) : status === "self" ? (
-                      <span className="rounded-full border border-white/20 px-2.5 py-1 text-[11px] font-semibold text-white/60">
-                        You
-                      </span>
-                    ) : status === "received" ? (
-                      <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
-                        Request received
-                      </span>
-                    ) : status === "sent" ? (
-                      <span className="rounded-full border border-violet-300/30 bg-violet-300/10 px-2.5 py-1 text-[11px] font-semibold text-violet-200">
-                        Request sent
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onConnect(person.id)}
-                        disabled={activeUserId === person.id}
-                        className="rounded-full bg-primary px-3 py-1.5 text-[11px] font-semibold text-on-primary transition-colors duration-200 hover:bg-glow disabled:opacity-60"
-                      >
-                        {activeUserId === person.id
-                          ? "Sending..."
-                          : "Connect"}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              );
-            },
-          )}
+          {people.map((person) => (
+            <article
+              key={person.id}
+              className="flex items-center gap-3 rounded-xl border border-white/10 bg-void/45 p-3"
+            >
+              <Link
+                to={`/profile/${person.id}`}
+                className="group flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow"
+              >
+                <Avatar
+                  name={person.name}
+                  photoUrl={person.profilePhotoUrl}
+                  size="sm"
+                />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-white transition-colors duration-200 group-hover:text-primary">
+                    {person.name}
+                  </p>
+                  <p className="truncate text-[11px] text-white/50">
+                    {person.bio || "No bio provided"}
+                  </p>
+                </div>
+              </Link>
+              {renderAction(person)}
+            </article>
+          ))}
 
           {pager ? (
             <div className="flex items-center justify-between rounded-xl border border-white/10 bg-void/45 p-3 text-xs text-white/65">
@@ -174,10 +193,10 @@ export function SuggestionsPanel({
           ) : null}
 
           {emptyMessage ? (
-      <p className="text-sm text-white/50">{emptyMessage}</p>
-    ) : null}
-
-      
+            <p className="rounded-xl border border-dashed border-white/15 p-4 text-center text-sm text-white/50">
+              {emptyMessage}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </section>

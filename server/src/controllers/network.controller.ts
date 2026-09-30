@@ -10,6 +10,7 @@ import { Engineer } from "../models/Engineer.model";
 import { Notification } from "../models/Notification.model";
 import { Organisation } from "../models/Organisation.model";
 import { onlyDisciplines } from "../utils/disciplines";
+import { restrictedUserIds } from "../utils/accountStatus";
 import { blockedUserIds, isBlockedEitherWay } from "../utils/blocks";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
@@ -531,7 +532,8 @@ export const getSuggestions = async (
     })
       .select("requester recipient status")
       .exec();
-    const excluded = new Set<string>([userId, ...(await blockedUserIds(userId))]);
+    const [blocked, restricted] = await Promise.all([blockedUserIds(userId), restrictedUserIds()]);
+    const excluded = new Set<string>([userId, ...blocked, ...restricted]);
     const myConnections = new Set<string>();
     for (const connection of mine) {
       const other =

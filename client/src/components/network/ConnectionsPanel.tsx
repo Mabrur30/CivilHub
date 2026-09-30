@@ -64,15 +64,15 @@ export function ConnectionsPanel({
               className="rounded-xl border border-white/10 bg-void/45 p-3"
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <Link to={`/profile/${connection.userId}`} className="group flex min-w-0 items-center gap-2 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow">
                   <Avatar
                     name={connection.name}
                     photoUrl={connection.profilePhotoUrl}
                     size="sm"
                   />
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-white">
+                      <p className="truncate text-sm font-semibold text-white transition-colors duration-200 group-hover:text-primary">
                         {connection.name}
                       </p>
                       {isProviderRole(connection.role) && (
@@ -87,7 +87,7 @@ export function ConnectionsPanel({
                       {connection.role}
                     </p>
                   </div>
-                </div>
+                </Link>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <Link
                     to={`/messages/${connection.userId}`}

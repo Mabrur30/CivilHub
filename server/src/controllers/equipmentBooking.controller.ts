@@ -29,6 +29,11 @@ import {
   type RentalQuote,
 } from "../utils/equipmentPricing";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
+import {
+  DEPOSIT_DISPUTE_DAYS,
+  autoReleaseAt,
+  disputeDeadline,
+} from "../utils/deposits";
 
 interface BookingError extends Error {
   statusCode: number;
@@ -69,6 +74,10 @@ export interface ResolveDepositBody {
   resolution?: "released" | "claimed";
   claimNotes?: string;
   claimAmount?: number;
+}
+
+export interface DisputeDepositBody {
+  reason?: string;
 }
 
 export interface ConfirmConditionBody {
@@ -136,6 +145,12 @@ interface BookingViewResponse {
   depositResolution: DepositResolutionStatus;
   depositClaimNotes: string | null;
   depositClaimAmount: number | null;
+  depositClaimedAt: string | null;
+  /** Until when the renter can dispute the owner's claim. */
+  disputeDeadline: string | null;
+  /** When an unsettled deposit will be released to the renter by itself. */
+  autoReleaseAt: string | null;
+  depositDispute: DepositDisputeView | null;
   bucket: BookingBucket;
   createdAt: string;
   /** The settled payment; only on the single-booking view. */
@@ -143,6 +158,33 @@ interface BookingViewResponse {
   /** The owner's review of the renter, once written. */
   ownerReview?: CustomerReviewView | null;
 }
+
+interface DepositDisputeView {
+  status: "open" | "decided";
+  reason: string;
+  openedAt: string;
+  decision: "upheld" | "reduced" | "rejected" | null;
+  originalClaimAmount: number;
+  decisionNote: string | null;
+  decidedAt: string | null;
+}
+
+const toDepositDisputeView = (booking: IEquipmentBooking): DepositDisputeView | null => {
+  const dispute = booking.depositDispute;
+  if (!dispute?.status) return null;
+  return {
+    status: dispute.status,
+    reason: dispute.reason,
+    openedAt: dispute.openedAt.toISOString(),
+    decision: dispute.decision ?? null,
+    originalClaimAmount: dispute.originalClaimAmount,
+    decisionNote: dispute.decisionNote ?? null,
+    decidedAt: dispute.decidedAt ? dispute.decidedAt.toISOString() : null,
+  };
+};
+
+const toIso = (value: Date | null | undefined): string | null =>
+  value ? value.toISOString() : null;
 
 interface BookingPaymentResponse {
   tranId: string | null;
@@ -634,6 +676,10 @@ const mapBookingRowsToResponse = async (
           typeof row.depositClaimAmount === "number"
             ? row.depositClaimAmount
             : null,
+        depositClaimedAt: toIso(row.depositClaimedAt),
+        disputeDeadline: toIso(disputeDeadline(row)),
+        autoReleaseAt: row.paymentStatus === "paid" && row.securityDeposit > 0 ? toIso(autoReleaseAt(row)) : null,
+        depositDispute: toDepositDisputeView(row),
         bucket: getBookingBucket(row, today),
         createdAt: row.createdAt.toISOString(),
       };
@@ -1417,6 +1463,7 @@ export const resolveDeposit = async (
       booking.depositResolution = "claimed";
       booking.depositClaimNotes = claimNotes;
       booking.depositClaimAmount = claimAmount;
+      booking.depositClaimedAt = new Date();
     } else {
       booking.depositResolution = "released";
       booking.depositClaimNotes = undefined;
@@ -1434,7 +1481,7 @@ export const resolveDeposit = async (
           : "equipment_deposit_released",
       message:
         booking.depositResolution === "claimed"
-          ? `Deposit claimed for ${normalizeBookingEquipmentTitle(booking)}: ${formatTaka(booking.depositClaimAmount ?? 0)}.`
+          ? `The owner claimed ${formatTaka(booking.depositClaimAmount ?? 0)} of your deposit for ${normalizeBookingEquipmentTitle(booking)}. If you disagree, you can dispute it within ${DEPOSIT_DISPUTE_DAYS} days.`
           : `Deposit released for ${normalizeBookingEquipmentTitle(booking)}.`,
       ...(equipmentId ? { equipment: equipmentId } : {}),
       equipmentBooking: booking._id,
@@ -1449,6 +1496,72 @@ export const resolveDeposit = async (
           ? booking.depositClaimAmount
           : null,
     });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+const DISPUTE_REASON_MIN = 10;
+const DISPUTE_REASON_MAX = 2000;
+
+/** The renter objects to the owner's claim; a CivilHub admin then decides it. */
+export const disputeDeposit = async (
+  req: AuthenticatedRequest<DisputeDepositBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const userId = requireRenterUserId(req);
+    const { bookingId } = getBookingParams(req);
+    if (!bookingId) {
+      throw createBookingError("Booking ID is required", 400);
+    }
+
+    const booking = await getBookingByIdOrFail(bookingId);
+    const renterId = toBookingUserId(booking.renter);
+    if (!renterId || renterId.toString() !== userId) {
+      throw createBookingError("Only the renter can dispute a deposit claim", 403);
+    }
+    if (booking.depositResolution !== "claimed") {
+      throw createBookingError("There's no deposit claim to dispute", 409);
+    }
+    if (booking.depositDispute) {
+      throw createBookingError("You've already disputed this claim", 409);
+    }
+    const deadline = disputeDeadline(booking);
+    if (!deadline || deadline <= new Date()) {
+      throw createBookingError(
+        `Claims can be disputed for ${DEPOSIT_DISPUTE_DAYS} days after they're made, and that time has passed`,
+        409,
+      );
+    }
+
+    const reason = req.body.reason?.trim() ?? "";
+    if (reason.length < DISPUTE_REASON_MIN) {
+      throw createBookingError("Tell CivilHub why you disagree with the claim, in a sentence or two", 400);
+    }
+    if (reason.length > DISPUTE_REASON_MAX) {
+      throw createBookingError(`Keep it under ${DISPUTE_REASON_MAX} characters`, 400);
+    }
+
+    booking.depositDispute = {
+      status: "open",
+      reason,
+      openedAt: new Date(),
+      originalClaimAmount: booking.depositClaimAmount ?? 0,
+    };
+    await booking.save();
+
+    const equipmentId = toBookingEquipmentId(booking.equipment);
+    await Notification.create({
+      recipient: toBookingUserId(booking.owner) ?? undefined,
+      type: "equipment_deposit_disputed",
+      message: `The renter disputed your ${formatTaka(booking.depositClaimAmount ?? 0)} deposit claim for ${normalizeBookingEquipmentTitle(booking)}. CivilHub will review it and let you both know.`,
+      ...(equipmentId ? { equipment: equipmentId } : {}),
+      equipmentBooking: booking._id,
+    });
+
+    res.status(200).json({ success: true, depositDispute: toDepositDisputeView(booking) });
   } catch (error: unknown) {
     next(error);
   }

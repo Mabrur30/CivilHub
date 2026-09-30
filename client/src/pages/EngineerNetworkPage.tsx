@@ -21,6 +21,7 @@ import { useAuth } from "../context/AuthContext";
 import { canTakeProjects } from "../lib/dashboardPaths";
 import { isProviderRole } from "../lib/dashboardPaths";
 import { ImageLightbox } from "../components/dashboard/ImageLightbox";
+import { ConfirmDialog } from "../components/dashboard/ui/ConfirmDialog";
 import { ConnectionsPanel } from "../components/network/ConnectionsPanel";
 import { IncomingRequestsPanel } from "../components/network/IncomingRequestsPanel";
 import { SentRequestsPanel } from "../components/network/SentRequestsPanel";
@@ -342,6 +343,12 @@ export function EngineerNetworkPage(): ReactElement {
 
   const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
+  /** The removal waiting on the user's confirmation, if any. */
+  const [pendingConfirm, setPendingConfirm] = useState<
+    | { kind: "deletePost"; postId: string }
+    | { kind: "removeConnection"; connectionId: string; name: string }
+    | null
+  >(null);
 
   const isEngineer = isProviderRole(currentUser?.role);
 
@@ -775,9 +782,6 @@ export function EngineerNetworkPage(): ReactElement {
   };
 
   const removePost = async (postId: string): Promise<void> => {
-    const confirmed = window.confirm("Delete this post permanently?");
-    if (!confirmed) return;
-
     setDeleteLoadingId(postId);
     try {
       const response = await fetch(`${API_BASE_URL}/api/posts/${postId}`, {
@@ -797,6 +801,7 @@ export function EngineerNetworkPage(): ReactElement {
     } finally {
       setDeleteLoadingId(null);
       setActiveMenuPostId(null);
+      setPendingConfirm(null);
     }
   };
 
@@ -828,11 +833,7 @@ export function EngineerNetworkPage(): ReactElement {
   const removeConnection = async (
     connectionId: string,
     kind: "withdraw" | "remove",
-    name: string,
   ): Promise<void> => {
-    if (kind === "remove" && !window.confirm(`Remove ${name} from your connections?`)) {
-      return;
-    }
     setActiveConnectionId(connectionId);
     setActionError("");
     try {
@@ -860,6 +861,7 @@ export function EngineerNetworkPage(): ReactElement {
       setActionError("Unable to connect to CivilHub. Please try again.");
     } finally {
       setActiveConnectionId(null);
+      if (kind === "remove") setPendingConfirm(null);
     }
   };
 
@@ -1014,7 +1016,7 @@ export function EngineerNetworkPage(): ReactElement {
 
   return (
     <div className="mx-auto w-full max-w-[1240px] space-y-6 pb-6">
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_2.2fr_1fr]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)_minmax(0,1fr)]">
         <aside className="order-1 space-y-4 lg:self-start lg:sticky lg:top-20">
           <section className="overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-sm">
             <div className="h-16 w-full bg-gradient-to-r from-primary/70 via-primary/35 to-primary/10" />
@@ -1248,7 +1250,7 @@ export function EngineerNetworkPage(): ReactElement {
                       current === post.id ? null : post.id,
                     )
                   }
-                  onDeletePost={() => void removePost(post.id)}
+                  onDeletePost={() => setPendingConfirm({ kind: "deletePost", postId: post.id })}
                   isDeleting={deleteLoadingId === post.id}
                   onOpenImage={setLightboxImageUrl}
                   formatRelativeTime={formatRelativeTime}
@@ -1301,7 +1303,7 @@ export function EngineerNetworkPage(): ReactElement {
             emptyMessage={
               searchExpanded
                 ? debouncedQuery && expandedPeopleList.length === 0
-                  ? "No results for this search."
+                  ? `No engineers or companies match “${debouncedQuery}”.`
                   : null
                 : compactSuggestions.length === 0
                   ? "No new suggestions yet."
@@ -1333,7 +1335,7 @@ export function EngineerNetworkPage(): ReactElement {
             expanded={sentExpanded}
             onToggleExpanded={() => setSentExpanded((open) => !open)}
             activeConnectionId={activeConnectionId}
-            onWithdraw={(connectionId, name) => void removeConnection(connectionId, "withdraw", name)}
+            onWithdraw={(connectionId) => void removeConnection(connectionId, "withdraw")}
           />
 
           <ConnectionsPanel
@@ -1345,7 +1347,9 @@ export function EngineerNetworkPage(): ReactElement {
             isLoadingMore={isLoadingMoreConnections}
             onLoadMore={() => void loadMoreConnections()}
             activeConnectionId={activeConnectionId}
-            onRemove={(connectionId, name) => void removeConnection(connectionId, "remove", name)}
+            onRemove={(connectionId, name) =>
+              setPendingConfirm({ kind: "removeConnection", connectionId, name })
+            }
           />
 
           {networkError || actionError ? (
@@ -1355,6 +1359,34 @@ export function EngineerNetworkPage(): ReactElement {
           ) : null}
         </aside>
       </div>
+
+      {pendingConfirm?.kind === "deletePost" ? (
+        <ConfirmDialog
+          title="Delete this post?"
+          description="It's removed for good, along with its likes and comments."
+          confirmLabel="Delete post"
+          busyLabel="Deleting..."
+          tone="danger"
+          isBusy={deleteLoadingId === pendingConfirm.postId}
+          onConfirm={() => void removePost(pendingConfirm.postId)}
+          onClose={() => setPendingConfirm(null)}
+        />
+      ) : null}
+
+      {pendingConfirm?.kind === "removeConnection" ? (
+        <ConfirmDialog
+          title={`Remove ${pendingConfirm.name}?`}
+          description="They won't be told. You can send a new request later."
+          confirmLabel="Remove"
+          busyLabel="Removing..."
+          tone="danger"
+          isBusy={activeConnectionId === pendingConfirm.connectionId}
+          onConfirm={() =>
+            void removeConnection(pendingConfirm.connectionId, "remove")
+          }
+          onClose={() => setPendingConfirm(null)}
+        />
+      ) : null}
 
       {lightboxImageUrl ? (
         <ImageLightbox

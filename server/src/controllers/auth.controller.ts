@@ -12,6 +12,7 @@ import {
 import { User, type IUser, type UserRole } from "../models/User.model";
 import { getProfilePhotoUrl } from "../utils/profilePhotos";
 import { onlyDisciplines, parseDisciplines } from "../utils/disciplines";
+import { getAccountStanding, restrictionMessage } from "../utils/accountStatus";
 
 export interface SignupRequestBody {
   name: string;
@@ -215,6 +216,11 @@ export const login = async (
 
     if (!user || !isPasswordValid) {
       throw createAuthError("Invalid credentials", 401);
+    }
+    // Only after the password is right, so this can't be used to probe emails.
+    const standing = await getAccountStanding(user._id.toString());
+    if (standing && standing.status !== "active") {
+      throw createAuthError(restrictionMessage(standing), 403);
     }
 
     setAuthCookie(res, user);

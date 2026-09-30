@@ -9,11 +9,14 @@ import { Block } from "../models/Block.model";
 import { Comment } from "../models/Comment.model";
 import { Connection } from "../models/Connection.model";
 import { Conversation } from "../models/Conversation.model";
+import { Engineer } from "../models/Engineer.model";
 import { Post } from "../models/Post.model";
 import { Report } from "../models/Report.model";
 import { type IUser, User } from "../models/User.model";
 import commentsRouter from "../routes/comments.routes";
 import conversationsRouter from "../routes/conversations.routes";
+import engineerRouter from "../routes/engineer.routes";
+import userRouter from "../routes/user.routes";
 import networkRouter from "../routes/network.routes";
 import postRouter from "../routes/post.routes";
 import { blocksRouter, reportsRouter } from "../routes/safety.routes";
@@ -45,6 +48,8 @@ beforeAll(async () => {
   app.use("/api/posts", postRouter);
   app.use("/api/comments", commentsRouter);
   app.use("/api/conversations", conversationsRouter);
+  app.use("/api/engineers", engineerRouter);
+  app.use("/api/users", userRouter);
   app.use("/api/blocks", blocksRouter);
   app.use("/api/reports", reportsRouter);
   app.use(errorHandler);
@@ -64,6 +69,7 @@ beforeEach(async () => {
     Conversation.deleteMany({}),
     Block.deleteMany({}),
     Report.deleteMany({}),
+    Engineer.deleteMany({}),
   ]);
   tanvir = await User.create({ name: "Tanvir Hasan", email: "t@test.dev", passwordHash: "x", role: "engineer" });
   nabila = await User.create({ name: "Nabila Karim", email: "n@test.dev", passwordHash: "x", role: "engineer" });
@@ -96,6 +102,51 @@ describe("Blocking", () => {
     // Suggestions skip her.
     const suggestions = await as(tanvir, request(app).get("/api/network/suggestions"));
     expect(suggestions.body.map((row: { name: string }) => row.name)).not.toContain("Nabila Karim");
+  });
+
+  test("search hides blocked people both ways", async () => {
+    await Engineer.create([{ user: tanvir._id }, { user: nabila._id }]);
+    const names = async (viewer: IUser, q: string): Promise<string[]> => {
+      const response = await as(viewer, request(app).get(`/api/engineers/search?q=${q}`));
+      expect(response.status).toBe(200);
+      return response.body.engineers.map((row: { name: string }) => row.name);
+    };
+    expect(await names(tanvir, "Nabila")).toEqual(["Nabila Karim"]);
+
+    await as(tanvir, request(app).post(`/api/blocks/${id(nabila)}`));
+    expect(await names(tanvir, "Nabila")).toEqual([]);
+    expect(await names(nabila, "Tanvir")).toEqual([]);
+  });
+
+  test("a profile shows no way to reach, and no posts, across a block", async () => {
+    await Engineer.create([{ user: tanvir._id }, { user: nabila._id }]);
+    await Post.create({ author: nabila._id, content: "Site visit today", likes: [] });
+    await as(nabila, request(app).post(`/api/blocks/${id(tanvir)}`));
+
+    // Tanvir was blocked: he isn't told, but there's nothing to act on.
+    const profile = await as(tanvir, request(app).get(`/api/users/${id(nabila)}/public-profile`));
+    expect(profile.body).toMatchObject({ blockedByMe: false, blockedEitherWay: true });
+    const posts = await as(tanvir, request(app).get(`/api/users/${id(nabila)}/posts`));
+    expect(posts.body).toMatchObject({ posts: [], total: 0 });
+
+    // Nabila still sees her own posts.
+    const own = await as(nabila, request(app).get(`/api/users/${id(nabila)}/posts`));
+    expect(own.body.total).toBe(1);
+  });
+
+  test("a connection's repost of a blocked person's post shows as unavailable", async () => {
+    const rafi = await User.create({ name: "Rafi Ahmed", email: "r@test.dev", passwordHash: "x", role: "engineer" });
+    await Connection.create({ requester: tanvir._id, recipient: rafi._id, status: "accepted" });
+    const original = await Post.create({ author: nabila._id, content: "Pile test results", likes: [] });
+    await Post.create({ author: rafi._id, content: "Worth a read", originalPost: original._id, likes: [] });
+    await as(tanvir, request(app).post(`/api/blocks/${id(nabila)}`));
+
+    const feed = await as(tanvir, request(app).get("/api/posts/feed"));
+    expect(feed.body.posts).toHaveLength(1);
+    expect(feed.body.posts[0]).toMatchObject({ content: "Worth a read", originalPost: null, originalRemoved: true });
+
+    const direct = await as(tanvir, request(app).get(`/api/posts/${original._id.toString()}`));
+    expect(direct.status).toBe(404);
   });
 
   test("unblocking lets them connect again; blocking twice is harmless", async () => {

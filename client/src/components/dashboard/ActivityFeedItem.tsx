@@ -129,6 +129,10 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   customer_review_received: "projects",
   // Refunds can be for a project or a booking; projects is the usual case.
   payment_refund_due: "projects",
+  // Notes from the CivilHub team are usually about posts and comments.
+  moderation_notice: "network",
+  payout_sent: "projects",
+  refund_issued: "projects",
 
   equipment_booking_request: "bookings",
   equipment_booking_approved: "bookings",
@@ -139,6 +143,9 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   equipment_return_confirmed: "bookings",
   equipment_deposit_released: "bookings",
   equipment_deposit_claimed: "bookings",
+  equipment_deposit_disputed: "bookings",
+  equipment_deposit_decided: "bookings",
+  equipment_deposit_reminder: "bookings",
 };
 
 export const getFeedEntryCategory = (entry: FeedEntry): ActivityCategory => {

@@ -16,6 +16,12 @@ export interface FakeGateway {
   sessions: URLSearchParams[];
   /** When set, the session API refuses with this reason. */
   failInitWith: string | null;
+  /** What the refund API answers; defaults to an immediate success. */
+  refundReply: Record<string, unknown>;
+  /** refund_ref_id → what the refund-status query answers. */
+  refundQueries: Map<string, Record<string, unknown>>;
+  /** Query strings sent to the refund API. */
+  refundRequests: URLSearchParams[];
   restore: () => void;
 }
 
@@ -41,6 +47,9 @@ export const installFakeGateway = (): FakeGateway => {
     queries: new Map(),
     sessions: [],
     failInitWith: null,
+    refundReply: { APIConnect: "DONE", status: "success", refund_ref_id: "RFD-1" },
+    refundQueries: new Map(),
+    refundRequests: [],
     restore: () => undefined,
   };
 
@@ -61,6 +70,15 @@ export const installFakeGateway = (): FakeGateway => {
       if (url.pathname.endsWith("/validationserverAPI.php")) {
         const found = gateway.validations.get(url.searchParams.get("val_id") ?? "");
         return json(found ?? { status: "INVALID_TRANSACTION" });
+      }
+      // The refund API shares the transaction-query endpoint.
+      if (url.pathname.endsWith("/merchantTransIDvalidationAPI.php") && url.searchParams.has("refund_amount")) {
+        gateway.refundRequests.push(url.searchParams);
+        return json(gateway.refundReply);
+      }
+      if (url.pathname.endsWith("/merchantTransIDvalidationAPI.php") && url.searchParams.has("refund_ref_id")) {
+        const found = gateway.refundQueries.get(url.searchParams.get("refund_ref_id") ?? "");
+        return json(found ?? { APIConnect: "DONE", status: "processing" });
       }
       if (url.pathname.endsWith("/merchantTransIDvalidationAPI.php")) {
         const found = gateway.queries.get(url.searchParams.get("tran_id") ?? "") ?? [];

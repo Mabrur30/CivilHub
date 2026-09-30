@@ -1,5 +1,6 @@
 import { FlagIcon, ProhibitIcon } from "@phosphor-icons/react";
 import { type ReactElement, useState } from "react";
+import { ConfirmDialog } from "../dashboard/ui/ConfirmDialog";
 import { ReportDialog } from "./ReportDialog";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
@@ -24,18 +25,11 @@ export function ProfileSafetyActions({
   onChanged: () => void;
 }): ReactElement {
   const [isReporting, setIsReporting] = useState<boolean>(false);
+  const [isConfirmingBlock, setIsConfirmingBlock] = useState<boolean>(false);
   const [isBusy, setIsBusy] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
   const toggleBlock = async (): Promise<void> => {
-    if (
-      !blockedByMe &&
-      !window.confirm(
-        `Block ${name}? You'll no longer be connected, and neither of you can send requests, messages or comments to the other.`,
-      )
-    ) {
-      return;
-    }
     setIsBusy(true);
     setError("");
     try {
@@ -48,6 +42,7 @@ export function ProfileSafetyActions({
         setError(body.message ?? "Unable to update this right now.");
         return;
       }
+      setIsConfirmingBlock(false);
       onChanged();
     } catch {
       setError("Unable to connect to CivilHub. Please try again.");
@@ -62,7 +57,16 @@ export function ProfileSafetyActions({
         <p className="text-xs text-white/55">You've blocked {name}.</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-4">
-        <button type="button" onClick={() => void toggleBlock()} disabled={isBusy} className={quietAction}>
+        <button
+          type="button"
+          onClick={() => {
+            setError("");
+            if (blockedByMe) void toggleBlock();
+            else setIsConfirmingBlock(true);
+          }}
+          disabled={isBusy}
+          className={quietAction}
+        >
           <ProhibitIcon aria-hidden="true" className="h-3.5 w-3.5" />
           {blockedByMe ? "Unblock" : "Block"}
         </button>
@@ -71,10 +75,33 @@ export function ProfileSafetyActions({
           Report
         </button>
       </div>
-      {error ? (
+      {error && !isConfirmingBlock ? (
         <p role="alert" className="text-xs text-rose-300">
           {error}
         </p>
+      ) : null}
+      {isConfirmingBlock ? (
+        <ConfirmDialog
+          title={`Block ${name}?`}
+          description="They won't be told you blocked them."
+          confirmLabel="Block"
+          busyLabel="Blocking..."
+          tone="danger"
+          isBusy={isBusy}
+          error={error}
+          onConfirm={() => void toggleBlock()}
+          onClose={() => {
+            setIsConfirmingBlock(false);
+            setError("");
+          }}
+        >
+          <ul className="grid list-disc gap-1.5 pl-5">
+            <li>If you're connected, the connection ends.</li>
+            <li>Neither of you can send the other requests, messages or comments.</li>
+            <li>You won't see each other in suggestions or search.</li>
+          </ul>
+          <p className="mt-3 text-white/50">You can unblock them from their profile at any time.</p>
+        </ConfirmDialog>
       ) : null}
       {isReporting ? (
         <ReportDialog targetType="user" targetId={userId} onClose={() => setIsReporting(false)} />

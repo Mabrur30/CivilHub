@@ -9,6 +9,8 @@ import { Notification } from "../models/Notification.model";
 import { Post, type IPost } from "../models/Post.model";
 import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
+import { restrictedUserIds } from "../utils/accountStatus";
+import { blockedUserIds, isBlockedEitherWay } from "../utils/blocks";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
 import { isProviderRole } from "../utils/roles";
 
@@ -274,11 +276,20 @@ const toFeedPost = (
   photoByUserId: Map<string, string>,
   ratingByUserId: Map<string, { rating: number; reviewCount: number }>,
   commentCount = 0,
+  /** People blocked either way: a repost of theirs shows as unavailable. */
+  hiddenAuthorIds: Set<string> = new Set(),
 ): FeedPostResponse => {
   const author = post.author as unknown as PopulatedUser;
   const populatedOriginal = post.originalPost as unknown as IPost | null;
-  // An original whose author account is gone is shown as removed too.
-  const original = populatedOriginal?.author ? populatedOriginal : null;
+  // An original whose author account is gone, or who is blocked either way,
+  // is shown as removed too.
+  const original =
+    populatedOriginal?.author &&
+    !hiddenAuthorIds.has(
+      normalizeUserId(populatedOriginal.author as unknown as PopulatedUser),
+    )
+      ? populatedOriginal
+      : null;
   const originalRemoved =
     Boolean(post.originalRemoved) || Boolean(populatedOriginal && !original);
 
@@ -390,7 +401,12 @@ export const getFeed = async (
       Math.max(1, Number.parseInt(query.limit ?? "10", 10) || 10),
     );
 
-    const allowedAuthorIds = await getAcceptedConnectionUserIds(userId);
+    const [connectedIds, restricted] = await Promise.all([
+      getAcceptedConnectionUserIds(userId),
+      restrictedUserIds(),
+    ]);
+    // Suspended and banned accounts drop out of everyone's feed.
+    const allowedAuthorIds = connectedIds.filter((id) => !restricted.has(id));
     const objectIds = allowedAuthorIds.map((id) => new Types.ObjectId(id));
     const cursorFilter = beforeCursor(query.before);
 
@@ -436,7 +452,12 @@ export const getFeed = async (
       Array.from(photoOwnerIds),
     );
 
-    const commentCounts = await getCommentCounts(posts);
+    const [commentCounts, hidden] = await Promise.all([
+      getCommentCounts(posts),
+      blockedUserIds(userId),
+    ]);
+    // Reposts of a restricted account's post show as unavailable too.
+    restricted.forEach((id) => hidden.add(id));
     const response: FeedResponse = {
       posts: posts.map((post) =>
         toFeedPost(
@@ -445,6 +466,7 @@ export const getFeed = async (
           photoByUserId,
           ratingByUserId,
           commentCounts.get(post._id.toString()) ?? 0,
+          hidden,
         ),
       ),
       page,
@@ -549,6 +571,11 @@ export const getUserPosts = async (
     if (!userId || !Types.ObjectId.isValid(userId)) {
       throw createPostError("User not found", 404);
     }
+    // Blocks work both ways: neither side sees the other's posts.
+    if (viewerUserId !== userId && (await isBlockedEitherWay(viewerUserId, userId))) {
+      res.json({ posts: [], page, limit, total: 0 });
+      return;
+    }
 
     const [posts, total] = await Promise.all([
       Post.find({ author: userId })
@@ -581,7 +608,10 @@ export const getUserPosts = async (
     const ratingByUserId = await getEngineerRatingMapByUserIds(
       Array.from(photoOwnerIds),
     );
-    const commentCounts = await getCommentCounts(posts);
+    const [commentCounts, hidden] = await Promise.all([
+      getCommentCounts(posts),
+      blockedUserIds(viewerUserId),
+    ]);
     res.json({
       posts: posts.map((post) =>
         toFeedPost(
@@ -590,6 +620,7 @@ export const getUserPosts = async (
           photoByUserId,
           ratingByUserId,
           commentCounts.get(post._id.toString()) ?? 0,
+          hidden,
         ),
       ),
       page,
@@ -674,22 +705,27 @@ export const deletePost = async (
       throw createPostError("Only the author can delete this post", 403);
     }
 
-    await post.deleteOne();
-    await Promise.all([
-      Comment.deleteMany({ post: post._id }).exec(),
-      // Reposts stay, marked so the feed can say the original was removed.
-      Post.updateMany(
-        { originalPost: post._id },
-        { $set: { originalRemoved: true }, $unset: { originalPost: 1 } },
-      ).exec(),
-    ]);
-    // Last, so a failed delete never leaves a live post with a missing image.
-    if (post.imagePublicId) {
-      await deleteCloudinaryImage(post.imagePublicId).catch(() => undefined);
-    }
+    await removePost(post);
     res.status(200).json({ success: true });
   } catch (error: unknown) {
     next(error);
+  }
+};
+
+/** Deletes a post with its comments and image. Used by authors and admins. */
+export const removePost = async (post: IPost): Promise<void> => {
+  await post.deleteOne();
+  await Promise.all([
+    Comment.deleteMany({ post: post._id }).exec(),
+    // Reposts stay, marked so the feed can say the original was removed.
+    Post.updateMany(
+      { originalPost: post._id },
+      { $set: { originalRemoved: true }, $unset: { originalPost: 1 } },
+    ).exec(),
+  ]);
+  // Last, so a failed delete never leaves a live post with a missing image.
+  if (post.imagePublicId) {
+    await deleteCloudinaryImage(post.imagePublicId).catch(() => undefined);
   }
 };
 
@@ -713,6 +749,11 @@ export const getPost = async (
       })
       .exec();
     if (!post || !hasLiveAuthor(post)) throw createPostError("Post not found", 404);
+    const hidden = await blockedUserIds(viewerUserId);
+    // Across a block the post simply isn't there.
+    if (hidden.has(normalizeUserId(post.author as unknown as PopulatedUser))) {
+      throw createPostError("Post not found", 404);
+    }
 
     const ownerIds = [normalizeUserId(post.author as unknown as PopulatedUser)];
     const shared = post.originalPost as unknown as IPost | null;
@@ -726,7 +767,7 @@ export const getPost = async (
     ]);
     res
       .status(200)
-      .json(toFeedPost(post, viewerUserId, photoByUserId, ratingByUserId, commentCount));
+      .json(toFeedPost(post, viewerUserId, photoByUserId, ratingByUserId, commentCount, hidden));
   } catch (error: unknown) {
     next(error);
   }

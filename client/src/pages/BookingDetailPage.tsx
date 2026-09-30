@@ -15,6 +15,7 @@ import {
   createEquipmentReview,
   confirmEquipmentPickup,
   confirmEquipmentReturn,
+  disputeEquipmentDeposit,
   fetchBookingReviewEligibility,
   fetchEquipmentBookingById,
   resolveEquipmentDeposit,
@@ -23,6 +24,7 @@ import {
   type EquipmentMyBooking,
 } from "./equipment.api";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { ConfirmDialog } from "../components/dashboard/ui/ConfirmDialog";
 import { formatCurrency } from "../lib/format";
 import { moneyValue } from "../lib/money";
 import { startCheckout } from "../lib/payments";
@@ -56,6 +58,20 @@ const formatDateTime = (value: string | null): string => {
   if (Number.isNaN(date.getTime())) return "Not recorded yet";
   return date.toLocaleString();
 };
+
+const formatDay = (value: string | null | undefined): string =>
+  value
+    ? new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "";
+
+const isFuture = (value: string | null | undefined): boolean =>
+  Boolean(value) && new Date(value as string).getTime() > Date.now();
+
+const DISPUTE_DECISION_TEXT = {
+  upheld: "CivilHub upheld the owner’s claim.",
+  reduced: "CivilHub reduced the owner’s claim.",
+  rejected: "CivilHub rejected the owner’s claim, so the whole deposit goes back to the renter.",
+} as const;
 
 const formatDateRange = (startDate: string, endDate: string): string => {
   const start = new Date(startDate);
@@ -123,6 +139,9 @@ export function BookingDetailPage(): ReactElement {
     notes: "",
     photos: [],
   });
+  const [disputeReason, setDisputeReason] = useState<string>("");
+  const [isConfirmingDispute, setIsConfirmingDispute] = useState<boolean>(false);
+  const [disputeError, setDisputeError] = useState<string>("");
   const [depositDraft, setDepositDraft] = useState<DepositDraft>({
     resolution: "released",
     claimNotes: "",
@@ -262,6 +281,11 @@ export function BookingDetailPage(): ReactElement {
     );
   };
 
+  const dispute = booking.depositDispute ?? null;
+  // A fresh claim the renter can still dispute; the claimed money is on hold.
+  const claimWindowOpen =
+    booking.depositResolution === "claimed" && !dispute && isFuture(booking.disputeDeadline);
+
   const timeline: TimelineItem[] = [
     {
       key: "requested",
@@ -364,24 +388,60 @@ export function BookingDetailPage(): ReactElement {
       key: "deposit",
       title: "Deposit Resolved",
       state:
-        booking.depositResolution === "released" ||
-        booking.depositResolution === "claimed"
-          ? "complete"
-          : booking.status === "completed"
-            ? "current"
-            : "upcoming",
+        dispute?.status === "open" || claimWindowOpen
+          ? "current"
+          : booking.depositResolution === "released" ||
+              booking.depositResolution === "claimed"
+            ? "complete"
+            : booking.status === "completed"
+              ? "current"
+              : "upcoming",
       subtitle:
-        booking.depositResolution === "released"
-          ? "Security deposit released"
-          : booking.depositResolution === "claimed"
-            ? `Claimed ${formatCurrency(booking.depositClaimAmount ?? 0)}`
-            : "Pending owner decision",
+        dispute?.status === "open"
+          ? `Claim of ${formatCurrency(booking.depositClaimAmount ?? 0)} disputed; CivilHub is reviewing it`
+          : booking.depositResolution === "released"
+            ? "Security deposit released"
+            : booking.depositResolution === "claimed"
+              ? `Claimed ${formatCurrency(booking.depositClaimAmount ?? 0)}`
+              : booking.autoReleaseAt && booking.status === "completed"
+                ? `Pending owner decision; released to the renter on ${formatDay(booking.autoReleaseAt)} if not settled`
+                : "Pending owner decision",
       details:
-        booking.depositResolution === "claimed" ? (
-          <p className="mt-2 text-xs text-white/65">
-            {booking.depositClaimNotes ||
-              "Damage claim details were not provided."}
-          </p>
+        booking.depositResolution === "claimed" || dispute ? (
+          <div className="mt-2 space-y-2 text-xs text-white/65">
+            <p>
+              {booking.depositClaimNotes ||
+                (dispute ? "The owner’s claim was withdrawn." : "Damage claim details were not provided.")}
+            </p>
+            {claimWindowOpen ? (
+              <p className="text-white/80">
+                {viewerRole === "renter"
+                  ? `You can dispute this claim until ${formatDay(booking.disputeDeadline)}.`
+                  : `The renter can dispute this claim until ${formatDay(booking.disputeDeadline)}.`}
+              </p>
+            ) : null}
+            {dispute ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="font-semibold text-white/80">
+                  {viewerRole === "renter" ? "Your dispute" : "The renter’s dispute"}
+                </p>
+                <p className="mt-1">{dispute.reason}</p>
+                {dispute.status === "decided" && dispute.decision ? (
+                  <p className="mt-2 text-white/80">
+                    {DISPUTE_DECISION_TEXT[dispute.decision]}
+                    {dispute.decision === "reduced"
+                      ? ` It went from ${formatCurrency(dispute.originalClaimAmount)} to ${formatCurrency(booking.depositClaimAmount ?? 0)}.`
+                      : ""}
+                    {dispute.decisionNote ? ` ${dispute.decisionNote}` : ""}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-white/80">
+                    CivilHub is reviewing this and will let you both know. The claimed amount is on hold until then.
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
         ) : undefined,
     },
   ];
@@ -400,6 +460,8 @@ export function BookingDetailPage(): ReactElement {
     viewerRole === "owner" &&
     booking.status === "completed" &&
     booking.depositResolution === "pending";
+  const canDisputeDeposit =
+    viewerRole === "renter" && claimWindowOpen && !dispute;
 
   // Opens SSLCommerz; the page only stays here if the checkout couldn't open.
   const submitPay = async (): Promise<void> => {
@@ -475,6 +537,23 @@ export function BookingDetailPage(): ReactElement {
         actionError instanceof Error
           ? actionError.message
           : "Unable to resolve deposit.",
+      );
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
+
+  const submitDispute = async (): Promise<void> => {
+    setIsSubmittingAction(true);
+    setDisputeError("");
+    try {
+      await disputeEquipmentDeposit(booking.id, disputeReason.trim());
+      setIsConfirmingDispute(false);
+      setDisputeReason("");
+      await loadBooking();
+    } catch (actionError: unknown) {
+      setDisputeError(
+        actionError instanceof Error ? actionError.message : "Unable to send your dispute.",
       );
     } finally {
       setIsSubmittingAction(false);
@@ -868,7 +947,11 @@ export function BookingDetailPage(): ReactElement {
                 Resolve Deposit
               </h2>
               <p className="mt-2 text-sm text-white/70">
-                Choose whether to release the deposit or claim damages.
+                Release the deposit, or claim part of it for damage. The renter
+                can dispute a claim within 3 days, and CivilHub then decides it.
+                {booking.autoReleaseAt
+                  ? ` If you don’t decide by ${formatDay(booking.autoReleaseAt)}, the deposit is released to the renter in full.`
+                  : ""}
               </p>
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -944,6 +1027,70 @@ export function BookingDetailPage(): ReactElement {
                 {isSubmittingAction ? "Submitting..." : "Submit Decision"}
               </button>
             </section>
+          ) : null}
+
+          {canDisputeDeposit ? (
+            <section className="rounded-2xl border border-white/10 bg-surface p-5">
+              <h2 className="font-heading text-xl font-bold text-white">
+                Dispute the deposit claim
+              </h2>
+              <p className="mt-2 text-sm text-white/70">
+                The owner claimed {formatCurrency(booking.depositClaimAmount ?? 0)} of your{" "}
+                {formatCurrency(booking.securityDeposit)} deposit. If you disagree, tell CivilHub why
+                by {formatDay(booking.disputeDeadline)}. CivilHub looks at the pickup and return notes
+                and photos, then decides.
+              </p>
+              <label htmlFor="deposit-dispute-reason" className="mt-3 block text-sm font-semibold text-white/80">
+                Why you disagree
+              </label>
+              <textarea
+                id="deposit-dispute-reason"
+                rows={3}
+                maxLength={2000}
+                value={disputeReason}
+                onChange={(event) => {
+                  setDisputeReason(event.target.value);
+                  setDisputeError("");
+                }}
+                placeholder="For example: the dent was already there at pickup, as my pickup photos show."
+                className="mt-1.5 w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
+              />
+              {disputeError && !isConfirmingDispute ? (
+                <p role="alert" className="mt-2 text-sm text-rose-300">
+                  {disputeError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  if (disputeReason.trim().length < 10) {
+                    setDisputeError("Tell CivilHub why you disagree, in a sentence or two.");
+                    return;
+                  }
+                  setIsConfirmingDispute(true);
+                }}
+                disabled={isSubmittingAction}
+                className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
+              >
+                Dispute this claim
+              </button>
+            </section>
+          ) : null}
+
+          {isConfirmingDispute ? (
+            <ConfirmDialog
+              title="Send your dispute to CivilHub?"
+              description="You can only dispute this claim once. The owner will be told, and the claimed amount stays on hold until CivilHub decides."
+              confirmLabel="Send dispute"
+              busyLabel="Sending..."
+              isBusy={isSubmittingAction}
+              error={disputeError}
+              onConfirm={() => void submitDispute()}
+              onClose={() => {
+                setIsConfirmingDispute(false);
+                setDisputeError("");
+              }}
+            />
           ) : null}
 
           {viewerRole === "owner" &&

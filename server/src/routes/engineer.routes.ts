@@ -9,7 +9,9 @@ import {
   deletePortfolioItem,
   getMyEngineerProfile,
   searchEngineers,
+  updateCertificate,
   updateMyEngineerProfile,
+  updatePortfolioItem,
   type UpdateEngineerProfileBody,
   uploadCertificate,
   uploadPortfolioItem,
@@ -71,6 +73,11 @@ engineerRouter.delete(
   protect,
   (req, res, next) => deleteCertificate(req as AuthenticatedRequest, res, next),
 );
+engineerRouter.patch(
+  "/me/certificates/:certificateId",
+  protect,
+  (req, res, next) => updateCertificate(req as AuthenticatedRequest<{ title?: unknown }>, res, next),
+);
 engineerRouter.post(
   "/me/portfolio",
   protect,
@@ -88,6 +95,16 @@ engineerRouter.delete(
   protect,
   (req: Request, res: Response, next: NextFunction) =>
     deletePortfolioItem(req as AuthenticatedRequest, res, next),
+);
+engineerRouter.patch(
+  "/me/portfolio/:portfolioItemId",
+  protect,
+  (req: Request, res: Response, next: NextFunction) =>
+    updatePortfolioItem(
+      req as AuthenticatedRequest<{ title?: unknown; description?: unknown }>,
+      res,
+      next,
+    ),
 );
 
 export default engineerRouter;

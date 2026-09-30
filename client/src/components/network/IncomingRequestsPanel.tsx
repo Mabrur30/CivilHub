@@ -59,21 +59,21 @@ export function IncomingRequestsPanel({
                   key={request.id}
                   className="rounded-xl border border-white/10 bg-void/45 p-3"
                 >
-                  <div className="flex items-center gap-3">
+                  <Link to={`/profile/${request.userId}`} className="group flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow">
                     <Avatar
                       name={request.name}
                       photoUrl={request.profilePhotoUrl}
                       size="sm"
                     />
-                    <div>
-                      <p className="text-sm font-semibold text-white">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white transition-colors duration-200 group-hover:text-primary">
                         {request.name}
                       </p>
                       <p className="text-[11px] capitalize text-white/45">
                         {request.role}
                       </p>
                     </div>
-                  </div>
+                  </Link>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"

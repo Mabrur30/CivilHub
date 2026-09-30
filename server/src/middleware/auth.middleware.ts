@@ -1,6 +1,7 @@
 import { type NextFunction, type Request, type Response } from "express";
 import jwt from "jsonwebtoken";
 import { type UserRole } from "../models/User.model";
+import { getAccountStanding, restrictionMessage } from "../utils/accountStatus";
 
 export interface AuthenticatedUser {
   userId: string;
@@ -48,11 +49,11 @@ const isVerifiedJwtPayload = (
   typeof payload.userId === "string" &&
   isUserRole(payload.role);
 
-export const protect = (
+export const protect = async (
   req: Request,
   _res: Response,
   next: NextFunction,
-): void => {
+): Promise<void> => {
   try {
     const token = req.cookies?.civilhub_token;
     const secret = process.env.JWT_SECRET;
@@ -75,6 +76,17 @@ export const protect = (
 
     if (!isVerifiedJwtPayload(decoded)) {
       throw createAuthError("Invalid authentication token");
+    }
+
+    // A 7-day token outlives a suspension, so the account is checked each time.
+    const standing = await getAccountStanding(decoded.userId);
+    if (!standing) {
+      throw createAuthError("Your session has expired. Please sign in again.");
+    }
+    if (standing.status !== "active") {
+      const error = createAuthError(restrictionMessage(standing));
+      error.statusCode = 403;
+      throw error;
     }
 
     req.user = {

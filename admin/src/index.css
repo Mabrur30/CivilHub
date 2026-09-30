@@ -1,0 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+/* The same brand tokens as the main site (client/src/index.css): charcoal and
+   safety orange, Barlow Semi Condensed headings. Written dark-first; light
+   mode swaps the variables, so `text-white/60` becomes 60% charcoal. */
+@theme {
+  --color-void: #121110;
+  --color-surface: #1c1a17;
+  --color-primary: #f26a1b;
+  --color-glow: #ff8534;
+  --color-muted: #3a2314;
+  --color-on-primary: #121110;
+  --font-heading: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --color-void: #f2f0eb;
+  --color-surface: #fbfaf7;
+  --color-white: #1c1a17;
+  --color-primary: #c2410c;
+  --color-glow: #9a3412;
+  --color-muted: #f6dcc8;
+  --color-on-primary: #ffffff;
+  --color-amber-200: oklch(76.9% 0.188 70.08);
+  --color-amber-300: oklch(76.9% 0.188 70.08);
+  --color-emerald-300: oklch(50.8% 0.118 165.612);
+  --color-rose-200: oklch(51.4% 0.222 16.935);
+  --color-rose-300: oklch(51.4% 0.222 16.935);
+  --color-rose-400: oklch(58.6% 0.253 17.585);
+  --color-sky-300: oklch(50% 0.134 242.749);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-void: #121110;
+  --color-surface: #1c1a17;
+  --color-white: #ffffff;
+  --color-primary: #f26a1b;
+  --color-glow: #ff8534;
+  --color-muted: #3a2314;
+  --color-on-primary: #121110;
+}
+
+:root {
+  font-family: var(--font-body);
+  color: var(--color-white);
+  background-color: var(--color-void);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--color-void);
+}
+
+.form-input {
+  width: 100%;
+  border: 1px solid color-mix(in oklab, var(--color-white) 15%, transparent);
+  border-radius: 0.75rem;
+  background: var(--color-void);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--color-white);
+  outline: none;
+}
+
+.form-input::placeholder {
+  color: color-mix(in oklab, var(--color-white) 40%, transparent);
+}
+
+.form-input:focus {
+  border-color: var(--color-primary);
+}

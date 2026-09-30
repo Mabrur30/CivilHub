@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from "react";
+import { type ReactElement, useEffect, useState } from "react";
 import { useAuth } from "../../../context/AuthContext";
 import { SpecialityChooser } from "./SpecialityChooser";
 import {
@@ -13,16 +13,27 @@ export function DisciplinePicker({
   disciplines,
   isOwner,
   onSaved,
+  openSignal = 0,
 }: {
   disciplines: string[];
   isOwner: boolean;
   onSaved: () => void;
+  /** Bump to open the editor from elsewhere, such as the profile checklist. */
+  openSignal?: number;
 }): ReactElement | null {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [draft, setDraft] = useState<string[]>(disciplines);
   const [error, setError] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const { refetchUser } = useAuth();
+
+  useEffect(() => {
+    if (openSignal === 0 || !isOwner) return;
+    setDraft(disciplines);
+    setIsEditing(true);
+    // Only a new signal opens it, not a change to the saved list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal]);
 
   if (!isEditing) {
     if (disciplines.length === 0 && !isOwner) return null;

@@ -12,6 +12,12 @@ export type NotificationType =
   | "equipment_return_confirmed"
   | "equipment_deposit_released"
   | "equipment_deposit_claimed"
+  /** The renter disputed the owner's deposit claim. */
+  | "equipment_deposit_disputed"
+  /** A CivilHub admin decided a deposit dispute. */
+  | "equipment_deposit_decided"
+  /** The owner hasn't settled a deposit that will soon release itself. */
+  | "equipment_deposit_reminder"
   | "connection_accepted"
   | "connection_request"
   | "new_message"
@@ -30,7 +36,13 @@ export type NotificationType =
   | "post_reposted"
   | "payment_refund_due"
   | "project_completed"
-  | "customer_review_received";
+  | "customer_review_received"
+  /** From the CivilHub team: content removed, account reinstated. */
+  | "moderation_notice"
+  /** CivilHub sent a payee what they'd earned. */
+  | "payout_sent"
+  /** CivilHub refunded a payer. */
+  | "refund_issued";
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -72,6 +84,9 @@ const notificationSchema = new Schema<INotification>(
         "equipment_return_confirmed",
         "equipment_deposit_released",
         "equipment_deposit_claimed",
+        "equipment_deposit_disputed",
+        "equipment_deposit_decided",
+        "equipment_deposit_reminder",
         "connection_accepted",
         "connection_request",
         "new_message",
@@ -91,6 +106,9 @@ const notificationSchema = new Schema<INotification>(
         "payment_refund_due",
         "project_completed",
         "customer_review_received",
+        "moderation_notice",
+        "payout_sent",
+        "refund_issued",
       ],
       required: true,
     },

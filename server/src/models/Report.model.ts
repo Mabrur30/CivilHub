@@ -14,16 +14,26 @@ export const REPORT_REASONS = [
 export type ReportReason = (typeof REPORT_REASONS)[number];
 
 /**
- * Something a user flagged for review. Kept for the admin dashboard (a later
- * step); until then reports are only stored.
+ * open: waiting for an admin.
+ * dismissed: an admin found nothing wrong.
+ * actioned: an admin removed the content or restricted the account.
+ * reviewed: from before the admin dashboard; treated like dismissed.
  */
+export type ReportStatus = "open" | "dismissed" | "actioned" | "reviewed";
+export const REPORT_STATUSES: ReportStatus[] = ["open", "dismissed", "actioned", "reviewed"];
+
+/** Something a user flagged for the CivilHub team to review. */
 export interface IReport extends Document {
   reporter: Types.ObjectId;
   targetType: ReportTarget;
   targetId: Types.ObjectId;
   reason: ReportReason;
   note?: string;
-  status: "open" | "reviewed";
+  status: ReportStatus;
+  reviewedBy?: Types.ObjectId;
+  reviewedAt?: Date;
+  /** What the admin did, e.g. "Removed the post" or "Nothing against the rules". */
+  resolution?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,7 +45,10 @@ const reportSchema = new Schema<IReport>(
     targetId: { type: Schema.Types.ObjectId, required: true, index: true },
     reason: { type: String, enum: REPORT_REASONS, required: true },
     note: { type: String, trim: true, maxlength: 500 },
-    status: { type: String, enum: ["open", "reviewed"], default: "open", index: true },
+    status: { type: String, enum: REPORT_STATUSES, default: "open", index: true },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: "Admin" },
+    reviewedAt: { type: Date },
+    resolution: { type: String, trim: true, maxlength: 500 },
   },
   { timestamps: true },
 );

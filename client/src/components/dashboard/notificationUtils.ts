@@ -13,6 +13,9 @@ export type NotificationType =
   | "equipment_return_confirmed"
   | "equipment_deposit_released"
   | "equipment_deposit_claimed"
+  | "equipment_deposit_disputed"
+  | "equipment_deposit_decided"
+  | "equipment_deposit_reminder"
   | "connection_accepted"
   | "connection_request"
   | "new_message"
@@ -31,7 +34,13 @@ export type NotificationType =
   | "post_reposted"
   | "payment_refund_due"
   | "project_completed"
-  | "customer_review_received";
+  | "customer_review_received"
+  /** From the CivilHub team: content removed, account reinstated. */
+  | "moderation_notice"
+  /** CivilHub sent a payee what they'd earned. */
+  | "payout_sent"
+  /** CivilHub refunded a payer. */
+  | "refund_issued";
 export interface NotificationListItem {
   id: string;
   type: NotificationType;
@@ -69,6 +78,9 @@ const notificationTypes: NotificationType[] = [
   "equipment_return_confirmed",
   "equipment_deposit_released",
   "equipment_deposit_claimed",
+  "equipment_deposit_disputed",
+  "equipment_deposit_decided",
+  "equipment_deposit_reminder",
   "connection_accepted",
   "connection_request",
   "new_message",
@@ -88,6 +100,9 @@ const notificationTypes: NotificationType[] = [
   "payment_refund_due",
   "project_completed",
   "customer_review_received",
+  "moderation_notice",
+  "payout_sent",
+  "refund_issued",
 ];
 
 export const isNotificationType = (value: unknown): value is NotificationType =>
@@ -166,6 +181,9 @@ export const mapNotificationTypeToActivityType = (
     type === "equipment_return_confirmed" ||
     type === "equipment_deposit_released" ||
     type === "equipment_deposit_claimed" ||
+    type === "equipment_deposit_disputed" ||
+    type === "equipment_deposit_decided" ||
+    type === "equipment_deposit_reminder" ||
     type === "project_phase_updated" ||
     type === "phase_plan_submitted" ||
     type === "phase_plan_approved" ||
@@ -212,6 +230,7 @@ export const getNotificationTargetPath = (
   if (
     notification.type.startsWith("equipment_") ||
     ((notification.type === "payment_refund_due" ||
+      notification.type === "refund_issued" ||
       notification.type === "customer_review_received") &&
       notification.equipmentBookingId)
   ) {
@@ -245,6 +264,11 @@ export const getNotificationTargetPath = (
     notification.projectId
   ) {
     return `${dashboardBase(role)}/projects/${notification.projectId}`;
+  }
+
+  // Payouts are listed with the payout account, under Settings.
+  if (notification.type === "payout_sent") {
+    return "/settings";
   }
 
   if (

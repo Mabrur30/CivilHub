@@ -2,6 +2,8 @@ import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
+import { restrictedUserIds } from "../utils/accountStatus";
+import { blockedUserIds } from "../utils/blocks";
 import { onlyDisciplines } from "../utils/disciplines";
 import {
   DISCIPLINE_LIMIT,
@@ -15,7 +17,6 @@ import {
 import { Organisation } from "../models/Organisation.model";
 import { Project } from "../models/Project.model";
 import { Review } from "../models/Review.model";
-import { Bid } from "../models/Bid.model";
 
 interface EngineerError extends Error {
   statusCode: number;
@@ -80,6 +81,8 @@ interface SearchEngineersAggregationRow {
   specialties?: string[];
   teamSize?: string;
   yearFounded?: number;
+  startingRateMin?: number | null;
+  startingRateMax?: number | null;
 }
 
 interface SearchResultView {
@@ -93,7 +96,7 @@ interface SearchResultView {
   specialty: string | null;
   rating: number | null;
   reviewCount: number;
-  typicalRate: number | null;
+  /** The starting rate the engineer states, never amounts from won bids. */
   rateMin: number | null;
   rateMax: number | null;
   /** Certificates the engineer uploaded. Nobody has checked them yet. */
@@ -607,6 +610,8 @@ export const searchEngineers = async (
                 },
                 profileLocation: "$location",
                 specialties: { $ifNull: ["$disciplines", []] },
+                startingRateMin: { $ifNull: ["$startingRateMin", null] },
+                startingRateMax: { $ifNull: ["$startingRateMax", null] },
               },
             },
           ]).exec();
@@ -650,9 +655,17 @@ export const searchEngineers = async (
             },
           ]).exec();
 
-    const rows = [...engineerRows, ...companyRows].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    // Blocks work both ways, so neither side finds the other in search.
+    // Suspended and banned accounts are left out for everyone.
+    const [hidden, restricted] = await Promise.all([
+      blockedUserIds(req.user.userId),
+      restrictedUserIds(),
+    ]);
+    restricted.forEach((id) => hidden.add(id));
+    hidden.add(req.user.userId);
+    const rows = [...engineerRows, ...companyRows]
+      .filter((row) => !hidden.has(row.userId))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const engineerIds = rows.map((row) => row.userId);
     if (engineerIds.length === 0) {
@@ -669,7 +682,7 @@ export const searchEngineers = async (
       return;
     }
 
-    const [reviewStats, acceptedBidStats, projectRows] = await Promise.all([
+    const [reviewStats, projectRows] = await Promise.all([
       Review.aggregate<{
         _id: string;
         averageRating: number;
@@ -689,27 +702,6 @@ export const searchEngineers = async (
           },
         },
       ]).exec(),
-      Bid.aggregate<{
-        _id: string;
-        minRate: number;
-        maxRate: number;
-        averageRate: number;
-      }>([
-        {
-          $match: {
-            engineer: { $in: engineerObjectIds },
-            status: "accepted",
-          },
-        },
-        {
-          $group: {
-            _id: "$engineer",
-            minRate: { $min: "$amount" },
-            maxRate: { $max: "$amount" },
-            averageRate: { $avg: "$amount" },
-          },
-        },
-      ]).exec(),
       Project.find({
         assignedEngineer: { $in: engineerObjectIds },
       })
@@ -724,17 +716,6 @@ export const searchEngineers = async (
         {
           rating: Math.round(row.averageRating * 10) / 10,
           reviewCount: row.reviewCount,
-        },
-      ]),
-    );
-
-    const rateByEngineer = new Map(
-      acceptedBidStats.map((row) => [
-        row._id.toString(),
-        {
-          minRate: row.minRate,
-          maxRate: row.maxRate,
-          averageRate: Math.round(row.averageRate),
         },
       ]),
     );
@@ -791,11 +772,6 @@ export const searchEngineers = async (
           rating: null,
           reviewCount: 0,
         };
-        const rateStatsForEngineer = rateByEngineer.get(row.userId) ?? {
-          minRate: null,
-          maxRate: null,
-          averageRate: null,
-        };
         const projectFacets = projectFacetsByEngineer.get(row.userId) ?? {
           categories: [],
           locations: [],
@@ -822,9 +798,8 @@ export const searchEngineers = async (
           specialty,
           rating: reviewStatsForEngineer.rating,
           reviewCount: reviewStatsForEngineer.reviewCount,
-          typicalRate: rateStatsForEngineer.averageRate,
-          rateMin: rateStatsForEngineer.minRate,
-          rateMax: rateStatsForEngineer.maxRate,
+          rateMin: row.startingRateMin ?? null,
+          rateMax: row.startingRateMax ?? null,
           certificateCount: row.certificatesCount,
           tags,
           categories: projectFacets.categories,
@@ -851,16 +826,14 @@ export const searchEngineers = async (
           }
         }
 
-        if (!Number.isNaN(minRate)) {
-          if (engineer.typicalRate === null || engineer.typicalRate < minRate) {
-            return false;
-          }
-        }
-
-        if (!Number.isNaN(maxRate)) {
-          if (engineer.typicalRate === null || engineer.typicalRate > maxRate) {
-            return false;
-          }
+        // Rate filters match the stated range: keep anyone whose range
+        // overlaps the one asked for, and leave out anyone with no rate.
+        if (!Number.isNaN(minRate) || !Number.isNaN(maxRate)) {
+          const low = engineer.rateMin ?? engineer.rateMax;
+          const high = engineer.rateMax ?? engineer.rateMin;
+          if (low === null || high === null) return false;
+          if (!Number.isNaN(minRate) && high < minRate) return false;
+          if (!Number.isNaN(maxRate) && low > maxRate) return false;
         }
 
         return true;
@@ -1027,6 +1000,52 @@ export const deletePortfolioItem = async (
 
     await deleteCloudinaryAsset(item.publicId, item.resourceType);
     item.deleteOne();
+    await engineer.save();
+    res.status(200).json({ portfolio: engineer.portfolio });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+// Editing keeps the uploaded file; to change the file, delete and add again.
+const requireEditText = (value: unknown, label: string, maxLength: number): string => {
+  const text = normalizeOptionalText(value, label, maxLength);
+  if (!text) throw createEngineerError(`${label} is required`, 400);
+  return text;
+};
+
+export const updateCertificate = async (
+  req: AuthenticatedRequest<{ title?: unknown }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const engineer = await requireEngineer(req);
+    const certificate = engineer.certificates.id(getParams(req).certificateId ?? "");
+    if (!certificate) {
+      throw createEngineerError("Certificate not found", 404);
+    }
+    certificate.title = requireEditText(req.body.title, "Certificate title", 160);
+    await engineer.save();
+    res.status(200).json({ certificates: engineer.certificates });
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const updatePortfolioItem = async (
+  req: AuthenticatedRequest<{ title?: unknown; description?: unknown }>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const engineer = await requireEngineer(req);
+    const item = engineer.portfolio.id(getParams(req).portfolioItemId ?? "");
+    if (!item) {
+      throw createEngineerError("Portfolio item not found", 404);
+    }
+    item.title = requireEditText(req.body.title, "Portfolio title", 160);
+    item.description = requireEditText(req.body.description, "Portfolio description", 1000);
     await engineer.save();
     res.status(200).json({ portfolio: engineer.portfolio });
   } catch (error: unknown) {

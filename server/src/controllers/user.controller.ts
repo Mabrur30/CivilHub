@@ -1,7 +1,8 @@
 import { type NextFunction, type Response } from "express";
 import { Types } from "mongoose";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
-import { isBlockedByMe } from "../utils/blocks";
+import { getAccountStanding, isRestricted } from "../utils/accountStatus";
+import { isBlockedByMe, isBlockedEitherWay } from "../utils/blocks";
 import { Connection } from "../models/Connection.model";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
@@ -53,63 +54,9 @@ const toRatingFields = (ratings: ProviderRatings) => ({
   },
 });
 
-const getEngineerRateStats = async (
-  userId: string,
-): Promise<{
-  typicalRate: number | null;
-  rateMin: number | null;
-  rateMax: number | null;
-  acceptedBidCount: number;
-}> => {
-  if (!Types.ObjectId.isValid(userId)) {
-    return {
-      typicalRate: null,
-      rateMin: null,
-      rateMax: null,
-      acceptedBidCount: 0,
-    };
-  }
-
-  const engineerId = new Types.ObjectId(userId);
-  const rows = await Bid.aggregate<{
-    averageRate: number;
-    minRate: number;
-    maxRate: number;
-    acceptedBidCount: number;
-  }>([
-    {
-      $match: {
-        engineer: engineerId,
-        status: "accepted",
-      },
-    },
-    {
-      $group: {
-        _id: "$engineer",
-        averageRate: { $avg: "$amount" },
-        minRate: { $min: "$amount" },
-        maxRate: { $max: "$amount" },
-        acceptedBidCount: { $sum: 1 },
-      },
-    },
-  ]).exec();
-
-  if (!rows[0]) {
-    return {
-      typicalRate: null,
-      rateMin: null,
-      rateMax: null,
-      acceptedBidCount: 0,
-    };
-  }
-
-  return {
-    typicalRate: Math.round(rows[0].averageRate),
-    rateMin: rows[0].minRate,
-    rateMax: rows[0].maxRate,
-    acceptedBidCount: rows[0].acceptedBidCount,
-  };
-};
+// Only how many bids were won: amounts are the client's private deal.
+const getAcceptedBidCount = (userId: string): Promise<number> =>
+  Bid.countDocuments({ engineer: userId, status: "accepted" }).exec();
 
 const getEngineerDerivedLocation = async (
   userId: string,
@@ -164,15 +111,21 @@ interface ConnectionDetails {
   connectionId: string | null;
   /** The viewer has blocked this person; the profile offers Unblock. */
   blockedByMe: boolean;
+  /** Either side blocked the other, so there's nothing to connect or message. */
+  blockedEitherWay: boolean;
 }
 
 const getConnectionDetails = async (
   requester: string,
   target: string,
 ): Promise<ConnectionDetails> => {
-  const blockedByMe = requester !== target && (await isBlockedByMe(requester, target));
-  const details = await getConnectionStatusFor(requester, target);
-  return { ...details, blockedByMe };
+  const isOther = requester !== target;
+  const [blockedByMe, blockedEitherWay, details] = await Promise.all([
+    isOther ? isBlockedByMe(requester, target) : false,
+    isOther ? isBlockedEitherWay(requester, target) : false,
+    getConnectionStatusFor(requester, target),
+  ]);
+  return { ...details, blockedByMe, blockedEitherWay };
 };
 
 const getConnectionStatusFor = async (
@@ -297,6 +250,7 @@ const buildOrganisationPublicProfile = async (
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
     blockedByMe: connection.blockedByMe,
+    blockedEitherWay: connection.blockedEitherWay,
     ...toRatingFields(ratings),
     company: profile,
     completedWork: completedWork.map(toDeliveredProject),
@@ -435,6 +389,7 @@ const buildClientPublicProfile = async (
     connectionStatus: connection.status,
     connectionId: connection.connectionId,
     blockedByMe: connection.blockedByMe,
+    blockedEitherWay: connection.blockedEitherWay,
     connectionsCount,
     rating: customerRating.rating,
     reviewCount: customerRating.reviewCount,
@@ -508,16 +463,19 @@ export const getPublicProfile = async (
     const user = await User.findById(userId)
       .select("name role createdAt")
       .exec();
-    if (!user) throw createUserError("User not found", 404);
+    // Suspended and banned accounts are hidden, the same as a missing one.
+    if (!user || isRestricted(await getAccountStanding(userId))) {
+      throw createUserError("User not found", 404);
+    }
     const connection = await getConnectionDetails(requesterId, userId);
     const connectionsCount = await getConnectionsCount(userId);
 
     if (user.role === "engineer") {
       const engineer = await Engineer.findOne({ user: user._id }).exec();
-      const [ratings, rateStats, derivedLocationStats, completedWork, equipment] =
+      const [ratings, acceptedBidCount, derivedLocationStats, completedWork, equipment] =
         await Promise.all([
           getProviderRatings(user._id.toString()),
-          getEngineerRateStats(user._id.toString()),
+          getAcceptedBidCount(user._id.toString()),
           getEngineerDerivedLocation(user._id.toString()),
           Project.find({ assignedEngineer: user._id, status: "completed" })
             .select("_id title name category location completedAt updatedAt createdAt")
@@ -554,7 +512,8 @@ export const getPublicProfile = async (
           })) ?? [],
         connectionStatus: connection.status,
         connectionId: connection.connectionId,
-    blockedByMe: connection.blockedByMe,
+        blockedByMe: connection.blockedByMe,
+        blockedEitherWay: connection.blockedEitherWay,
         ...toRatingFields(ratings),
         startingRateMin:
           typeof engineer?.startingRateMin === "number"
@@ -584,10 +543,7 @@ export const getPublicProfile = async (
           endYear: typeof entry.endYear === "number" ? entry.endYear : null,
           description: entry.description?.trim() || null,
         })),
-        typicalRate: rateStats.typicalRate,
-        rateMin: rateStats.rateMin,
-        rateMax: rateStats.rateMax,
-        acceptedBidCount: rateStats.acceptedBidCount,
+        acceptedBidCount,
         derivedLocation: derivedLocationStats.derivedLocation,
         completedLocationProjectCount:
           derivedLocationStats.completedProjectCount,

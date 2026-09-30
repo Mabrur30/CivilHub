@@ -3,11 +3,24 @@ import { Document, Model, Schema, model } from "mongoose";
 /** Clients hire; engineers and organisations (companies) provide services. */
 export type UserRole = "client" | "engineer" | "organisation";
 
+/**
+ * Set by an admin. Suspended and banned accounts can't sign in or use the
+ * API, and are hidden from search, suggestions, feeds and profiles.
+ */
+export type AccountStatus = "active" | "suspended" | "banned";
+export const ACCOUNT_STATUSES: AccountStatus[] = ["active", "suspended", "banned"];
+
 export interface IUser extends Document {
   name: string;
   email: string;
   passwordHash: string;
   role: UserRole;
+  /** Missing on accounts made before statuses existed; treat that as active. */
+  status?: AccountStatus;
+  /** When a suspension ends by itself. Not set for bans. */
+  suspendedUntil?: Date | null;
+  /** The admin's reason, shown to the person when they try to sign in. */
+  statusReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +48,14 @@ const userSchema = new Schema<IUser>(
       required: true,
       immutable: true,
     },
+    status: {
+      type: String,
+      enum: ACCOUNT_STATUSES,
+      default: "active",
+      index: true,
+    },
+    suspendedUntil: { type: Date, default: null },
+    statusReason: { type: String, trim: true, maxlength: 500, default: null },
   },
   {
     timestamps: true,

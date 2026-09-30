@@ -175,6 +175,80 @@ export const queryTransaction = async (
     .filter((item): item is GatewayTransaction => item !== null);
 };
 
+export interface GatewayRefundResult {
+  /** success: done. processing: accepted, finishing later. failed: refused. */
+  status: "success" | "processing" | "failed";
+  refundRefId?: string;
+  reason?: string;
+}
+
+const refundStatus = (value: unknown): GatewayRefundResult["status"] => {
+  const text = typeof value === "string" ? value.toLowerCase() : "";
+  if (text === "success" || text === "refunded") return "success";
+  if (text === "processing") return "processing";
+  return "failed";
+};
+
+/**
+ * Asks SSLCommerz to return money to the card or wallet a transaction came
+ * from. `refundTransId` must be unique per refund; it stops a retried
+ * request from refunding twice.
+ */
+export const requestRefund = async (input: {
+  bankTranId: string;
+  refundTransId: string;
+  amount: number;
+  remarks: string;
+}): Promise<GatewayRefundResult> => {
+  const { gatewayBaseUrl } = getPaymentConfig();
+  const query = new URLSearchParams({
+    bank_tran_id: input.bankTranId,
+    refund_trans_id: input.refundTransId,
+    refund_amount: input.amount.toFixed(2),
+    refund_remarks: input.remarks.slice(0, 250),
+    ...credentials(),
+    v: "1",
+    format: "json",
+  });
+  let body: unknown;
+  try {
+    const response = await fetch(
+      `${gatewayBaseUrl}/validator/api/merchantTransIDvalidationAPI.php?${query.toString()}`,
+    );
+    body = await readJson(response);
+  } catch (error: unknown) {
+    if (error instanceof GatewayError) throw error;
+    throw new GatewayError("Couldn't reach SSLCommerz. Check your connection and try again.");
+  }
+  if (!isRecord(body) || body.APIConnect !== "DONE") {
+    const reason = isRecord(body) && typeof body.APIConnect === "string" ? body.APIConnect : "no answer";
+    return { status: "failed", reason: `SSLCommerz couldn't take the request (${reason}).` };
+  }
+  return {
+    status: refundStatus(body.status),
+    refundRefId: typeof body.refund_ref_id === "string" ? body.refund_ref_id : undefined,
+    reason: typeof body.errorReason === "string" && body.errorReason ? body.errorReason : undefined,
+  };
+};
+
+/** Checks on a refund SSLCommerz is still processing. */
+export const queryRefund = async (refundRefId: string): Promise<GatewayRefundResult> => {
+  const { gatewayBaseUrl } = getPaymentConfig();
+  const query = new URLSearchParams({ refund_ref_id: refundRefId, ...credentials(), format: "json" });
+  const response = await fetch(
+    `${gatewayBaseUrl}/validator/api/merchantTransIDvalidationAPI.php?${query.toString()}`,
+  );
+  const body = await readJson(response);
+  if (!isRecord(body) || body.APIConnect !== "DONE") {
+    return { status: "processing", refundRefId };
+  }
+  return {
+    status: refundStatus(body.status),
+    refundRefId,
+    reason: typeof body.errorReason === "string" && body.errorReason ? body.errorReason : undefined,
+  };
+};
+
 const toPaisa = (value: string | number | undefined): number | null => {
   const amount = Number(value);
   return value === undefined || value === "" || !Number.isFinite(amount)

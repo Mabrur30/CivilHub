@@ -8,6 +8,8 @@ import { FormField } from "../components/dashboard/ui/FormField";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { BlockedPeoplePanel } from "../components/safety/BlockedPeoplePanel";
+import { GettingPaidPanel } from "../components/payouts/GettingPaidPanel";
+import { isProviderRole } from "../lib/dashboardPaths";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PASSWORD_MIN = 8;
@@ -277,6 +279,9 @@ export function AccountSettingsPage(): ReactElement {
           />
         </FormField>
       </SettingsPanel>
+
+      {/* Engineers and companies are paid through CivilHub; clients only pay. */}
+      {currentUser && isProviderRole(currentUser.role) ? <GettingPaidPanel /> : null}
 
       <BlockedPeoplePanel />
     </div>

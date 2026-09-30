@@ -25,19 +25,27 @@ import paymentsRouter from "./routes/payments.routes";
 import organisationRouter from "./routes/organisation.routes";
 import geoRouter from "./routes/geo.routes";
 import { blocksRouter, reportsRouter } from "./routes/safety.routes";
+import adminRouter from "./routes/admin.routes";
+import payoutsRouter from "./routes/payouts.routes";
+import { getAdminSecret } from "./middleware/adminAuth.middleware";
 import { authLimiter, socialWriteLimiter } from "./middleware/rateLimit";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
+import { settleDueDepositsQuietly } from "./utils/deposits";
 
 dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
 
+// The main site and the separate admin app both call this API.
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: [
+      process.env.CLIENT_URL || "http://localhost:5173",
+      process.env.ADMIN_URL || "http://localhost:5174",
+    ],
     credentials: true,
   }),
 );
@@ -85,9 +93,20 @@ app.use("/api/organisations", organisationRouter);
 app.use("/api/geo", geoRouter);
 app.use("/api/blocks", blocksRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/payouts", payoutsRouter);
+app.use("/api/admin", adminRouter);
 app.use(errorHandler);
 
+const DEPOSIT_SWEEP_MS = 60 * 60 * 1000;
+
 const startServer = async (): Promise<void> => {
+  // Admin routes can't work without their own secret; say so at start-up
+  // rather than on the first admin sign-in.
+  try {
+    getAdminSecret();
+  } catch (error: unknown) {
+    console.warn(`Admin dashboard disabled: ${(error as Error).message}`);
+  }
   await connectDB();
   // Payments recorded before the gateway had no status; they were all paid.
   await Payment.updateMany(
@@ -99,6 +118,9 @@ const startServer = async (): Promise<void> => {
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });
+  // Remind owners about unsettled deposits and release overdue ones.
+  settleDueDepositsQuietly();
+  setInterval(settleDueDepositsQuietly, DEPOSIT_SWEEP_MS).unref();
 };
 
 startServer().catch((error: unknown) => {

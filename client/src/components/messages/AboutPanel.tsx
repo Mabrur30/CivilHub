@@ -63,9 +63,8 @@ const toAboutData = (body: Json): AboutData => {
       ),
     );
     push(
-      "Typical rate",
-      rateRange(num(body.startingRateMin), num(body.startingRateMax)) ??
-        rateRange(num(body.rateMin), num(body.rateMax)),
+      "Starting rate",
+      rateRange(num(body.startingRateMin), num(body.startingRateMax)),
     );
     const won = num(body.acceptedBidCount);
     push("Bids won", won !== null ? String(won) : null);

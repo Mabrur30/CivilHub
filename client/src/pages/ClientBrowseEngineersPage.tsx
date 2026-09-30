@@ -41,7 +41,7 @@ interface EngineerDirectoryItem {
   specialty: string | null;
   rating: number | null;
   reviewCount: number;
-  typicalRate: number | null;
+  /** The starting rate they state themselves. */
   rateMin: number | null;
   rateMax: number | null;
   /** Certificates the engineer uploaded; clients can open them on the profile. */
@@ -87,7 +87,6 @@ const isDirectoryItem = (value: unknown): value is EngineerDirectoryItem => {
     (typeof item.specialty === "string" || item.specialty === null) &&
     (typeof item.rating === "number" || item.rating === null) &&
     typeof item.reviewCount === "number" &&
-    (typeof item.typicalRate === "number" || item.typicalRate === null) &&
     (typeof item.rateMin === "number" || item.rateMin === null) &&
     (typeof item.rateMax === "number" || item.rateMax === null) &&
     typeof item.certificateCount === "number" &&
@@ -108,12 +107,15 @@ const isDirectoryResponse = (value: unknown): value is DirectoryResponse => {
 };
 
 const formatRate = (engineer: EngineerDirectoryItem): string | null => {
-  if (engineer.rateMin !== null && engineer.rateMax !== null) {
-    return engineer.rateMin === engineer.rateMax
-      ? formatCurrency(engineer.rateMin)
-      : `${formatCurrency(engineer.rateMin)} - ${formatCurrency(engineer.rateMax)}`;
+  const { rateMin, rateMax } = engineer;
+  if (rateMin !== null && rateMax !== null) {
+    return rateMin === rateMax
+      ? formatCurrency(rateMin)
+      : `${formatCurrency(rateMin)} - ${formatCurrency(rateMax)}`;
   }
-  return engineer.typicalRate !== null ? formatCurrency(engineer.typicalRate) : null;
+  if (rateMin !== null) return `From ${formatCurrency(rateMin)}`;
+  if (rateMax !== null) return `Up to ${formatCurrency(rateMax)}`;
+  return null;
 };
 
 const readFilters = (params: URLSearchParams): Filters =>
@@ -211,9 +213,9 @@ function EngineerCard({
 
         <dl className="mt-auto grid gap-3 border-t border-white/10 pt-4 text-sm">
           <div className="flex justify-between gap-4">
-            <dt className="shrink-0 text-white/45">Typical bid</dt>
+            <dt className="shrink-0 text-white/45">Starting rate</dt>
             <dd className="text-right font-semibold tabular-nums text-white/90">
-              {rate ?? <span className="font-normal text-white/50">No accepted bids yet</span>}
+              {rate ?? <span className="font-normal text-white/50">Not stated</span>}
             </dd>
           </div>
           <div className="flex justify-between gap-4">
@@ -479,7 +481,7 @@ export function ClientBrowseEngineersPage(): ReactElement {
           <div className="mt-3 grid gap-3 sm:grid-cols-2 md:max-w-md">
             <div className="grid gap-1.5">
               <label htmlFor="engineer-min-rate" className="text-xs font-semibold text-white/55">
-                Typical bid from
+                Starting rate from
               </label>
               <MoneyInput
                 id="engineer-min-rate"
@@ -489,7 +491,7 @@ export function ClientBrowseEngineersPage(): ReactElement {
             </div>
             <div className="grid gap-1.5">
               <label htmlFor="engineer-max-rate" className="text-xs font-semibold text-white/55">
-                Typical bid up to
+                Starting rate up to
               </label>
               <MoneyInput
                 id="engineer-max-rate"
@@ -508,7 +510,7 @@ export function ClientBrowseEngineersPage(): ReactElement {
             className={`inline-flex items-center gap-1.5 ${quietLinkClassName}`}
           >
             <FunnelSimpleIcon className="h-4 w-4" aria-hidden="true" />
-            {showMore ? "Fewer filters" : "Filter by typical bid"}
+            {showMore ? "Fewer filters" : "Filter by starting rate"}
           </button>
           {hasFilters ? (
             <button type="button" onClick={clearFilters} className={quietLinkClassName}>

@@ -18,6 +18,21 @@ export interface BookingConditionPhoto {
   publicId: string;
 }
 
+export type DepositDisputeDecision = "upheld" | "reduced" | "rejected";
+
+/** A renter's objection to the owner's deposit claim, decided by a CivilHub admin. */
+export interface DepositDispute {
+  status: "open" | "decided";
+  reason: string;
+  openedAt: Date;
+  decision?: DepositDisputeDecision;
+  /** What the owner first claimed, kept when an admin reduces or rejects it. */
+  originalClaimAmount: number;
+  decisionNote?: string;
+  decidedBy?: Types.ObjectId;
+  decidedAt?: Date;
+}
+
 export interface IEquipmentBooking extends Document {
   equipment: Types.ObjectId;
   renter: Types.ObjectId;
@@ -49,6 +64,11 @@ export interface IEquipmentBooking extends Document {
   depositResolution: DepositResolutionStatus;
   depositClaimNotes?: string;
   depositClaimAmount?: number;
+  /** When the owner claimed; the renter can dispute for a few days after. */
+  depositClaimedAt?: Date;
+  /** When the owner was warned the deposit is about to release itself. */
+  depositReminderSentAt?: Date;
+  depositDispute?: DepositDispute;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,6 +77,20 @@ const bookingConditionPhotoSchema = new Schema<BookingConditionPhoto>(
   {
     url: { type: String, required: true },
     publicId: { type: String, required: true },
+  },
+  { _id: false },
+);
+
+const depositDisputeSchema = new Schema<DepositDispute>(
+  {
+    status: { type: String, enum: ["open", "decided"], required: true },
+    reason: { type: String, trim: true, maxlength: 2000, required: true },
+    openedAt: { type: Date, required: true },
+    decision: { type: String, enum: ["upheld", "reduced", "rejected"], required: false },
+    originalClaimAmount: { type: Number, min: 0, required: true },
+    decisionNote: { type: String, trim: true, maxlength: 2000, required: false },
+    decidedBy: { type: Schema.Types.ObjectId, ref: "Admin", required: false },
+    decidedAt: { type: Date, required: false },
   },
   { _id: false },
 );
@@ -185,6 +219,9 @@ const equipmentBookingSchema = new Schema<IEquipmentBooking>(
       min: 0,
       required: false,
     },
+    depositClaimedAt: { type: Date, required: false },
+    depositReminderSentAt: { type: Date, required: false },
+    depositDispute: { type: depositDisputeSchema, required: false },
   },
   { timestamps: true },
 );
@@ -197,6 +234,9 @@ equipmentBookingSchema.index({
 });
 equipmentBookingSchema.index({ owner: 1, status: 1, createdAt: -1 });
 equipmentBookingSchema.index({ renter: 1, createdAt: -1 });
+// The hourly sweep that reminds owners and releases unsettled deposits.
+equipmentBookingSchema.index({ depositResolution: 1, status: 1, returnConfirmedAt: 1 });
+equipmentBookingSchema.index({ "depositDispute.status": 1, "depositDispute.openedAt": -1 }, { sparse: true });
 
 export const EquipmentBooking: Model<IEquipmentBooking> =
   model<IEquipmentBooking>("EquipmentBooking", equipmentBookingSchema);

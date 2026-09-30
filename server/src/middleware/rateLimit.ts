@@ -19,6 +19,19 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Admin sign-in: tighter, since one guessed password opens everything. Only
+ * failed attempts count, so an admin signing in normally is never locked out.
+ */
+export const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: tooMany("Too many sign-in attempts. Please wait 15 minutes and try again."),
+});
+
+/**
  * Writes to the social and messaging features (requests, posts, comments,
  * likes, reposts, messages). Reads are never limited.
  */

@@ -223,6 +223,11 @@ a {
   border-color: var(--color-primary);
 }
 
+/* Search fields styled with .form-input draw their own clear button. */
+.form-input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
 /* Auth glass.
    The reference layers one foreground and one background colour at different
    opacities; here white stands in for the foreground and void/surface for the

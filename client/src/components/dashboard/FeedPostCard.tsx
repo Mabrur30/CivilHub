@@ -205,7 +205,7 @@ export function FeedPostCard({
 
         {post.originalRemoved ? (
           <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-void/40 p-4 text-sm text-white/50">
-            The original post was removed.
+            The original post isn’t available.
           </div>
         ) : null}
 
@@ -217,7 +217,13 @@ export function FeedPostCard({
               </span>
             </p>
             <p className="mt-2 text-xs text-white/60">
-              {post.originalPost.author.name} •{" "}
+              <Link
+                to={`/profile/${post.originalPost.author.userId}`}
+                className="font-semibold text-white/80 transition-colors duration-200 hover:text-primary"
+              >
+                {post.originalPost.author.name}
+              </Link>{" "}
+              •{" "}
               {formatRelativeTime(post.originalPost.createdAt)}
             </p>
             <p className="mt-2 text-sm text-white/70">

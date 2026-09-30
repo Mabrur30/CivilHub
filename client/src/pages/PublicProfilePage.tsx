@@ -1,9 +1,7 @@
 import {
   type ChangeEvent,
-  type CSSProperties,
   type FormEvent,
   type ReactElement,
-  type ReactNode,
   useEffect,
   useRef,
   useState,
@@ -18,6 +16,12 @@ import {
 } from "../components/dashboard/FeedPostCard";
 import { PostComposerModal } from "../components/dashboard/PostComposerModal";
 import { ClientProfileView } from "../components/profile/client/ClientProfileView";
+import { EngineerProfileView } from "../components/profile/engineer/EngineerProfileView";
+import {
+  type ConnectionStatus,
+  type EngineerPublicProfile,
+  hasEngineerProfileFields,
+} from "../components/profile/engineer/engineerProfile";
 import { OrganisationProfileView } from "../components/profile/organisation/OrganisationProfileView";
 import {
   type CompanyPublicProfile,
@@ -27,114 +31,20 @@ import {
   type ClientPublicProfile,
   hasClientProfileFields,
 } from "../components/profile/client/clientProfile";
-import { RatingBadge } from "../components/RatingBadge";
-import { DeliveredProjects } from "../components/profile/shared/DeliveredProjects";
-import { DisciplinePicker } from "../components/profile/shared/DisciplinePicker";
-import { ProfileEquipment } from "../components/profile/shared/ProfileEquipment";
 import { ProfileReviews } from "../components/profile/shared/ProfileReviews";
 import {
   type CustomerReviewsResponse,
-  type ProfileListing,
   type ProviderReviewsResponse,
-  formatMonthYear,
   isCustomerReviewsResponse,
   isProviderReviewsResponse,
 } from "../components/profile/shared/profileTypes";
 import { useAuth } from "../context/AuthContext";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
-import { formatCurrency } from "../lib/format";
-import { moneyValue } from "../lib/money";
 import { dashboardBase } from "../lib/dashboardPaths";
 import { ProfileSafetyActions } from "../components/safety/ProfileSafetyActions";
 import { ImageLightbox } from "../components/dashboard/ImageLightbox";
-
-interface EngineerPortfolioItem {
-  title: string;
-  description: string;
-  imageUrl: string;
-  uploadedAt: string;
-}
-
-interface EngineerCertificateItem {
-  title: string;
-  uploadedAt: string;
-  /** Anyone signed in can open it; CivilHub doesn't verify it yet. */
-  fileUrl?: string;
-}
-
-interface CompletedWorkItem {
-  id: string;
-  title: string;
-  category: string;
-  location: string | null;
-  completedAt: string;
-}
-
-interface EngineerEducationItem {
-  id: string;
-  institution: string | null;
-  degree: string | null;
-  fieldOfStudy: string | null;
-  graduationYear: number | null;
-}
-
-interface EngineerExperienceItem {
-  id: string;
-  title: string | null;
-  organization: string | null;
-  startYear: number | null;
-  endYear: number | null;
-  description: string | null;
-}
-
-interface OwnEngineerEducationItem {
-  _id: string;
-  institution: string | null;
-  degree: string | null;
-  fieldOfStudy: string | null;
-  graduationYear: number | null;
-}
-
-interface OwnEngineerExperienceItem {
-  _id: string;
-  title: string | null;
-  organization: string | null;
-  startYear: number | null;
-  endYear: number | null;
-  description: string | null;
-}
-
-interface OwnEngineerCertificate {
-  _id: string;
-  title: string;
-  fileUrl: string;
-  uploadedAt: string;
-}
-
-interface OwnEngineerPortfolioItem {
-  _id: string;
-  title: string;
-  description: string;
-  imageUrl: string;
-  uploadedAt: string;
-}
-
-interface OwnEngineerData {
-  startingRateMin: number | null;
-  startingRateMax: number | null;
-  location: string | null;
-  education: OwnEngineerEducationItem[];
-  experience: OwnEngineerExperienceItem[];
-  certificates: OwnEngineerCertificate[];
-  portfolio: OwnEngineerPortfolioItem[];
-}
-
-type ConnectionStatus =
-  | "not_connected"
-  | "pending_sent"
-  | "pending_received"
-  | "connected";
+import { ConfirmDialog } from "../components/dashboard/ui/ConfirmDialog";
+import { MessageButton } from "../components/messages/MessageButton";
 
 interface BasePublicProfile {
   userId: string;
@@ -148,30 +58,9 @@ interface BasePublicProfile {
   connectionId: string | null;
   /** The viewer has blocked this person. */
   blockedByMe?: boolean;
+  /** Either side blocked the other: nothing to connect, message or invite. */
+  blockedEitherWay?: boolean;
   connectionsCount: number;
-}
-
-interface EngineerPublicProfile extends BasePublicProfile {
-  role: "engineer";
-  startingRateMin: number | null;
-  startingRateMax: number | null;
-  location: string | null;
-  education: EngineerEducationItem[];
-  experience: EngineerExperienceItem[];
-  typicalRate: number | null;
-  rateMin: number | null;
-  rateMax: number | null;
-  acceptedBidCount: number;
-  derivedLocation: string | null;
-  completedLocationProjectCount: number;
-  portfolio: EngineerPortfolioItem[];
-  certificates: EngineerCertificateItem[];
-  completedWork: CompletedWorkItem[];
-  memberSince?: string;
-  disciplines?: string[];
-  equipment?: ProfileListing[];
-  /** Which reviews the headline rating comes from. */
-  ratingKind?: "project" | "equipment" | null;
 }
 
 type PublicProfile = EngineerPublicProfile | ClientPublicProfile;
@@ -215,10 +104,6 @@ interface ProfileBackState {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PROFILE_POSTS_PAGE_LIMIT = 10;
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const CERTIFICATE_TYPES = [...IMAGE_TYPES, "application/pdf"];
-const IMAGE_LIMIT = 5 * 1024 * 1024;
-const CERTIFICATE_LIMIT = 10 * 1024 * 1024;
 const MAX_CONTENT_LENGTH = 2000;
 
 const isConnectionStatus = (value: unknown): value is ConnectionStatus =>
@@ -243,98 +128,6 @@ const isBaseProfile = (value: unknown): value is BasePublicProfile => {
     (typeof profile.connectionId === "string" ||
       profile.connectionId === null) &&
     typeof profile.connectionsCount === "number"
-  );
-};
-
-const isEngineerPortfolioItem = (
-  value: unknown,
-): value is EngineerPortfolioItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.title === "string" &&
-    typeof item.description === "string" &&
-    typeof item.imageUrl === "string" &&
-    typeof item.uploadedAt === "string"
-  );
-};
-
-const isEngineerCertificateItem = (
-  value: unknown,
-): value is EngineerCertificateItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.title === "string" && typeof item.uploadedAt === "string";
-};
-
-const isCompletedWorkItem = (value: unknown): value is CompletedWorkItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.id === "string" &&
-    typeof item.title === "string" &&
-    typeof item.category === "string" &&
-    (typeof item.location === "string" || item.location === null) &&
-    typeof item.completedAt === "string" &&
-    typeof item.completedAt === "string"
-  );
-};
-
-const isEngineerEducationItem = (
-  value: unknown,
-): value is EngineerEducationItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.id === "string" &&
-    (typeof item.institution === "string" || item.institution === null) &&
-    (typeof item.degree === "string" || item.degree === null) &&
-    (typeof item.fieldOfStudy === "string" || item.fieldOfStudy === null) &&
-    (typeof item.graduationYear === "number" || item.graduationYear === null)
-  );
-};
-
-const isEngineerExperienceItem = (
-  value: unknown,
-): value is EngineerExperienceItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item.id === "string" &&
-    (typeof item.title === "string" || item.title === null) &&
-    (typeof item.organization === "string" || item.organization === null) &&
-    (typeof item.startYear === "number" || item.startYear === null) &&
-    (typeof item.endYear === "number" || item.endYear === null) &&
-    (typeof item.description === "string" || item.description === null)
-  );
-};
-
-const isOwnEngineerEducationItem = (
-  value: unknown,
-): value is OwnEngineerEducationItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item._id === "string" &&
-    (typeof item.institution === "string" || item.institution === null) &&
-    (typeof item.degree === "string" || item.degree === null) &&
-    (typeof item.fieldOfStudy === "string" || item.fieldOfStudy === null) &&
-    (typeof item.graduationYear === "number" || item.graduationYear === null)
-  );
-};
-
-const isOwnEngineerExperienceItem = (
-  value: unknown,
-): value is OwnEngineerExperienceItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item._id === "string" &&
-    (typeof item.title === "string" || item.title === null) &&
-    (typeof item.organization === "string" || item.organization === null) &&
-    (typeof item.startYear === "number" || item.startYear === null) &&
-    (typeof item.endYear === "number" || item.endYear === null) &&
-    (typeof item.description === "string" || item.description === null)
   );
 };
 
@@ -380,106 +173,11 @@ const isInviteProjectsResponse = (
   );
 };
 
-const isOwnEngineerCertificate = (
-  value: unknown,
-): value is OwnEngineerCertificate => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item._id === "string" &&
-    typeof item.title === "string" &&
-    typeof item.fileUrl === "string" &&
-    typeof item.uploadedAt === "string"
-  );
-};
-
-const isOwnEngineerPortfolioItem = (
-  value: unknown,
-): value is OwnEngineerPortfolioItem => {
-  if (typeof value !== "object" || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return (
-    typeof item._id === "string" &&
-    typeof item.title === "string" &&
-    typeof item.description === "string" &&
-    typeof item.imageUrl === "string" &&
-    typeof item.uploadedAt === "string"
-  );
-};
-
-const isOwnEngineerData = (value: unknown): value is OwnEngineerData => {
-  if (typeof value !== "object" || value === null) return false;
-  const data = value as Record<string, unknown>;
-  return (
-    (typeof data.startingRateMin === "number" ||
-      data.startingRateMin === null) &&
-    (typeof data.startingRateMax === "number" ||
-      data.startingRateMax === null) &&
-    (typeof data.location === "string" || data.location === null) &&
-    Array.isArray(data.education) &&
-    data.education.every(isOwnEngineerEducationItem) &&
-    Array.isArray(data.experience) &&
-    data.experience.every(isOwnEngineerExperienceItem) &&
-    Array.isArray(data.certificates) &&
-    data.certificates.every(isOwnEngineerCertificate) &&
-    Array.isArray(data.portfolio) &&
-    data.portfolio.every(isOwnEngineerPortfolioItem)
-  );
-};
-
-const isCertificatesResponse = (
-  value: unknown,
-): value is { certificates: OwnEngineerCertificate[] } => {
-  if (typeof value !== "object" || value === null) return false;
-  const body = value as Record<string, unknown>;
-  return (
-    Array.isArray(body.certificates) &&
-    body.certificates.every(isOwnEngineerCertificate)
-  );
-};
-
-const isPortfolioResponse = (
-  value: unknown,
-): value is { portfolio: OwnEngineerPortfolioItem[] } => {
-  if (typeof value !== "object" || value === null) return false;
-  const body = value as Record<string, unknown>;
-  return (
-    Array.isArray(body.portfolio) &&
-    body.portfolio.every(isOwnEngineerPortfolioItem)
-  );
-};
-
 const isPublicProfile = (value: unknown): value is PublicProfile => {
   if (!isBaseProfile(value)) return false;
   const profile = value as unknown as Record<string, unknown>;
 
-  if (profile.role === "engineer") {
-    return (
-      (typeof profile.startingRateMin === "number" ||
-        profile.startingRateMin === null) &&
-      (typeof profile.startingRateMax === "number" ||
-        profile.startingRateMax === null) &&
-      (typeof profile.location === "string" || profile.location === null) &&
-      Array.isArray(profile.education) &&
-      profile.education.every(isEngineerEducationItem) &&
-      Array.isArray(profile.experience) &&
-      profile.experience.every(isEngineerExperienceItem) &&
-      (typeof profile.typicalRate === "number" ||
-        profile.typicalRate === null) &&
-      (typeof profile.rateMin === "number" || profile.rateMin === null) &&
-      (typeof profile.rateMax === "number" || profile.rateMax === null) &&
-      typeof profile.acceptedBidCount === "number" &&
-      (typeof profile.derivedLocation === "string" ||
-        profile.derivedLocation === null) &&
-      typeof profile.completedLocationProjectCount === "number" &&
-      Array.isArray(profile.portfolio) &&
-      profile.portfolio.every(isEngineerPortfolioItem) &&
-      Array.isArray(profile.certificates) &&
-      profile.certificates.every(isEngineerCertificateItem) &&
-      Array.isArray(profile.completedWork) &&
-      profile.completedWork.every(isCompletedWorkItem)
-    );
-  }
+  if (profile.role === "engineer") return hasEngineerProfileFields(profile);
 
   return hasClientProfileFields(profile);
 };
@@ -560,25 +258,6 @@ const getErrorMessageWithFallback = (
   return fallback;
 };
 
-const validateFile = (
-  file: File | undefined,
-  allowedTypes: string[],
-  limit: number,
-  label: string,
-): string => {
-  if (!file) return `${label} file is required.`;
-  if (!allowedTypes.includes(file.type))
-    return `${label} must be a JPG, PNG, WEBP${label === "Certificate" ? ", or PDF" : ""}.`;
-  if (file.size > limit)
-    return `${label} must be ${limit / (1024 * 1024)}MB or smaller.`;
-  return "";
-};
-
-const formatDate = (value: string): string => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
-};
-
 const formatRelativeTime = (value: string): string => {
   const date = new Date(value);
   const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -597,90 +276,6 @@ const statusLabel = (status: ConnectionStatus): string => {
   if (status === "pending_received") return "Request received";
   return "Not connected";
 };
-
-const usersIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-
-const briefcaseIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <rect x="2" y="7" width="20" height="14" rx="2" />
-    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-  </svg>
-);
-
-const certificateIcon = (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="8" r="6" />
-    <path d="m9 13.5-1.5 7 4.5-2.5 4.5 2.5-1.5-7" />
-  </svg>
-);
-
-const pinIcon = (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z" />
-    <circle cx="12" cy="9.5" r="2.5" />
-  </svg>
-);
-
-const calendarIcon = (
-  <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3.5" y="5" width="17" height="15" rx="2" />
-    <path d="M3.5 10h17M8 3v4M16 3v4" />
-  </svg>
-);
-
-const formatRateRange = (min: number | null, max: number | null): string =>
-  typeof min === "number" && typeof max === "number"
-    ? min === max
-      ? formatCurrency(min)
-      : `${formatCurrency(min)} to ${formatCurrency(max)}`
-    : typeof min === "number"
-      ? `From ${formatCurrency(min)}`
-      : `Up to ${formatCurrency(max ?? 0)}`;
-
-function DetailRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactElement;
-  label: string;
-  value: ReactNode;
-}): ReactElement {
-  return (
-    <div className="flex items-center gap-2.5 text-white/65">
-      <span className="shrink-0 text-white/40">{icon}</span>
-      <span className="flex-1">{label}</span>
-      <span className="font-semibold text-white">{value}</span>
-    </div>
-  );
-}
 
 export function PublicProfilePage(): ReactElement {
   const { userId } = useParams<{ userId: string }>();
@@ -720,35 +315,8 @@ export function PublicProfilePage(): ReactElement {
   const [isEntranceVisible, setIsEntranceVisible] = useState<boolean>(false);
   const hasPlayedEntrance = useRef<boolean>(false);
 
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
-  const [avatarError, setAvatarError] = useState<string>("");
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [isEditingBio, setIsEditingBio] = useState<boolean>(false);
-  const [bioDraft, setBioDraft] = useState<string>("");
-  const [isSavingBio, setIsSavingBio] = useState<boolean>(false);
-  const [bioSaveError, setBioSaveError] = useState<string>("");
-
-  const [ownEngineerData, setOwnEngineerData] =
-    useState<OwnEngineerData | null>(null);
-
-  const certificateFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [certificateTitle, setCertificateTitle] = useState<string>("");
-  const [isAddingCertificate, setIsAddingCertificate] =
-    useState<boolean>(false);
-  const [isUploadingCertificate, setIsUploadingCertificate] =
-    useState<boolean>(false);
-  const [certificateError, setCertificateError] = useState<string>("");
-
-  const portfolioFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [portfolioTitle, setPortfolioTitle] = useState<string>("");
-  const [portfolioDescription, setPortfolioDescription] = useState<string>("");
-  const [isAddingPortfolio, setIsAddingPortfolio] = useState<boolean>(false);
-  const [isUploadingPortfolio, setIsUploadingPortfolio] =
-    useState<boolean>(false);
-  const [portfolioError, setPortfolioError] = useState<string>("");
-
-  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+  // A post waiting on the owner's confirmation before it's deleted.
+  const [postToDelete, setPostToDelete] = useState<string | null>(null);
 
   const [content, setContent] = useState<string>("");
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -763,39 +331,9 @@ export function PublicProfilePage(): ReactElement {
   const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
-  const [isEditingEngineerDetails, setIsEditingEngineerDetails] =
-    useState<boolean>(false);
-  const [startingRateMinDraft, setStartingRateMinDraft] = useState<string>("");
-  const [startingRateMaxDraft, setStartingRateMaxDraft] = useState<string>("");
-  const [engineerLocationDraft, setEngineerLocationDraft] =
-    useState<string>("");
-  const [engineerDetailsError, setEngineerDetailsError] = useState<string>("");
-  const [isSavingEngineerDetails, setIsSavingEngineerDetails] =
-    useState<boolean>(false);
-
-  const [isAddingEducation, setIsAddingEducation] = useState<boolean>(false);
-  const [educationInstitutionDraft, setEducationInstitutionDraft] =
-    useState<string>("");
-  const [educationDegreeDraft, setEducationDegreeDraft] = useState<string>("");
-  const [educationFieldDraft, setEducationFieldDraft] = useState<string>("");
-  const [educationYearDraft, setEducationYearDraft] = useState<string>("");
-  const [educationError, setEducationError] = useState<string>("");
-  const [isSavingEducation, setIsSavingEducation] = useState<boolean>(false);
-
-  const [isAddingExperience, setIsAddingExperience] = useState<boolean>(false);
-  const [experienceTitleDraft, setExperienceTitleDraft] = useState<string>("");
-  const [experienceOrganizationDraft, setExperienceOrganizationDraft] =
-    useState<string>("");
-  const [experienceStartYearDraft, setExperienceStartYearDraft] =
-    useState<string>("");
-  const [experienceEndYearDraft, setExperienceEndYearDraft] =
-    useState<string>("");
-  const [experienceDescriptionDraft, setExperienceDescriptionDraft] =
-    useState<string>("");
-  const [experienceError, setExperienceError] = useState<string>("");
-  const [isSavingExperience, setIsSavingExperience] = useState<boolean>(false);
-
   useEffect(() => {
+    // Moving to another profile mid-load must not show the previous person.
+    let isActive = true;
     const loadProfile = async (): Promise<void> => {
       if (!userId) {
         setError("User ID is required.");
@@ -815,6 +353,7 @@ export function PublicProfilePage(): ReactElement {
           },
         );
         const body: unknown = await response.json();
+        if (!isActive) return;
 
         if (response.ok && isCompanyPublicProfile(body)) {
           setCompanyProfile(body);
@@ -832,13 +371,16 @@ export function PublicProfilePage(): ReactElement {
         setProfile(body);
         shownUserIdRef.current = userId;
       } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
+        if (isActive) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (isActive) setIsLoading(false);
       }
     };
 
     void loadProfile();
+    return () => {
+      isActive = false;
+    };
   }, [reloadKey, userId]);
 
   useEffect(() => {
@@ -849,28 +391,6 @@ export function PublicProfilePage(): ReactElement {
     setPostsTotal(0);
     setPostsError("");
   }, [userId]);
-
-  useEffect(() => {
-    if (!profile || profile.role !== "engineer") {
-      setIsEditingEngineerDetails(false);
-      setStartingRateMinDraft("");
-      setStartingRateMaxDraft("");
-      setEngineerLocationDraft("");
-      return;
-    }
-
-    setStartingRateMinDraft(
-      typeof profile.startingRateMin === "number"
-        ? String(profile.startingRateMin)
-        : "",
-    );
-    setStartingRateMaxDraft(
-      typeof profile.startingRateMax === "number"
-        ? String(profile.startingRateMax)
-        : "",
-    );
-    setEngineerLocationDraft(profile.location ?? "");
-  }, [profile]);
 
   useEffect(() => {
     if (!profile || hasPlayedEntrance.current) return;
@@ -889,6 +409,9 @@ export function PublicProfilePage(): ReactElement {
   const subjectRole = profile?.role ?? companyProfile?.role ?? null;
   const companyTakesProjects =
     companyProfile?.company?.services.includes("projects") ?? false;
+  const subjectBlocked = Boolean(
+    profile?.blockedEitherWay ?? companyProfile?.blockedEitherWay,
+  );
 
   useEffect(() => {
     if (!subjectId || (subjectRole !== "engineer" && subjectRole !== "organisation")) {
@@ -1005,6 +528,7 @@ export function PublicProfilePage(): ReactElement {
     if (
       !subjectId ||
       !canBeInvited ||
+      subjectBlocked ||
       currentUser?.role !== "client" ||
       currentUser.id === subjectId
     ) {
@@ -1014,6 +538,7 @@ export function PublicProfilePage(): ReactElement {
       return;
     }
 
+    let isActive = true;
     const loadInviteProjects = async (): Promise<void> => {
       setIsInviteProjectsLoading(true);
       setInviteError("");
@@ -1023,6 +548,7 @@ export function PublicProfilePage(): ReactElement {
           { credentials: "include" },
         );
         const body: unknown = await response.json();
+        if (!isActive) return;
         if (!response.ok || !isInviteProjectsResponse(body)) {
           setInviteError(
             getErrorMessageWithFallback(
@@ -1034,42 +560,17 @@ export function PublicProfilePage(): ReactElement {
         }
         setInviteProjects(body.projects);
       } catch {
-        setInviteError("Unable to connect to CivilHub. Please try again.");
+        if (isActive) setInviteError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsInviteProjectsLoading(false);
+        if (isActive) setIsInviteProjectsLoading(false);
       }
     };
 
     void loadInviteProjects();
-  }, [companyTakesProjects, currentUser?.id, currentUser?.role, reloadKey, subjectId, subjectRole]);
-
-  useEffect(() => {
-    if (
-      !profile ||
-      profile.role !== "engineer" ||
-      !currentUser ||
-      currentUser.id !== profile.userId
-    ) {
-      setOwnEngineerData(null);
-      return;
-    }
-
-    const loadOwnEngineerData = async (): Promise<void> => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
-          credentials: "include",
-        });
-        const body: unknown = await response.json();
-        if (!response.ok || !isOwnEngineerData(body)) {
-          return;
-        }
-        setOwnEngineerData(body);
-      } catch {
-        // Owner-specific edits fall back to public-profile state.
-      }
+    return () => {
+      isActive = false;
     };
-    void loadOwnEngineerData();
-  }, [profile, currentUser]);
+  }, [companyTakesProjects, currentUser?.id, currentUser?.role, reloadKey, subjectBlocked, subjectId, subjectRole]);
 
   const refreshProfile = (): void => {
     setReloadKey((key) => key + 1);
@@ -1190,566 +691,6 @@ export function PublicProfilePage(): ReactElement {
           }
         : current,
     );
-  };
-
-  const handleAvatarChange = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ): Promise<void> => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    const validationError = validateFile(
-      file,
-      IMAGE_TYPES,
-      IMAGE_LIMIT,
-      "Profile photo",
-    );
-    if (validationError) {
-      setAvatarError(validationError);
-      return;
-    }
-
-    setIsUploadingAvatar(true);
-    setAvatarError("");
-    try {
-      const formData = new FormData();
-      formData.append("photo", file as File);
-      const response = await fetch(`${API_BASE_URL}/api/engineers/me/photo`, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setAvatarError(
-          getErrorMessageWithFallback(
-            body,
-            "Unable to upload your profile photo.",
-          ),
-        );
-        return;
-      }
-      const photoUrl = (body as { profilePhotoUrl?: unknown }).profilePhotoUrl;
-      if (typeof photoUrl === "string") {
-        setProfile((current) =>
-          current ? { ...current, profilePhotoUrl: photoUrl } : current,
-        );
-      }
-      await refetchUser();
-    } catch {
-      setAvatarError("Unable to connect to CivilHub. Please try again.");
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
-
-  const startEditingBio = (): void => {
-    setBioDraft(profile?.bio ?? "");
-    setBioSaveError("");
-    setIsEditingBio(true);
-  };
-
-  const cancelEditingBio = (): void => {
-    setIsEditingBio(false);
-    setBioSaveError("");
-  };
-
-  const saveBio = async (): Promise<void> => {
-    if (!profile) return;
-    setIsSavingBio(true);
-    setBioSaveError("");
-    try {
-      const endpoint = profile.role === "engineer" ? "engineers" : "clients";
-      const response = await fetch(`${API_BASE_URL}/api/${endpoint}/me`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bio: bioDraft }),
-      });
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        setBioSaveError(
-          getErrorMessageWithFallback(body, "Unable to save your bio."),
-        );
-        return;
-      }
-      const trimmed = bioDraft.trim();
-      setProfile((current) =>
-        current ? { ...current, bio: trimmed } : current,
-      );
-      setIsEditingBio(false);
-    } catch {
-      setBioSaveError("Unable to connect to CivilHub. Please try again.");
-    } finally {
-      setIsSavingBio(false);
-    }
-  };
-
-  const toPublicEducation = (
-    entries: OwnEngineerEducationItem[],
-  ): EngineerEducationItem[] =>
-    entries.map((entry) => ({
-      id: entry._id,
-      institution: entry.institution,
-      degree: entry.degree,
-      fieldOfStudy: entry.fieldOfStudy,
-      graduationYear: entry.graduationYear,
-    }));
-
-  const toPublicExperience = (
-    entries: OwnEngineerExperienceItem[],
-  ): EngineerExperienceItem[] =>
-    entries.map((entry) => ({
-      id: entry._id,
-      title: entry.title,
-      organization: entry.organization,
-      startYear: entry.startYear,
-      endYear: entry.endYear,
-      description: entry.description,
-    }));
-
-  const updateEngineerProfileDetails = async (payload: {
-    startingRateMin?: number | null;
-    startingRateMax?: number | null;
-    location?: string | null;
-    education?: Array<{
-      institution?: string;
-      degree?: string;
-      fieldOfStudy?: string;
-      graduationYear?: number | null;
-    }>;
-    experience?: Array<{
-      title?: string;
-      organization?: string;
-      startYear?: number | null;
-      endYear?: number | null;
-      description?: string;
-    }>;
-  }): Promise<boolean> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/engineers/me`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const body: unknown = await response.json();
-      if (!response.ok || !isOwnEngineerData(body)) {
-        setEngineerDetailsError(
-          getErrorMessageWithFallback(body, "Unable to save engineer details."),
-        );
-        return false;
-      }
-
-      setOwnEngineerData(body);
-      setProfile((current) => {
-        if (!current || current.role !== "engineer") {
-          return current;
-        }
-
-        return {
-          ...current,
-          startingRateMin: body.startingRateMin,
-          startingRateMax: body.startingRateMax,
-          location: body.location,
-          education: toPublicEducation(body.education),
-          experience: toPublicExperience(body.experience),
-        };
-      });
-
-      return true;
-    } catch {
-      setEngineerDetailsError(
-        "Unable to connect to CivilHub. Please try again.",
-      );
-      return false;
-    }
-  };
-
-  const saveEngineerRateLocation = async (): Promise<void> => {
-    if (!profile || profile.role !== "engineer") return;
-
-    setEngineerDetailsError("");
-    setIsSavingEngineerDetails(true);
-    try {
-      const minRate = startingRateMinDraft.trim()
-        ? (moneyValue(startingRateMinDraft) ?? Number.NaN)
-        : null;
-      const maxRate = startingRateMaxDraft.trim()
-        ? (moneyValue(startingRateMaxDraft) ?? Number.NaN)
-        : null;
-      const locationValue = engineerLocationDraft.trim() || null;
-
-      if (minRate !== null && (!Number.isFinite(minRate) || minRate < 0)) {
-        setEngineerDetailsError(
-          "Starting minimum rate must be a positive number.",
-        );
-        return;
-      }
-      if (maxRate !== null && (!Number.isFinite(maxRate) || maxRate < 0)) {
-        setEngineerDetailsError(
-          "Starting maximum rate must be a positive number.",
-        );
-        return;
-      }
-      if (minRate !== null && maxRate !== null && minRate > maxRate) {
-        setEngineerDetailsError(
-          "Starting minimum rate cannot be greater than starting maximum rate.",
-        );
-        return;
-      }
-
-      const didSave = await updateEngineerProfileDetails({
-        startingRateMin: minRate,
-        startingRateMax: maxRate,
-        location: locationValue,
-      });
-
-      if (didSave) {
-        setIsEditingEngineerDetails(false);
-      }
-    } finally {
-      setIsSavingEngineerDetails(false);
-    }
-  };
-
-  const addEducationEntry = async (): Promise<void> => {
-    if (!profile || profile.role !== "engineer") return;
-
-    setEducationError("");
-    const institution = educationInstitutionDraft.trim();
-    const degree = educationDegreeDraft.trim();
-    const fieldOfStudy = educationFieldDraft.trim();
-    const graduationYearValue = educationYearDraft.trim()
-      ? Number.parseInt(educationYearDraft.trim(), 10)
-      : null;
-
-    if (
-      !institution &&
-      !degree &&
-      !fieldOfStudy &&
-      graduationYearValue === null
-    ) {
-      setEducationError("Add at least one field before saving education.");
-      return;
-    }
-
-    if (
-      graduationYearValue !== null &&
-      (!Number.isInteger(graduationYearValue) ||
-        graduationYearValue < 1900 ||
-        graduationYearValue > 2100)
-    ) {
-      setEducationError("Graduation year must be between 1900 and 2100.");
-      return;
-    }
-
-    setIsSavingEducation(true);
-    const didSave = await updateEngineerProfileDetails({
-      education: [
-        ...profile.education.map((entry) => ({
-          institution: entry.institution ?? undefined,
-          degree: entry.degree ?? undefined,
-          fieldOfStudy: entry.fieldOfStudy ?? undefined,
-          graduationYear: entry.graduationYear ?? null,
-        })),
-        {
-          institution: institution || undefined,
-          degree: degree || undefined,
-          fieldOfStudy: fieldOfStudy || undefined,
-          graduationYear: graduationYearValue,
-        },
-      ],
-    });
-    setIsSavingEducation(false);
-
-    if (didSave) {
-      setIsAddingEducation(false);
-      setEducationInstitutionDraft("");
-      setEducationDegreeDraft("");
-      setEducationFieldDraft("");
-      setEducationYearDraft("");
-    }
-  };
-
-  const removeEducationEntry = async (entryId: string): Promise<void> => {
-    if (!profile || profile.role !== "engineer") return;
-    setEducationError("");
-    setIsSavingEducation(true);
-    const didSave = await updateEngineerProfileDetails({
-      education: profile.education
-        .filter((entry) => entry.id !== entryId)
-        .map((entry) => ({
-          institution: entry.institution ?? undefined,
-          degree: entry.degree ?? undefined,
-          fieldOfStudy: entry.fieldOfStudy ?? undefined,
-          graduationYear: entry.graduationYear ?? null,
-        })),
-    });
-    setIsSavingEducation(false);
-    if (!didSave) {
-      setEducationError("Unable to remove education entry.");
-    }
-  };
-
-  const addExperienceEntry = async (): Promise<void> => {
-    if (!profile || profile.role !== "engineer") return;
-
-    setExperienceError("");
-    const title = experienceTitleDraft.trim();
-    const organization = experienceOrganizationDraft.trim();
-    const description = experienceDescriptionDraft.trim();
-    const startYear = experienceStartYearDraft.trim()
-      ? Number.parseInt(experienceStartYearDraft.trim(), 10)
-      : null;
-    const endYear = experienceEndYearDraft.trim()
-      ? Number.parseInt(experienceEndYearDraft.trim(), 10)
-      : null;
-
-    if (
-      !title &&
-      !organization &&
-      !description &&
-      startYear === null &&
-      endYear === null
-    ) {
-      setExperienceError("Add at least one field before saving experience.");
-      return;
-    }
-
-    const isYearValid = (year: number | null): boolean =>
-      year === null || (Number.isInteger(year) && year >= 1900 && year <= 2100);
-
-    if (!isYearValid(startYear) || !isYearValid(endYear)) {
-      setExperienceError("Years must be between 1900 and 2100.");
-      return;
-    }
-
-    if (startYear !== null && endYear !== null && endYear < startYear) {
-      setExperienceError("End year cannot be earlier than start year.");
-      return;
-    }
-
-    setIsSavingExperience(true);
-    const didSave = await updateEngineerProfileDetails({
-      experience: [
-        ...profile.experience.map((entry) => ({
-          title: entry.title ?? undefined,
-          organization: entry.organization ?? undefined,
-          startYear: entry.startYear ?? null,
-          endYear: entry.endYear ?? null,
-          description: entry.description ?? undefined,
-        })),
-        {
-          title: title || undefined,
-          organization: organization || undefined,
-          startYear,
-          endYear,
-          description: description || undefined,
-        },
-      ],
-    });
-    setIsSavingExperience(false);
-
-    if (didSave) {
-      setIsAddingExperience(false);
-      setExperienceTitleDraft("");
-      setExperienceOrganizationDraft("");
-      setExperienceStartYearDraft("");
-      setExperienceEndYearDraft("");
-      setExperienceDescriptionDraft("");
-    }
-  };
-
-  const removeExperienceEntry = async (entryId: string): Promise<void> => {
-    if (!profile || profile.role !== "engineer") return;
-    setExperienceError("");
-    setIsSavingExperience(true);
-    const didSave = await updateEngineerProfileDetails({
-      experience: profile.experience
-        .filter((entry) => entry.id !== entryId)
-        .map((entry) => ({
-          title: entry.title ?? undefined,
-          organization: entry.organization ?? undefined,
-          startYear: entry.startYear ?? null,
-          endYear: entry.endYear ?? null,
-          description: entry.description ?? undefined,
-        })),
-    });
-    setIsSavingExperience(false);
-    if (!didSave) {
-      setExperienceError("Unable to remove experience entry.");
-    }
-  };
-
-  const uploadCertificate = async (
-    event: FormEvent<HTMLFormElement>,
-  ): Promise<void> => {
-    event.preventDefault();
-    const file = certificateFileInputRef.current?.files?.[0];
-    setCertificateError("");
-    const validationError = validateFile(
-      file,
-      CERTIFICATE_TYPES,
-      CERTIFICATE_LIMIT,
-      "Certificate",
-    );
-    if (validationError || !certificateTitle.trim()) {
-      setCertificateError(validationError || "Certificate title is required.");
-      return;
-    }
-    setIsUploadingCertificate(true);
-    const formData = new FormData();
-    formData.append("title", certificateTitle.trim());
-    formData.append("certificate", file as File);
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/engineers/me/certificates`,
-        { method: "POST", credentials: "include", body: formData },
-      );
-      const body: unknown = await response.json();
-      if (!response.ok || !isCertificatesResponse(body)) {
-        setCertificateError(
-          getErrorMessageWithFallback(
-            body,
-            "Unable to upload the certificate.",
-          ),
-        );
-        return;
-      }
-      setOwnEngineerData((current) => ({
-        startingRateMin: current?.startingRateMin ?? null,
-        startingRateMax: current?.startingRateMax ?? null,
-        location: current?.location ?? null,
-        education: current?.education ?? [],
-        experience: current?.experience ?? [],
-        certificates: body.certificates,
-        portfolio: current?.portfolio ?? [],
-      }));
-      setCertificateTitle("");
-      setIsAddingCertificate(false);
-      if (certificateFileInputRef.current) {
-        certificateFileInputRef.current.value = "";
-      }
-    } catch {
-      setCertificateError("Unable to connect to CivilHub. Please try again.");
-    } finally {
-      setIsUploadingCertificate(false);
-    }
-  };
-
-  const uploadPortfolio = async (
-    event: FormEvent<HTMLFormElement>,
-  ): Promise<void> => {
-    event.preventDefault();
-    const file = portfolioFileInputRef.current?.files?.[0];
-    setPortfolioError("");
-    const validationError = validateFile(
-      file,
-      IMAGE_TYPES,
-      IMAGE_LIMIT,
-      "Portfolio image",
-    );
-    if (
-      validationError ||
-      !portfolioTitle.trim() ||
-      !portfolioDescription.trim()
-    ) {
-      setPortfolioError(
-        validationError || "Portfolio title and description are required.",
-      );
-      return;
-    }
-    setIsUploadingPortfolio(true);
-    const formData = new FormData();
-    formData.append("title", portfolioTitle.trim());
-    formData.append("description", portfolioDescription.trim());
-    formData.append("image", file as File);
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/engineers/me/portfolio`,
-        { method: "POST", credentials: "include", body: formData },
-      );
-      const body: unknown = await response.json();
-      if (!response.ok || !isPortfolioResponse(body)) {
-        setPortfolioError(
-          getErrorMessageWithFallback(
-            body,
-            "Unable to upload the portfolio image.",
-          ),
-        );
-        return;
-      }
-      setOwnEngineerData((current) => ({
-        startingRateMin: current?.startingRateMin ?? null,
-        startingRateMax: current?.startingRateMax ?? null,
-        location: current?.location ?? null,
-        education: current?.education ?? [],
-        experience: current?.experience ?? [],
-        certificates: current?.certificates ?? [],
-        portfolio: body.portfolio,
-      }));
-      setPortfolioTitle("");
-      setPortfolioDescription("");
-      setIsAddingPortfolio(false);
-      if (portfolioFileInputRef.current) {
-        portfolioFileInputRef.current.value = "";
-      }
-    } catch {
-      setPortfolioError("Unable to connect to CivilHub. Please try again.");
-    } finally {
-      setIsUploadingPortfolio(false);
-    }
-  };
-
-  const deleteOwnItem = async (
-    kind: "certificates" | "portfolio",
-    id: string,
-  ): Promise<void> => {
-    setDeletingItemId(id);
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/engineers/me/${kind}/${id}`,
-        { method: "DELETE", credentials: "include" },
-      );
-      const body: unknown = await response.json();
-      if (!response.ok) {
-        const message = getErrorMessageWithFallback(
-          body,
-          "Unable to remove this item.",
-        );
-        if (kind === "certificates") setCertificateError(message);
-        else setPortfolioError(message);
-        return;
-      }
-      if (kind === "certificates" && isCertificatesResponse(body)) {
-        setOwnEngineerData((current) => ({
-          startingRateMin: current?.startingRateMin ?? null,
-          startingRateMax: current?.startingRateMax ?? null,
-          location: current?.location ?? null,
-          education: current?.education ?? [],
-          experience: current?.experience ?? [],
-          certificates: body.certificates,
-          portfolio: current?.portfolio ?? [],
-        }));
-      } else if (kind === "portfolio" && isPortfolioResponse(body)) {
-        setOwnEngineerData((current) => ({
-          startingRateMin: current?.startingRateMin ?? null,
-          startingRateMax: current?.startingRateMax ?? null,
-          location: current?.location ?? null,
-          education: current?.education ?? [],
-          experience: current?.experience ?? [],
-          certificates: current?.certificates ?? [],
-          portfolio: body.portfolio,
-        }));
-      }
-    } catch {
-      const message = "Unable to connect to CivilHub. Please try again.";
-      if (kind === "certificates") setCertificateError(message);
-      else setPortfolioError(message);
-    } finally {
-      setDeletingItemId(null);
-    }
   };
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -1884,9 +825,6 @@ export function PublicProfilePage(): ReactElement {
   };
 
   const removePost = async (postId: string): Promise<void> => {
-    const confirmed = window.confirm("Delete this post permanently?");
-    if (!confirmed) return;
-
     setDeleteLoadingId(postId);
     try {
       const response = await fetch(`${API_BASE_URL}/api/posts/${postId}`, {
@@ -1909,6 +847,7 @@ export function PublicProfilePage(): ReactElement {
     } finally {
       setDeleteLoadingId(null);
       setActiveMenuPostId(null);
+      setPostToDelete(null);
     }
   };
 
@@ -2024,7 +963,7 @@ export function PublicProfilePage(): ReactElement {
                   current === post.id ? null : post.id,
                 )
               }
-              onDeletePost={() => void removePost(post.id)}
+              onDeletePost={() => setPostToDelete(post.id)}
               isDeleting={deleteLoadingId === post.id}
               onOpenImage={setLightboxImageUrl}
               formatRelativeTime={formatRelativeTime}
@@ -2054,7 +993,7 @@ export function PublicProfilePage(): ReactElement {
     <div className="space-y-3">
                         <div className="rounded-xl border border-white/10 bg-void/40 p-3">
                           <h3 className="text-sm font-semibold text-white">
-                            Invite to Bid
+                            Message or invite to bid
                           </h3>
 
                           {isInviteProjectsLoading ? (
@@ -2064,7 +1003,8 @@ export function PublicProfilePage(): ReactElement {
                           ) : inviteProjects.length === 0 ? (
                             <div className="mt-3">
                               <p className="text-xs text-white/55">
-                                Post a project to invite this engineer.
+                                Post a project to message or invite{" "}
+                                {subjectRole === "organisation" ? "this company" : "this engineer"}.
                               </p>
                               <Link
                                 to="/dashboard/client/post-project"
@@ -2105,7 +1045,16 @@ export function PublicProfilePage(): ReactElement {
                                       {project.status.replaceAll("_", " ")}
                                     </p>
 
-                                    <div className="mt-2">
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                      {/* Chats are about a project: open briefs, or ones they were invited to. */}
+                                      {subjectId &&
+                                      (project.status === "open_for_bids" || invitation) ? (
+                                        <MessageButton
+                                          userId={subjectId}
+                                          projectId={project.id}
+                                          label="Message"
+                                        />
+                                      ) : null}
                                       {invitation ? (
                                         <span
                                           className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}
@@ -2169,6 +1118,19 @@ export function PublicProfilePage(): ReactElement {
     />
   );
 
+  const confirmRemovalDialog = postToDelete ? (
+    <ConfirmDialog
+      title="Delete this post?"
+      description="It's removed for good, along with its likes and comments."
+      confirmLabel="Delete post"
+      busyLabel="Deleting..."
+      tone="danger"
+      isBusy={deleteLoadingId === postToDelete}
+      onConfirm={() => void removePost(postToDelete)}
+      onClose={() => setPostToDelete(null)}
+    />
+  ) : null;
+
   if (companyProfile && !error) {
     const companyBackState =
       location.state && typeof location.state === "object"
@@ -2211,7 +1173,7 @@ export function PublicProfilePage(): ReactElement {
                 : null
             }
             inviteSection={
-              currentUser?.role === "client" && companyTakesProjects ? (
+              currentUser?.role === "client" && companyTakesProjects && !subjectBlocked ? (
                 <div className="rounded-2xl border border-white/10 bg-surface p-5">
                   {renderInvitePanel()}
                 </div>
@@ -2219,6 +1181,15 @@ export function PublicProfilePage(): ReactElement {
             }
           />
         </div>
+
+        {lightboxImageUrl ? (
+          <ImageLightbox
+            imageUrl={lightboxImageUrl}
+            onClose={() => setLightboxImageUrl(null)}
+          />
+        ) : null}
+
+        {confirmRemovalDialog}
       </div>
     );
   }
@@ -2244,7 +1215,6 @@ export function PublicProfilePage(): ReactElement {
 
   const isSelf = currentUser?.id === profile.userId;
   const isEngineerProfile = profile.role === "engineer";
-  const engineerProfile = profile.role === "engineer" ? profile : null;
   const isClientViewingEngineerProfile =
     currentUser?.role === "client" && isEngineerProfile && !isSelf;
   const rawBackState =
@@ -2272,65 +1242,6 @@ export function PublicProfilePage(): ReactElement {
           : currentUser?.role === "engineer"
             ? "Back to My Network"
             : "Back to Engineer Directory";
-
-  const entrance = (
-    order: number,
-  ): { className: string; style: CSSProperties } => ({
-    className: `transition-all duration-[350ms] ease-out ${
-      isEntranceVisible
-        ? "translate-y-0 opacity-100"
-        : "translate-y-2 opacity-0"
-    }`,
-    style: { transitionDelay: `${order * 80}ms` },
-  });
-
-  const hasSelfDeclaredRateOrLocation =
-    engineerProfile !== null &&
-    (typeof engineerProfile.startingRateMin === "number" ||
-      typeof engineerProfile.startingRateMax === "number" ||
-      Boolean(engineerProfile.location));
-  const hasDerivedRateOrLocation =
-    engineerProfile !== null &&
-    (typeof engineerProfile.typicalRate === "number" ||
-      Boolean(engineerProfile.derivedLocation));
-
-  const hasAboutSection =
-    isEngineerProfile && (Boolean(profile.bio.trim()) || isSelf);
-  const hasRateLocationSection =
-    isEngineerProfile &&
-    (hasSelfDeclaredRateOrLocation || hasDerivedRateOrLocation || isSelf);
-  const hasExperienceSection =
-    isEngineerProfile &&
-    ((engineerProfile?.experience.length ?? 0) > 0 || isSelf);
-  const hasEducationSection =
-    isEngineerProfile &&
-    ((engineerProfile?.education.length ?? 0) > 0 || isSelf);
-
-  const portfolioCount = isSelf
-    ? (ownEngineerData?.portfolio.length ?? 0)
-    : isEngineerProfile
-      ? profile.portfolio.length
-      : 0;
-  const certificateCount = isSelf
-    ? (ownEngineerData?.certificates.length ?? 0)
-    : isEngineerProfile
-      ? profile.certificates.length
-      : 0;
-
-  const engineerPortfolioItems: Array<
-    OwnEngineerPortfolioItem | EngineerPortfolioItem
-  > = engineerProfile
-    ? isSelf
-      ? (ownEngineerData?.portfolio ?? [])
-      : engineerProfile.portfolio
-    : [];
-  const engineerCertificateItems: Array<
-    OwnEngineerCertificate | EngineerCertificateItem
-  > = engineerProfile
-    ? isSelf
-      ? (ownEngineerData?.certificates ?? [])
-      : engineerProfile.certificates
-    : [];
 
   return (
     <div>
@@ -2366,1130 +1277,113 @@ export function PublicProfilePage(): ReactElement {
             }
           />
         ) : (
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-            <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-[30%]">
-              <div
-                className={`overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-sm ${entrance(0).className}`}
-                style={entrance(0).style}
-              >
-                <div className="h-16 w-full bg-linear-to-r from-primary/70 via-primary/35 to-primary/10" />
-                <div className="p-5 pt-0">
-                  <div className="-mt-10">
-                    <div className="group/avatar relative inline-flex rounded-full bg-surface p-1 shadow-lg">
-                      <Avatar
-                        name={profile.name}
-                        photoUrl={profile.profilePhotoUrl}
-                        size="lg"
-                      />
-                      {isSelf && isEngineerProfile ? (
-                        <>
+          <EngineerProfileView
+            key={profile.userId}
+            profile={profile}
+            isSelf={isSelf}
+            isEntranceVisible={isEntranceVisible}
+            onProfileChange={(update) =>
+              setProfile((current) =>
+                current?.role === "engineer" ? update(current) : current,
+              )
+            }
+            onDisciplinesSaved={refreshProfile}
+            onPhotoChanged={() => void refetchUser()}
+            onOpenImage={setLightboxImageUrl}
+            viewerActions={
+              <>
+                {/* Nothing to connect, message or invite across a block,
+                    whichever side made it. */}
+                {!isSelf && !profile.blockedEitherWay ? (
+                  isClientViewingEngineerProfile ? (
+                    <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                      {renderInvitePanel()}
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
+                      <p className="text-xs font-semibold text-white/50">
+                        {statusLabel(profile.connectionStatus)}
+                      </p>
+                      {profile.connectionStatus === "not_connected" ? (
+                        <button
+                          type="button"
+                          onClick={() => void sendRequest()}
+                          disabled={isActioning}
+                          className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isActioning ? "Sending..." : "Connect"}
+                        </button>
+                      ) : null}
+
+                      {profile.connectionStatus === "pending_received" ? (
+                        <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => avatarInputRef.current?.click()}
-                            disabled={isUploadingAvatar}
-                            aria-label="Change profile photo"
-                            className={`absolute inset-1 flex items-center justify-center rounded-full bg-black/55 text-snow backdrop-blur-sm transition-opacity duration-200 hover:bg-black/70 disabled:cursor-wait ${
-                              isUploadingAvatar
-                                ? "opacity-100"
-                                : "opacity-0 group-hover/avatar:opacity-100 focus-visible:opacity-100"
-                            }`}
+                            onClick={() => void respondRequest("accept")}
+                            disabled={isActioning}
+                            className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {isUploadingAvatar ? (
-                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                            ) : (
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                aria-hidden="true"
-                              >
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
-                            )}
-                          </button>
-                          <input
-                            ref={avatarInputRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={(event) => void handleAvatarChange(event)}
-                            className="sr-only"
-                          />
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="mt-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h1 className="font-heading text-2xl font-bold text-white">
-                        {profile.name}
-                      </h1>
-                      {isEngineerProfile && profile.reviewCount > 0 ? (
-                        <span className="inline-flex items-center">
-                          <RatingBadge
-                            rating={profile.rating}
-                            reviewCount={profile.reviewCount}
-                            size="sm"
-                          />
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="mt-1 inline-flex rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-xs font-semibold capitalize text-primary">
-                      {profile.role}
-                    </span>
-                    {engineerProfile ? (
-                      <DisciplinePicker
-                        key={(engineerProfile.disciplines ?? []).join("|")}
-                        disciplines={engineerProfile.disciplines ?? []}
-                        isOwner={isSelf}
-                        onSaved={refreshProfile}
-                      />
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4">
-                    {isEditingBio ? (
-                      <div className="space-y-2">
-                        <textarea
-                          value={bioDraft}
-                          onChange={(event) => {
-                            setBioDraft(event.target.value.slice(0, 500));
-                            setBioSaveError("");
-                          }}
-                          maxLength={500}
-                          rows={4}
-                          className="form-input"
-                          placeholder="Add a short introduction for your public profile"
-                        />
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-xs text-white/45">
-                            {bioDraft.length}/500
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void saveBio()}
-                            disabled={isSavingBio}
-                            className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors duration-200 hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {isSavingBio ? "Saving..." : "Save"}
+                            {isActioning ? "Updating..." : "Accept"}
                           </button>
                           <button
                             type="button"
-                            onClick={cancelEditingBio}
-                            className="text-xs font-semibold text-white/60 transition-colors duration-200 hover:text-white"
+                            onClick={() => void respondRequest("decline")}
+                            disabled={isActioning}
+                            className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            Cancel
+                            {isActioning ? "Updating..." : "Decline"}
                           </button>
                         </div>
-                        {bioSaveError ? (
-                          <p className="text-xs text-rose-300" role="alert">
-                            {bioSaveError}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="flex-1 text-sm leading-6 text-white/65">
-                          {profile.bio.trim() ||
-                            "This user has not added a bio yet."}
-                        </p>
-                        {isSelf ? (
-                          <button
-                            type="button"
-                            onClick={startEditingBio}
-                            aria-label="Edit bio"
-                            className="shrink-0 text-xs font-semibold text-primary transition-colors duration-200 hover:text-white"
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
+                      ) : null}
 
-                  <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-sm">
-                    {engineerProfile?.location ? (
-                      <DetailRow
-                        icon={pinIcon}
-                        label="Based in"
-                        value={engineerProfile.location}
-                      />
-                    ) : null}
-                    {engineerProfile &&
-                    (typeof engineerProfile.startingRateMin === "number" ||
-                      typeof engineerProfile.startingRateMax === "number") ? (
-                      <DetailRow
-                        icon={briefcaseIcon}
-                        label="Starting rate"
-                        value={formatRateRange(
-                          engineerProfile.startingRateMin,
-                          engineerProfile.startingRateMax,
-                        )}
-                      />
-                    ) : null}
-                    {engineerProfile?.memberSince ? (
-                      <DetailRow
-                        icon={calendarIcon}
-                        label="On CivilHub since"
-                        value={formatMonthYear(engineerProfile.memberSince)}
-                      />
-                    ) : null}
-                    <DetailRow
-                      icon={usersIcon}
-                      label="Connections"
-                      value={profile.connectionsCount}
-                    />
-                    <DetailRow
-                      icon={briefcaseIcon}
-                      label="Portfolio items"
-                      value={portfolioCount}
-                    />
-                    <DetailRow
-                      icon={certificateIcon}
-                      label="Certificates"
-                      value={certificateCount}
-                    />
-                  </div>
+                      {profile.connectionStatus === "pending_sent" ? (
+                        <span className="block w-full rounded-full border border-violet-300/30 bg-violet-300/10 px-4 py-2.5 text-center text-sm font-semibold text-violet-200">
+                          Request sent
+                        </span>
+                      ) : null}
 
-                  {/* Nothing to connect or message while you've blocked them. */}
-                  {!isSelf && !profile.blockedByMe ? (
-                    isClientViewingEngineerProfile ? (
-                      <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                      {profile.connectionStatus === "connected" ? (
                         <Link
                           to={`/messages/${profile.userId}`}
-                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-on-primary"
+                          className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-on-primary"
                         >
                           Message
                         </Link>
-
-                        {renderInvitePanel()}
-                      </div>
-                    ) : (
-                      <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-                        <p className="text-xs font-semibold text-white/50">
-                          {statusLabel(profile.connectionStatus)}
-                        </p>
-                        {profile.connectionStatus === "not_connected" ? (
-                          <button
-                            type="button"
-                            onClick={() => void sendRequest()}
-                            disabled={isActioning}
-                            className="w-full rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isActioning ? "Sending..." : "Connect"}
-                          </button>
-                        ) : null}
-
-                        {profile.connectionStatus === "pending_received" ? (
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void respondRequest("accept")}
-                              disabled={isActioning}
-                              className="flex-1 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary shadow-glow transition-all duration-200 hover:-translate-y-0.5 hover:bg-glow disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {isActioning ? "Updating..." : "Accept"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void respondRequest("decline")}
-                              disabled={isActioning}
-                              className="flex-1 rounded-full border border-white/20 px-4 py-2.5 text-sm font-semibold text-white/70 transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {isActioning ? "Updating..." : "Decline"}
-                            </button>
-                          </div>
-                        ) : null}
-
-                        {profile.connectionStatus === "pending_sent" ? (
-                          <span className="block w-full rounded-full border border-violet-300/30 bg-violet-300/10 px-4 py-2.5 text-center text-sm font-semibold text-violet-200">
-                            Request sent
-                          </span>
-                        ) : null}
-
-                        {profile.connectionStatus === "connected" ? (
-                          <Link
-                            to={`/messages/${profile.userId}`}
-                            className="block w-full rounded-full border border-primary px-4 py-2.5 text-center text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-on-primary"
-                          >
-                            Message
-                          </Link>
-                        ) : null}
-                      </div>
-                    )
-                  ) : null}
-
-                  {!isSelf ? (
-                    <div className="mt-4 border-t border-white/10 pt-4">
-                      <ProfileSafetyActions
-                        userId={profile.userId}
-                        name={profile.name}
-                        blockedByMe={Boolean(profile.blockedByMe)}
-                        onChanged={refreshProfile}
-                      />
+                      ) : null}
                     </div>
-                  ) : null}
+                  )
+                ) : null}
 
-                  {avatarError ? (
-                    <p className="mt-4 text-xs text-rose-300" role="alert">
-                      {avatarError}
-                    </p>
-                  ) : null}
-                  {actionError ? (
-                    <p className="mt-4 text-xs text-rose-300" role="alert">
-                      {actionError}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            </aside>
-
-            <div className="min-w-0 flex-1 space-y-4">
-              {engineerProfile ? (
-                <>
-                  {hasAboutSection ? (
-                    <article
-                      className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(1).className}`}
-                      style={entrance(1).style}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          About
-                        </h2>
-                        {isSelf && !isEditingBio ? (
-                          <button
-                            type="button"
-                            onClick={startEditingBio}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {isEditingBio ? (
-                        <div className="mt-4 space-y-2">
-                          <textarea
-                            value={bioDraft}
-                            onChange={(event) => {
-                              setBioDraft(event.target.value.slice(0, 500));
-                              setBioSaveError("");
-                            }}
-                            maxLength={500}
-                            rows={4}
-                            className="form-input"
-                            placeholder="Add a short introduction"
-                          />
-                          <div className="flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void saveBio()}
-                              disabled={isSavingBio}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isSavingBio ? "Saving..." : "Save"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelEditingBio}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                            <span className="text-xs text-white/45">
-                              {bioDraft.length}/500
-                            </span>
-                          </div>
-                          {bioSaveError ? (
-                            <p className="text-xs text-rose-300" role="alert">
-                              {bioSaveError}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : profile.bio.trim() ? (
-                        <p className="mt-4 text-sm leading-6 text-white/70">
-                          {profile.bio}
-                        </p>
-                      ) : isSelf ? (
-                        <button
-                          type="button"
-                          onClick={startEditingBio}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add about
-                        </button>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  {hasRateLocationSection ? (
-                    <article
-                      className={`rounded-2xl border border-white/10 bg-surface p-6 ${entrance(2).className}`}
-                      style={entrance(2).style}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          Rate & Location
-                        </h2>
-                        {isSelf && !isEditingEngineerDetails ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingEngineerDetails(true)}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {isEditingEngineerDetails ? (
-                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                          <div className="grid content-start gap-1.5">
-                            <label htmlFor="starting-rate-min" className="text-xs font-semibold text-white/60">
-                              Starting rate from
-                            </label>
-                            <MoneyInput
-                              id="starting-rate-min"
-                              value={startingRateMinDraft}
-                              onChange={setStartingRateMinDraft}
-                            />
-                          </div>
-                          <div className="grid content-start gap-1.5">
-                            <label htmlFor="starting-rate-max" className="text-xs font-semibold text-white/60">
-                              Starting rate up to
-                            </label>
-                            <MoneyInput
-                              id="starting-rate-max"
-                              value={startingRateMaxDraft}
-                              onChange={setStartingRateMaxDraft}
-                            />
-                          </div>
-                          <input
-                            aria-label="Your location"
-                            value={engineerLocationDraft}
-                            onChange={(event) =>
-                              setEngineerLocationDraft(event.target.value)
-                            }
-                            placeholder="Your location"
-                            className="form-input"
-                          />
-                          <div className="sm:col-span-3 flex flex-wrap items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void saveEngineerRateLocation()}
-                              disabled={isSavingEngineerDetails}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isSavingEngineerDetails ? "Saving..." : "Save"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsEditingEngineerDetails(false);
-                                setEngineerDetailsError("");
-                                setStartingRateMinDraft(
-                                  typeof engineerProfile.startingRateMin ===
-                                    "number"
-                                    ? String(engineerProfile.startingRateMin)
-                                    : "",
-                                );
-                                setStartingRateMaxDraft(
-                                  typeof engineerProfile.startingRateMax ===
-                                    "number"
-                                    ? String(engineerProfile.startingRateMax)
-                                    : "",
-                                );
-                                setEngineerLocationDraft(
-                                  engineerProfile.location ?? "",
-                                );
-                              }}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {engineerDetailsError ? (
-                            <p
-                              className="sm:col-span-3 text-xs text-rose-300"
-                              role="alert"
-                            >
-                              {engineerDetailsError}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                            <dt className="text-xs text-white/50">
-                              Starting rate
-                            </dt>
-                            <dd className="mt-1 text-sm font-semibold text-white">
-                              {typeof engineerProfile.startingRateMin ===
-                                "number" ||
-                              typeof engineerProfile.startingRateMax === "number"
-                                ? `${
-                                    typeof engineerProfile.startingRateMin ===
-                                    "number"
-                                      ? formatCurrency(engineerProfile.startingRateMin)
-                                      : "-"
-                                  } to ${
-                                    typeof engineerProfile.startingRateMax ===
-                                    "number"
-                                      ? formatCurrency(engineerProfile.startingRateMax)
-                                      : "-"
-                                  }`
-                                : isSelf
-                                  ? "Not added yet"
-                                  : ""}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                            <dt className="text-xs text-white/50">
-                              Typical rate (accepted bids)
-                            </dt>
-                            <dd className="mt-1 text-sm font-semibold text-white">
-                              {typeof engineerProfile.typicalRate === "number"
-                                ? `${formatCurrency(engineerProfile.typicalRate)} (${engineerProfile.acceptedBidCount})`
-                                : "No accepted bid history yet"}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                            <dt className="text-xs text-white/50">
-                              Self-declared location
-                            </dt>
-                            <dd className="mt-1 text-sm font-semibold text-white">
-                              {engineerProfile.location ||
-                                (isSelf ? "Not added yet" : "")}
-                            </dd>
-                          </div>
-                          <div className="rounded-xl border border-white/10 bg-void/40 p-4">
-                            <dt className="text-xs text-white/50">
-                              Derived location (completed work)
-                            </dt>
-                            <dd className="mt-1 text-sm font-semibold text-white">
-                              {engineerProfile.derivedLocation
-                                ? `${engineerProfile.derivedLocation} (${engineerProfile.completedLocationProjectCount})`
-                                : "No completed-work location history yet"}
-                            </dd>
-                          </div>
-                        </dl>
-                      )}
-
-                      {!hasSelfDeclaredRateOrLocation &&
-                      !hasDerivedRateOrLocation &&
-                      isSelf &&
-                      !isEditingEngineerDetails ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsEditingEngineerDetails(true)}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add rate & location
-                        </button>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  {hasExperienceSection ? (
-                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          Experience
-                        </h2>
-                        {isSelf && !isAddingExperience ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingExperience(true)}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            + Add
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {engineerProfile.experience.length === 0 &&
-                      isSelf &&
-                      !isAddingExperience ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingExperience(true)}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add experience
-                        </button>
-                      ) : null}
-
-                      {engineerProfile.experience.length > 0 ? (
-                        <div className="mt-4 space-y-3">
-                          {engineerProfile.experience.map((entry) => (
-                            <div
-                              key={entry.id}
-                              className="rounded-xl border border-white/10 bg-void/40 p-4"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-semibold text-white">
-                                    {entry.title || "Untitled role"}
-                                  </p>
-                                  <p className="text-xs text-white/60">
-                                    {entry.organization || "Organization"}
-                                  </p>
-                                  <p className="mt-1 text-xs text-white/45">
-                                    {entry.startYear ?? "-"} -{" "}
-                                    {entry.endYear ?? "Present"}
-                                  </p>
-                                </div>
-                                {isSelf ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void removeExperienceEntry(entry.id)
-                                    }
-                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
-                                  >
-                                    Remove
-                                  </button>
-                                ) : null}
-                              </div>
-                              {entry.description ? (
-                                <p className="mt-3 text-xs leading-5 text-white/65">
-                                  {entry.description}
-                                </p>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {isSelf && isAddingExperience ? (
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <input
-                            value={experienceTitleDraft}
-                            onChange={(event) =>
-                              setExperienceTitleDraft(event.target.value)
-                            }
-                            placeholder="Title"
-                            className="form-input"
-                          />
-                          <input
-                            value={experienceOrganizationDraft}
-                            onChange={(event) =>
-                              setExperienceOrganizationDraft(event.target.value)
-                            }
-                            placeholder="Organization"
-                            className="form-input"
-                          />
-                          <input
-                            value={experienceStartYearDraft}
-                            onChange={(event) =>
-                              setExperienceStartYearDraft(event.target.value)
-                            }
-                            type="number"
-                            placeholder="Start year"
-                            className="form-input"
-                          />
-                          <input
-                            value={experienceEndYearDraft}
-                            onChange={(event) =>
-                              setExperienceEndYearDraft(event.target.value)
-                            }
-                            type="number"
-                            placeholder="End year (blank for present)"
-                            className="form-input"
-                          />
-                          <textarea
-                            value={experienceDescriptionDraft}
-                            onChange={(event) =>
-                              setExperienceDescriptionDraft(event.target.value)
-                            }
-                            placeholder="Description"
-                            rows={3}
-                            className="form-input sm:col-span-2"
-                          />
-                          <div className="sm:col-span-2 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void addExperienceEntry()}
-                              disabled={isSavingExperience}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isSavingExperience
-                                ? "Saving..."
-                                : "Save experience"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsAddingExperience(false);
-                                setExperienceError("");
-                              }}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {experienceError ? (
-                            <p
-                              className="sm:col-span-2 text-xs text-rose-300"
-                              role="alert"
-                            >
-                              {experienceError}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  {hasEducationSection ? (
-                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          Education
-                        </h2>
-                        {isSelf && !isAddingEducation ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingEducation(true)}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            + Add
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {engineerProfile.education.length === 0 &&
-                      isSelf &&
-                      !isAddingEducation ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingEducation(true)}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add education
-                        </button>
-                      ) : null}
-
-                      {engineerProfile.education.length > 0 ? (
-                        <div className="mt-4 space-y-3">
-                          {engineerProfile.education.map((entry) => (
-                            <div
-                              key={entry.id}
-                              className="rounded-xl border border-white/10 bg-void/40 p-4"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-semibold text-white">
-                                    {entry.institution || "Institution"}
-                                  </p>
-                                  <p className="text-xs text-white/60">
-                                    {entry.degree || "Degree"}
-                                    {entry.fieldOfStudy
-                                      ? `, ${entry.fieldOfStudy}`
-                                      : ""}
-                                  </p>
-                                  <p className="mt-1 text-xs text-white/45">
-                                    {entry.graduationYear ?? "Year not set"}
-                                  </p>
-                                </div>
-                                {isSelf ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      void removeEducationEntry(entry.id)
-                                    }
-                                    className="text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
-                                  >
-                                    Remove
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {isSelf && isAddingEducation ? (
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <input
-                            value={educationInstitutionDraft}
-                            onChange={(event) =>
-                              setEducationInstitutionDraft(event.target.value)
-                            }
-                            placeholder="Institution"
-                            className="form-input"
-                          />
-                          <input
-                            value={educationDegreeDraft}
-                            onChange={(event) =>
-                              setEducationDegreeDraft(event.target.value)
-                            }
-                            placeholder="Degree"
-                            className="form-input"
-                          />
-                          <input
-                            value={educationFieldDraft}
-                            onChange={(event) =>
-                              setEducationFieldDraft(event.target.value)
-                            }
-                            placeholder="Field of study"
-                            className="form-input"
-                          />
-                          <input
-                            value={educationYearDraft}
-                            onChange={(event) =>
-                              setEducationYearDraft(event.target.value)
-                            }
-                            type="number"
-                            placeholder="Graduation year"
-                            className="form-input"
-                          />
-                          <div className="sm:col-span-2 flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => void addEducationEntry()}
-                              disabled={isSavingEducation}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isSavingEducation ? "Saving..." : "Save education"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsAddingEducation(false);
-                                setEducationError("");
-                              }}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {educationError ? (
-                            <p
-                              className="sm:col-span-2 text-xs text-rose-300"
-                              role="alert"
-                            >
-                              {educationError}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  {engineerProfile &&
-                  (engineerProfile.completedWork.length > 0 || isSelf) ? (
-                    <DeliveredProjects
-                      projects={engineerProfile.completedWork}
-                      headingId="engineer-work"
-                      emptyText="Projects you finish on CivilHub appear here."
+                {!isSelf ? (
+                  <div className="mt-4 border-t border-white/10 pt-4">
+                    <ProfileSafetyActions
+                      userId={profile.userId}
+                      name={profile.name}
+                      blockedByMe={Boolean(profile.blockedByMe)}
+                      onChanged={refreshProfile}
                     />
-                  ) : null}
-
-                  {engineerProfile && (engineerProfile.equipment ?? []).length > 0 ? (
-                    <ProfileEquipment
-                      listings={engineerProfile.equipment ?? []}
-                      headingId="engineer-equipment"
-                      emptyText=""
-                    />
-                  ) : null}
-
-                  {engineerPortfolioItems.length > 0 || isSelf ? (
-                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          Portfolio
-                        </h2>
-                        {isSelf && !isAddingPortfolio ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingPortfolio(true)}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            + Add
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {engineerPortfolioItems.length === 0 &&
-                      isSelf &&
-                      !isAddingPortfolio ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingPortfolio(true)}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add portfolio
-                        </button>
-                      ) : null}
-
-                      {engineerPortfolioItems.length > 0 ? (
-                        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                          {engineerPortfolioItems.map((item, index) => {
-                            const key =
-                              "_id" in item ? item._id : `${item.title}-${index}`;
-                            return (
-                              <div
-                                key={key}
-                                className="rounded-xl border border-white/10 bg-void/40 p-4"
-                              >
-                                <img
-                                  src={item.imageUrl}
-                                  alt={item.title}
-                                  className="h-36 w-full rounded-lg object-cover"
-                                />
-                                <div className="mt-3 flex items-start justify-between gap-2">
-                                  <h3 className="text-sm font-semibold text-white">
-                                    {item.title}
-                                  </h3>
-                                  {isSelf && "_id" in item ? (
-                                    <button
-                                      type="button"
-                                      disabled={deletingItemId === item._id}
-                                      onClick={() =>
-                                        void deleteOwnItem("portfolio", item._id)
-                                      }
-                                      className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
-                                    >
-                                      {deletingItemId === item._id
-                                        ? "Removing..."
-                                        : "Delete"}
-                                    </button>
-                                  ) : null}
-                                </div>
-                                <p className="mt-2 text-xs leading-5 text-white/60">
-                                  {item.description}
-                                </p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-
-                      {isSelf && isAddingPortfolio ? (
-                        <form
-                          onSubmit={(event) => void uploadPortfolio(event)}
-                          className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
-                        >
-                          <input
-                            value={portfolioTitle}
-                            onChange={(event) =>
-                              setPortfolioTitle(event.target.value)
-                            }
-                            placeholder="Project title"
-                            className="form-input"
-                          />
-                          <textarea
-                            value={portfolioDescription}
-                            onChange={(event) =>
-                              setPortfolioDescription(event.target.value)
-                            }
-                            placeholder="Describe your contribution"
-                            rows={3}
-                            className="form-input"
-                          />
-                          <input
-                            ref={portfolioFileInputRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-on-primary"
-                          />
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="submit"
-                              disabled={isUploadingPortfolio}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isUploadingPortfolio
-                                ? "Uploading..."
-                                : "Save portfolio"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setIsAddingPortfolio(false)}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {portfolioError ? (
-                            <p className="text-xs text-rose-300" role="alert">
-                              {portfolioError}
-                            </p>
-                          ) : null}
-                        </form>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  {engineerCertificateItems.length > 0 || isSelf ? (
-                    <article className="rounded-2xl border border-white/10 bg-surface p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <h2 className="font-heading text-2xl font-bold text-white">
-                          Certificates
-                        </h2>
-                        {isSelf && !isAddingCertificate ? (
-                          <button
-                            type="button"
-                            onClick={() => setIsAddingCertificate(true)}
-                            className="text-xs font-semibold text-primary transition-colors hover:text-white"
-                          >
-                            + Add
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {engineerCertificateItems.length === 0 &&
-                      isSelf &&
-                      !isAddingCertificate ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingCertificate(true)}
-                          className="mt-4 rounded-xl border border-dashed border-white/20 px-4 py-3 text-sm font-semibold text-white/70 transition-colors hover:border-primary hover:text-white"
-                        >
-                          + Add certificate
-                        </button>
-                      ) : null}
-
-                      {engineerCertificateItems.length > 0 ? (
-                        <div className="mt-4 space-y-3">
-                          {engineerCertificateItems.map((certificate, index) => {
-                            const key =
-                              "_id" in certificate
-                                ? certificate._id
-                                : `${certificate.title}-${index}`;
-                            const href =
-                              "fileUrl" in certificate
-                                ? certificate.fileUrl
-                                : null;
-                            return (
-                              <article
-                                key={key}
-                                className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-void/40 p-4"
-                              >
-                                <div>
-                                  {href ? (
-                                    <a
-                                      href={href}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-sm font-semibold text-primary transition-colors hover:text-glow"
-                                    >
-                                      {certificate.title}
-                                    </a>
-                                  ) : (
-                                    <p className="text-sm font-semibold text-white">
-                                      {certificate.title}
-                                    </p>
-                                  )}
-                                  <p className="mt-1 text-xs text-white/45">
-                                    Uploaded {formatDate(certificate.uploadedAt)}
-                                  </p>
-                                </div>
-                                {isSelf && "_id" in certificate ? (
-                                  <button
-                                    type="button"
-                                    disabled={deletingItemId === certificate._id}
-                                    onClick={() =>
-                                      void deleteOwnItem(
-                                        "certificates",
-                                        certificate._id,
-                                      )
-                                    }
-                                    className="shrink-0 text-xs font-semibold text-white/50 transition-colors hover:text-rose-300"
-                                  >
-                                    {deletingItemId === certificate._id
-                                      ? "Removing..."
-                                      : "Delete"}
-                                  </button>
-                                ) : null}
-                              </article>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-
-                      {isSelf && isAddingCertificate ? (
-                        <form
-                          onSubmit={(event) => void uploadCertificate(event)}
-                          className="mt-4 space-y-3 rounded-xl border border-white/10 bg-void/40 p-4"
-                        >
-                          <input
-                            value={certificateTitle}
-                            onChange={(event) =>
-                              setCertificateTitle(event.target.value)
-                            }
-                            placeholder="Certificate title"
-                            className="form-input"
-                          />
-                          <input
-                            ref={certificateFileInputRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,application/pdf"
-                            aria-describedby="certificate-visibility"
-                            className="block w-full text-sm text-white/60 file:mr-3 file:rounded-full file:border-0 file:bg-primary file:px-4 file:py-2 file:font-semibold file:text-on-primary"
-                          />
-                          <p id="certificate-visibility" className="text-xs text-white/45">
-                            Signed-in CivilHub users can open this file to check it,
-                            so leave out anything you wouldn't share.
-                          </p>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="submit"
-                              disabled={isUploadingCertificate}
-                              className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-primary/90 disabled:opacity-60"
-                            >
-                              {isUploadingCertificate
-                                ? "Uploading..."
-                                : "Save certificate"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setIsAddingCertificate(false)}
-                              className="text-xs font-semibold text-white/60 transition-colors hover:text-white"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {certificateError ? (
-                            <p className="text-xs text-rose-300" role="alert">
-                              {certificateError}
-                            </p>
-                          ) : null}
-                        </form>
-                      ) : null}
-                    </article>
-                  ) : null}
-
-                  <div id="engineer-reviews">
-                    {renderReviewsSection(
-                      "As a renter",
-                      isSelf
-                        ? "Reviews from clients and renters appear here once work is finished."
-                        : "No reviews yet.",
-                    )}
                   </div>
+                ) : null}
 
-                  <div
-                    className={entrance(3).className}
-                    style={entrance(3).style}
-                  >
-                    {renderPostsSection(
-                      isSelf && currentUser?.role === "engineer",
-                      {
-                        name: profile.name,
-                        photoUrl: profile.profilePhotoUrl,
-                        role: profile.role,
-                      },
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
+                {actionError ? (
+                  <p className="mt-4 text-xs text-rose-300" role="alert">
+                    {actionError}
+                  </p>
+                ) : null}
+              </>
+            }
+            reviewsSection={renderReviewsSection(
+              "As a renter",
+              isSelf
+                ? "Reviews from clients and renters appear here once work is finished."
+                : "No reviews yet.",
+            )}
+            postsSection={renderPostsSection(isSelf && currentUser?.role === "engineer", {
+              name: profile.name,
+              photoUrl: profile.profilePhotoUrl,
+              role: profile.role,
+            })}
+          />
         )}
       </div>
 
@@ -3499,6 +1393,8 @@ export function PublicProfilePage(): ReactElement {
           onClose={() => setLightboxImageUrl(null)}
         />
       ) : null}
+
+      {confirmRemovalDialog}
     </div>
   );
 }

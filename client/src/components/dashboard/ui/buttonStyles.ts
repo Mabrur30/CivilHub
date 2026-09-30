@@ -9,6 +9,10 @@ export const primaryButtonBaseClassName = `inline-flex shrink-0 items-center jus
 // base with `w-full` where a full-width button is wanted.
 export const primaryButtonClassName = `${primaryButtonBaseClassName} w-fit`;
 
+// Solid red for the confirm step of something hard to undo, like blocking.
+// A fixed red with white text reads the same in both themes.
+export const dangerButtonClassName = `inline-flex w-fit shrink-0 items-center justify-center gap-2 rounded-full bg-rose-600 px-5 py-3 text-sm font-semibold text-[#fff] transition-[background-color,transform] duration-200 hover:bg-rose-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100 ${focusRing}`;
+
 export const secondaryButtonClassName = `inline-flex w-fit shrink-0 items-center justify-center gap-2 rounded-full border border-white/20 px-5 py-3 text-sm font-semibold text-white/80 transition-[border-color,color,transform] duration-200 hover:border-white/40 hover:text-white active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
 
 // Compact actions that sit inside a list row.
