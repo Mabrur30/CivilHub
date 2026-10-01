@@ -11,6 +11,7 @@ import {
   criteriaFieldId,
 } from "../../lib/projectForm";
 import { inputClassName } from "../dashboard/ui/buttonStyles";
+import { RequiredMark } from "../dashboard/ui/RequiredMark";
 import { ChoiceChips } from "./ChoiceChips";
 
 
@@ -41,7 +42,9 @@ function FieldShell({
     <div className="grid content-start gap-2">
       <label htmlFor={id} className="text-sm font-semibold text-white/80">
         {field.label}
-        {field.required ? null : (
+        {field.required ? (
+          <RequiredMark />
+        ) : (
           <span className="font-normal text-white/40"> (if known)</span>
         )}
       </label>
@@ -121,6 +124,7 @@ function CriteriaControl({
         legend={field.label}
         hint={field.hint}
         note={note}
+        required={field.required}
         error={error}
         options={options}
         value={Array.isArray(value) ? value : []}
@@ -133,6 +137,7 @@ function CriteriaControl({
         legend={field.label}
         hint={field.hint}
         note={note}
+        required={field.required}
         error={error}
         options={options}
         value={typeof value === "string" ? value : ""}

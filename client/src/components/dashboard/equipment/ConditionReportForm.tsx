@@ -58,7 +58,7 @@ export function ConditionReportForm({
     <div className="mt-2 grid gap-2 rounded-xl border border-white/10 bg-white/5 p-3">
       <p className="text-xs text-white/60">
         Your own record of the {stage}, next to the other side's. Take the photos now if you can; CivilHub checks their camera
-        date and place. You can add these once.
+        date and place. You can add these once. Add photos, a note, or both.
       </p>
       <label htmlFor={`${id}-notes`} className="sr-only">
         Notes

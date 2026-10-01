@@ -11,6 +11,7 @@ import {
   secondaryButtonClassName,
 } from "../components/dashboard/ui/buttonStyles";
 import { FormField } from "../components/dashboard/ui/FormField";
+import { RequiredLegend, RequiredMark } from "../components/dashboard/ui/RequiredMark";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { ProgressBar } from "../components/dashboard/ui/ProgressBar";
 import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
@@ -1169,7 +1170,10 @@ export function ProjectProgressPage(): ReactElement {
                 profile and helps other clients choose.
               </p>
               <fieldset className="mt-5">
-                <legend className="text-sm font-semibold text-white/80">Rating</legend>
+                <legend className="text-sm font-semibold text-white/80">
+                  Rating
+                  <RequiredMark />
+                </legend>
                 <div className="mt-2 flex gap-1">
                   {[1, 2, 3, 4, 5].map((value) => (
                     <button
@@ -1188,6 +1192,7 @@ export function ProjectProgressPage(): ReactElement {
               <div className="mt-5 grid gap-2">
                 <label htmlFor="review-text" className="text-sm font-semibold text-white/80">
                   Your review
+                  <RequiredMark />
                 </label>
                 <textarea
                   id="review-text"
@@ -1322,6 +1327,7 @@ export function ProjectProgressPage(): ReactElement {
                   {formatCurrency(phasePlan.advanceAmount)} advance before work
                   starts, then pays for each phase when they approve it.
                 </p>
+                <RequiredLegend className="mt-2" />
 
                 {phasePlan.phasePlanFeedback ? (
                   <div className="mt-5 rounded-xl border border-violet-300/25 bg-violet-300/5 p-4">
@@ -1362,7 +1368,7 @@ export function ProjectProgressPage(): ReactElement {
                         )}
                       </div>
                       <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-                        <FormField id={`phase-${phase.id}-title`} label="Title">
+                        <FormField id={`phase-${phase.id}-title`} label="Title" required>
                           <input
                             id={`phase-${phase.id}-title`}
                             value={phase.title}
@@ -1370,7 +1376,7 @@ export function ProjectProgressPage(): ReactElement {
                             className={inputClassName}
                           />
                         </FormField>
-                        <FormField id={`phase-${phase.id}-price`} label="Price">
+                        <FormField id={`phase-${phase.id}-price`} label="Price" required>
                           <MoneyInput
                             id={`phase-${phase.id}-price`}
                             value={priceDrafts[phase.id] ?? (phase.price ? String(phase.price) : "")}
@@ -1380,7 +1386,7 @@ export function ProjectProgressPage(): ReactElement {
                             }}
                           />
                         </FormField>
-                        <FormField id={`phase-${phase.id}-due`} label="Due by">
+                        <FormField id={`phase-${phase.id}-due`} label="Due by" required>
                           <input
                             id={`phase-${phase.id}-due`}
                             type="date"
@@ -1393,6 +1399,7 @@ export function ProjectProgressPage(): ReactElement {
                       <FormField
                         id={`phase-${phase.id}-description`}
                         label="What's included"
+                        required
                         className="mt-4"
                       >
                         <textarea

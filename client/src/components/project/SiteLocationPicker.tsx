@@ -4,6 +4,7 @@ import { type BdDistrict } from "../../lib/projectCriteria";
 import { SITE_FIELD_IDS, type SiteErrors, type SiteFormValue } from "../../lib/projectForm";
 import { type LatLng } from "../../lib/siteDetails";
 import { inputClassName, rowButtonClassName } from "../dashboard/ui/buttonStyles";
+import { RequiredMark } from "../dashboard/ui/RequiredMark";
 import { SiteMap } from "../map/LazySiteMap";
 import { API_BASE_URL } from "../../lib/apiBase";
 
@@ -144,6 +145,7 @@ export function SiteLocationPicker({
       <div className="grid gap-2">
         <label htmlFor={SITE_FIELD_IDS.point} className="text-sm font-semibold text-white/80">
           Find the site
+          <RequiredMark />
         </label>
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
@@ -226,6 +228,7 @@ export function SiteLocationPicker({
         <div className="grid content-start gap-2">
           <label htmlFor={SITE_FIELD_IDS.district} className="text-sm font-semibold text-white/80">
             District
+            <RequiredMark />
           </label>
           <select
             id={SITE_FIELD_IDS.district}
@@ -249,6 +252,7 @@ export function SiteLocationPicker({
         <div className="grid content-start gap-2">
           <label htmlFor={SITE_FIELD_IDS.area} className="text-sm font-semibold text-white/80">
             Area, thana or upazila
+            <RequiredMark />
           </label>
           <input
             id={SITE_FIELD_IDS.area}

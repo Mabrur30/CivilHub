@@ -100,6 +100,7 @@ export function DisciplinePicker({
     <div className="mt-3 grid gap-3 rounded-xl border border-white/10 bg-void/40 p-4">
       <SpecialityChooser
         value={draft}
+        required
         onChange={(next) => {
           setError("");
           setDraft(next);

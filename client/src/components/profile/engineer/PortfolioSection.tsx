@@ -21,6 +21,7 @@ import {
   textActionClassName,
   useOpenRequest,
 } from "./SectionCard";
+import { RequiredMark } from "../../dashboard/ui/RequiredMark";
 
 type OwnPortfolio = OwnEngineerData["portfolio"];
 
@@ -131,6 +132,7 @@ export function PortfolioSection({
       <div className="grid gap-1.5">
         <label htmlFor="portfolio-title" className={fieldLabelClassName}>
           Project
+          <RequiredMark />
         </label>
         <input
           id="portfolio-title"
@@ -144,6 +146,7 @@ export function PortfolioSection({
       <div className="grid gap-1.5">
         <label htmlFor="portfolio-description" className={fieldLabelClassName}>
           Your part in it
+          <RequiredMark />
         </label>
         <textarea
           id="portfolio-description"
@@ -157,7 +160,8 @@ export function PortfolioSection({
       {editingId === "new" ? (
         <div className="grid gap-1.5">
           <label htmlFor="portfolio-image" className={fieldLabelClassName}>
-            Photo <span className="font-normal text-white/40">(JPG, PNG or WEBP, up to 5MB)</span>
+            Photo
+            <RequiredMark /> <span className="font-normal text-white/40">(JPG, PNG or WEBP, up to 5MB)</span>
           </label>
           <input
             id="portfolio-image"

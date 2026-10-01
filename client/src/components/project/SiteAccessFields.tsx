@@ -30,6 +30,7 @@ export function SiteAccessFields({
         id="siteUtilities"
         name="siteUtilities"
         legend="Connections already at the site"
+        note="(choose any)"
         options={options.utilities}
         value={value.utilities}
         onChange={(utilities) => onChange({ utilities })}
@@ -39,6 +40,7 @@ export function SiteAccessFields({
         id="siteDocuments"
         name="siteDocuments"
         legend="Documents you have"
+        note="(choose any)"
         hint="Engineers price more accurately when they know what already exists."
         options={options.documentsAvailable}
         value={value.documentsAvailable}

@@ -1,6 +1,7 @@
 import { CheckIcon } from "@phosphor-icons/react";
 import { type ReactElement } from "react";
 import { DISCIPLINE_LIMIT, ENGINEER_DISCIPLINES } from "../../../lib/disciplines";
+import { RequiredMark } from "../../dashboard/ui/RequiredMark";
 
 /**
  * Picks a main speciality and up to two more from the discipline list. The
@@ -13,12 +14,15 @@ export function SpecialityChooser({
   legend = "Your speciality",
   hint,
   error,
+  required = false,
 }: {
   value: string[];
   onChange: (value: string[]) => void;
   legend?: string;
   hint?: string;
   error?: string;
+  /** Marks the legend with an asterisk. */
+  required?: boolean;
 }): ReactElement {
   const isFull = value.length >= DISCIPLINE_LIMIT;
 
@@ -32,7 +36,10 @@ export function SpecialityChooser({
 
   return (
     <fieldset className="grid gap-3" aria-describedby={error ? "speciality-error" : undefined}>
-      <legend className="mb-1 text-sm font-semibold text-white/80">{legend}</legend>
+      <legend className="mb-1 text-sm font-semibold text-white/80">
+        {legend}
+        {required ? <RequiredMark /> : null}
+      </legend>
       <p className="-mt-1 text-xs leading-5 text-white/50">
         {hint ??
           `Pick your main speciality first, then up to ${DISCIPLINE_LIMIT - 1} more. Clients search and filter by these.`}

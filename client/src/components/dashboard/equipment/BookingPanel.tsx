@@ -13,6 +13,7 @@ import {
 import { EquipmentCalendar, type SelectedRange } from "../../EquipmentCalendar";
 import { inputClassName } from "../ui/buttonStyles";
 import { useEquipmentPaths } from "./paths";
+import { RequiredMark } from "../ui/RequiredMark";
 
 interface BookingPanelProps {
   item: EquipmentListing;
@@ -252,6 +253,7 @@ export function BookingPanel({ item }: BookingPanelProps): ReactElement {
             className="text-sm font-semibold text-white"
           >
             Site address
+            <RequiredMark />
           </label>
           <textarea
             id={`site-address-${item.id}`}

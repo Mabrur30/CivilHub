@@ -5,6 +5,7 @@ import {
   primaryButtonClassName,
 } from "../dashboard/ui/buttonStyles";
 import { FormField } from "../dashboard/ui/FormField";
+import { RequiredLegend } from "../dashboard/ui/RequiredMark";
 import { ChoiceChips } from "../project/ChoiceChips";
 import { formatCurrency } from "../../lib/format";
 import { API_BASE_URL } from "../../lib/apiBase";
@@ -177,15 +178,17 @@ export function GettingPaidPanel(): ReactElement {
 
           {isEditing ? (
             <form className="mt-6 grid max-w-xl gap-4" noValidate onSubmit={(event) => void save(event)}>
+              <RequiredLegend />
               <ChoiceChips
                 id="payout-method"
                 name="payout-method"
                 legend="Send my money to"
+                required
                 options={METHODS}
                 value={form.method}
                 onChange={(value) => set("method")(value)}
               />
-              <FormField id="payout-name" label={isBank ? "Account holder's name" : "Name on the wallet"}>
+              <FormField id="payout-name" label={isBank ? "Account holder's name" : "Name on the wallet"} required>
                 <input
                   id="payout-name"
                   value={form.accountName}
@@ -198,6 +201,7 @@ export function GettingPaidPanel(): ReactElement {
               <FormField
                 id="payout-number"
                 label={isBank ? "Account number" : `${METHOD_LABEL[form.method]} number`}
+                required
                 hint={isBank ? undefined : "The 11-digit mobile number, like 01712345678."}
               >
                 <input
@@ -211,10 +215,10 @@ export function GettingPaidPanel(): ReactElement {
               </FormField>
               {isBank ? (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField id="payout-bank" label="Bank">
+                  <FormField id="payout-bank" label="Bank" required>
                     <input id="payout-bank" value={form.bankName} onChange={(event) => set("bankName")(event.target.value)} maxLength={120} className={inputClassName} />
                   </FormField>
-                  <FormField id="payout-branch" label="Branch">
+                  <FormField id="payout-branch" label="Branch" required>
                     <input id="payout-branch" value={form.branch} onChange={(event) => set("branch")(event.target.value)} maxLength={120} className={inputClassName} />
                   </FormField>
                   <FormField id="payout-routing" label="Routing number (optional)" className="sm:col-span-2">
@@ -229,7 +233,7 @@ export function GettingPaidPanel(): ReactElement {
                   </FormField>
                 </div>
               ) : null}
-              <FormField id="payout-password" label="Your CivilHub password" hint="Needed to change where you're paid.">
+              <FormField id="payout-password" label="Your CivilHub password" hint="Needed to change where you're paid." required>
                 <input
                   id="payout-password"
                   type="password"

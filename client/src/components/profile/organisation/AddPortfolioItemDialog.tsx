@@ -6,6 +6,7 @@ import {
 } from "../../dashboard/ui/buttonStyles";
 import { Dialog } from "../../dashboard/ui/Dialog";
 import { FormField } from "../../dashboard/ui/FormField";
+import { RequiredLegend, RequiredMark } from "../../dashboard/ui/RequiredMark";
 import { getErrorMessage } from "./organisationProfile";
 import { API_BASE_URL } from "../../../lib/apiBase";
 
@@ -87,8 +88,12 @@ export function AddPortfolioItemDialog({
           void save();
         }}
       >
+        <RequiredLegend className="-mb-2" />
         <div className="grid gap-2">
-          <p className="text-sm font-semibold text-white/80">Photo</p>
+          <p className="text-sm font-semibold text-white/80">
+            Photo
+            <RequiredMark />
+          </p>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
@@ -113,7 +118,7 @@ export function AddPortfolioItemDialog({
             }}
           />
         </div>
-        <FormField id="portfolio-title" label="Title">
+        <FormField id="portfolio-title" label="Title" required>
           <input
             id="portfolio-title"
             value={title}
@@ -122,7 +127,7 @@ export function AddPortfolioItemDialog({
             className={inputClassName}
           />
         </FormField>
-        <FormField id="portfolio-description" label="What you did">
+        <FormField id="portfolio-description" label="What you did" required>
           <textarea
             id="portfolio-description"
             value={description}

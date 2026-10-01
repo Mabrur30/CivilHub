@@ -1,9 +1,12 @@
 import { type ReactElement, type ReactNode } from "react";
+import { RequiredMark } from "./RequiredMark";
 
 interface FormFieldProps {
   id: string;
   label: string;
   hint?: string;
+  /** Marks the label with an asterisk. */
+  required?: boolean;
   className?: string;
   children: ReactNode;
 }
@@ -14,6 +17,7 @@ export function FormField({
   id,
   label,
   hint,
+  required = false,
   className = "",
   children,
 }: FormFieldProps): ReactElement {
@@ -21,6 +25,7 @@ export function FormField({
     <div className={`grid content-start gap-2 ${className}`}>
       <label htmlFor={id} className="text-sm font-semibold text-white/80">
         {label}
+        {required ? <RequiredMark /> : null}
       </label>
       {children}
       {hint ? <p className="text-xs text-white/45">{hint}</p> : null}

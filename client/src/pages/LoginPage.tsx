@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { EnvelopeIcon, LockIcon } from "@phosphor-icons/react";
 import { AuthShell } from "../components/auth/AuthShell";
 import { GlassField } from "../components/auth/GlassField";
+import { RequiredLegend } from "../components/dashboard/ui/RequiredMark";
 import { GlassSubmitButton } from "../components/auth/GlassSubmitButton";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE_URL } from "../lib/apiBase";
@@ -92,6 +93,7 @@ export function LoginPage(): ReactElement {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left">
+        <RequiredLegend />
         <GlassField
           id="login-email"
           label="Email address"

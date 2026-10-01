@@ -354,7 +354,7 @@ export function ProjectProblemPanel({
           isBusy={isBusy}
         >
           <div className="mt-5 grid gap-4">
-            <FormField id="dispute-reason" label="What's the problem?">
+            <FormField id="dispute-reason" label="What's the problem?" required>
               <select
                 id="dispute-reason"
                 value={reason}
@@ -371,7 +371,7 @@ export function ProjectProblemPanel({
                 ))}
               </select>
             </FormField>
-            <FormField id="dispute-description" label="What happened?" hint="At least a couple of sentences: dates, phases and what you'd like to happen.">
+            <FormField id="dispute-description" label="What happened?" hint="At least a couple of sentences: dates, phases and what you'd like to happen." required>
               <textarea
                 id="dispute-description"
                 rows={5}
@@ -415,7 +415,7 @@ export function ProjectProblemPanel({
           isBusy={isBusy}
         >
           <div className="mt-5 grid gap-4">
-            <FormField id="cancel-provider-share" label="The provider keeps">
+            <FormField id="cancel-provider-share" label="The provider keeps" required>
               <MoneyInput id="cancel-provider-share" value={providerShare} onChange={setProviderShare} />
             </FormField>
             {share !== null && refund !== null ? (

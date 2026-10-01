@@ -22,6 +22,7 @@ import {
   textActionClassName,
   useOpenRequest,
 } from "./SectionCard";
+import { RequiredMark } from "../../dashboard/ui/RequiredMark";
 
 const TASKS = ["certificate"] as const;
 
@@ -130,6 +131,7 @@ export function CertificatesSection({
       <div className="grid gap-1.5">
         <label htmlFor="certificate-title" className={fieldLabelClassName}>
           Certificate name
+          <RequiredMark />
         </label>
         <input
           id="certificate-title"
@@ -143,7 +145,8 @@ export function CertificatesSection({
       {editingId === "new" ? (
         <div className="grid gap-1.5">
           <label htmlFor="certificate-file" className={fieldLabelClassName}>
-            File <span className="font-normal text-white/40">(PDF or image, up to 10MB)</span>
+            File
+            <RequiredMark /> <span className="font-normal text-white/40">(PDF or image, up to 10MB)</span>
           </label>
           <input
             id="certificate-file"

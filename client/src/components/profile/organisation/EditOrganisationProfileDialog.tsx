@@ -7,6 +7,7 @@ import {
 } from "../../dashboard/ui/buttonStyles";
 import { Dialog } from "../../dashboard/ui/Dialog";
 import { FormField } from "../../dashboard/ui/FormField";
+import { RequiredLegend, RequiredMark } from "../../dashboard/ui/RequiredMark";
 import {
   type CompanyDetails,
   getErrorMessage,
@@ -150,7 +151,8 @@ export function EditOrganisationProfileDialog({
       size="lg"
     >
       <form onSubmit={(event) => void save(event)} className="grid gap-6" noValidate>
-        <FormField id="company-name" label="Company name">
+        <RequiredLegend className="-mb-2" />
+        <FormField id="company-name" label="Company name" required>
           <input
             id="company-name"
             value={draft.name}
@@ -164,6 +166,7 @@ export function EditOrganisationProfileDialog({
         <fieldset className="grid gap-3">
           <legend className="text-sm font-semibold text-white/80">
             What does your company do?
+            <RequiredMark />
           </legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {(Object.keys(serviceLabels) as CompanyService[]).map((service) => (
@@ -228,6 +231,7 @@ export function EditOrganisationProfileDialog({
               value={draft.specialties}
               onChange={(next) => update("specialties", next)}
               legend="Specialities"
+              required={draft.services.includes("projects")}
               hint="Pick your main speciality first, then up to 2 more. Clients filter by these when they look for a firm."
             />
           </div>

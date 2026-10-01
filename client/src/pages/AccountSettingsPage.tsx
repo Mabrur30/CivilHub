@@ -6,6 +6,7 @@ import {
 } from "../components/dashboard/ui/buttonStyles";
 import { FormField } from "../components/dashboard/ui/FormField";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { RequiredLegend } from "../components/dashboard/ui/RequiredMark";
 import { useAuth } from "../context/AuthContext";
 import { BlockedPeoplePanel } from "../components/safety/BlockedPeoplePanel";
 import { GettingPaidPanel } from "../components/payouts/GettingPaidPanel";
@@ -165,6 +166,7 @@ export function AccountSettingsPage(): ReactElement {
         title="Account settings"
         summary="Your name, the email you sign in with, your password, and people you've blocked."
       />
+      <RequiredLegend className="-mt-4" />
 
       <SettingsPanel
         id="settings-name"
@@ -179,7 +181,7 @@ export function AccountSettingsPage(): ReactElement {
         submitLabel="Save name"
         onSubmit={() => void saveName()}
       >
-        <FormField id="account-name" label={isCompany ? "Company name" : "Full name"}>
+        <FormField id="account-name" label={isCompany ? "Company name" : "Full name"} required>
           <input
             id="account-name"
             value={name}
@@ -203,7 +205,7 @@ export function AccountSettingsPage(): ReactElement {
         submitLabel="Change email"
         onSubmit={() => void saveEmail()}
       >
-        <FormField id="account-email" label="Email address">
+        <FormField id="account-email" label="Email address" required>
           <input
             id="account-email"
             type="email"
@@ -216,7 +218,7 @@ export function AccountSettingsPage(): ReactElement {
             className={inputClassName}
           />
         </FormField>
-        <FormField id="account-email-password" label="Current password">
+        <FormField id="account-email-password" label="Current password" required>
           <input
             id="account-email-password"
             type="password"
@@ -240,7 +242,7 @@ export function AccountSettingsPage(): ReactElement {
         submitLabel="Change password"
         onSubmit={() => void savePassword()}
       >
-        <FormField id="account-current-password" label="Current password">
+        <FormField id="account-current-password" label="Current password" required>
           <input
             id="account-current-password"
             type="password"
@@ -253,7 +255,7 @@ export function AccountSettingsPage(): ReactElement {
             className={inputClassName}
           />
         </FormField>
-        <FormField id="account-new-password" label="New password">
+        <FormField id="account-new-password" label="New password" required>
           <input
             id="account-new-password"
             type="password"
@@ -266,7 +268,7 @@ export function AccountSettingsPage(): ReactElement {
             className={inputClassName}
           />
         </FormField>
-        <FormField id="account-confirm-password" label="Confirm new password">
+        <FormField id="account-confirm-password" label="Confirm new password" required>
           <input
             id="account-confirm-password"
             type="password"

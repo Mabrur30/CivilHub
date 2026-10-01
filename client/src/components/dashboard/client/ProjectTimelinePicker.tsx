@@ -1,6 +1,7 @@
 import { CalendarBlankIcon } from "@phosphor-icons/react";
 import { type ReactElement, useState } from "react";
 import { inputClassName } from "../ui/buttonStyles";
+import { RequiredMark } from "../ui/RequiredMark";
 import {
   addDays,
   addMonths,
@@ -133,7 +134,10 @@ export function ProjectTimelinePicker({
         aria-describedby={startError ? "targetStartDate-error" : undefined}
         className="rounded-xl outline-none"
       >
-        <legend className="text-sm font-semibold text-white/80">When should work start?</legend>
+        <legend className="text-sm font-semibold text-white/80">
+          When should work start?
+          <RequiredMark />
+        </legend>
         <div className="mt-3 flex flex-wrap gap-2">
           {startChoices.map((option) => (
             <label key={option.key} className={pillClassName}>
@@ -174,7 +178,10 @@ export function ProjectTimelinePicker({
         aria-describedby={finishError ? "targetCompletionDate-error" : undefined}
         className="rounded-xl outline-none"
       >
-        <legend className="text-sm font-semibold text-white/80">How long should it take?</legend>
+        <legend className="text-sm font-semibold text-white/80">
+          How long should it take?
+          <RequiredMark />
+        </legend>
         <div className="mt-3 flex flex-wrap gap-2">
           {lengthChoices.map((option) => (
             <label key={option.key} className={pillClassName}>

@@ -128,6 +128,10 @@ export function EducationSection({
 
   const form = (
     <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-void/40 p-4 sm:grid-cols-2">
+      <p className="text-xs text-white/50 sm:col-span-2">
+        Fill in at least an institution, a degree or a field of study. The rest
+        is optional.
+      </p>
       {field("institution", "Institution", "e.g. BUET", { maxLength: 160 })}
       {field("degree", "Degree", "e.g. BSc", { maxLength: 120 })}
       {field("fieldOfStudy", "Field of study", "e.g. Civil Engineering", { maxLength: 120 })}

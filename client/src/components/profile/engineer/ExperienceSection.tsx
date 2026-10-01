@@ -119,6 +119,9 @@ export function ExperienceSection({
 
   const form = (
     <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-void/40 p-4 sm:grid-cols-2">
+      <p className="text-xs text-white/50 sm:col-span-2">
+        Fill in at least a job title or an organisation. The rest is optional.
+      </p>
       <div className="grid gap-1.5">
         <label htmlFor="experience-title" className={fieldLabelClassName}>
           Job title

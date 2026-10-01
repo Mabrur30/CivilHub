@@ -6,6 +6,7 @@ import {
 } from "react";
 import { motion } from "framer-motion";
 import { EyeIcon, EyeSlashIcon, type Icon } from "@phosphor-icons/react";
+import { RequiredMark } from "../dashboard/ui/RequiredMark";
 
 interface GlassFieldProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "className"> {
@@ -44,6 +45,7 @@ export function GlassField({
         className="mb-2 block text-sm font-semibold text-white/80"
       >
         {label}
+        {inputProps.required ? <RequiredMark announce={false} /> : null}
       </label>
       <div
         onFocus={() => setIsFocused(true)}

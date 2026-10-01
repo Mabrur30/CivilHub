@@ -35,6 +35,7 @@ import { moneyValue } from "../lib/money";
 import { startCheckout } from "../lib/payments";
 import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
 import { bookingTotalDue } from "../components/dashboard/equipment/bookingTerms";
+import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 
 type TimelineState = "complete" | "current" | "upcoming";
 
@@ -1110,7 +1111,15 @@ export function BookingDetailPage(): ReactElement {
 
               {depositDraft.resolution === "claimed" ? (
                 <div className="mt-3 space-y-2">
+                  <label
+                    htmlFor="deposit-claim-notes"
+                    className="block text-sm font-semibold text-white/80"
+                  >
+                    Claim reason
+                    <RequiredMark />
+                  </label>
                   <textarea
+                    id="deposit-claim-notes"
                     rows={3}
                     value={depositDraft.claimNotes}
                     onChange={(event) =>
@@ -1119,7 +1128,7 @@ export function BookingDetailPage(): ReactElement {
                         claimNotes: event.target.value,
                       }))
                     }
-                    placeholder="Claim reason"
+                    placeholder="What was damaged, and how?"
                     className="w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
                   />
                   <div className="grid gap-1.5">
@@ -1128,6 +1137,7 @@ export function BookingDetailPage(): ReactElement {
                       className="text-sm font-semibold text-white/80"
                     >
                       Amount to claim
+                      <RequiredMark />
                     </label>
                     <MoneyInput
                       id="deposit-claim-amount"
@@ -1167,6 +1177,7 @@ export function BookingDetailPage(): ReactElement {
               </p>
               <label htmlFor="deposit-dispute-reason" className="mt-3 block text-sm font-semibold text-white/80">
                 Why you disagree
+                <RequiredMark />
               </label>
               <textarea
                 id="deposit-dispute-reason"
@@ -1273,27 +1284,42 @@ export function BookingDetailPage(): ReactElement {
               <p className="mt-2 text-sm text-white/75">
                 Share your experience after completion and deposit resolution.
               </p>
-              <div className="mt-4 flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setReviewRating(value)}
-                    className={`text-3xl leading-none transition-all duration-150 hover:scale-110 ${value <= reviewRating ? "text-amber-300" : "text-white/20 hover:text-amber-200/70"}`}
-                    aria-label={`${value} star${value === 1 ? "" : "s"}`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
+              <fieldset className="mt-4">
+                <legend className="text-sm font-semibold text-white/80">
+                  Rating
+                  <RequiredMark />
+                </legend>
+                <div className="mt-2 flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={value === reviewRating}
+                      onClick={() => setReviewRating(value)}
+                      className={`text-3xl leading-none transition-all duration-150 hover:scale-110 ${value <= reviewRating ? "text-amber-300" : "text-white/20 hover:text-amber-200/70"}`}
+                      aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <label
+                htmlFor="booking-review-text"
+                className="mt-4 block text-sm font-semibold text-white/80"
+              >
+                Your review
+                <RequiredMark />
+              </label>
               <textarea
+                id="booking-review-text"
                 rows={4}
                 value={reviewText}
                 onChange={(event) =>
                   setReviewText(event.target.value.slice(0, 1000))
                 }
                 placeholder="What went well, what could improve?"
-                className="mt-3 w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
+                className="mt-2 w-full rounded-xl border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
               />
               <p className="mt-1 text-xs text-white/45">
                 {reviewText.length}/1000

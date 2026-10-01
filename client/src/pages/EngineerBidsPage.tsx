@@ -18,6 +18,7 @@ import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { API_BASE_URL } from "../lib/apiBase";
+import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 
 interface EngineerBid {
   id: string;
@@ -266,6 +267,7 @@ function InvitationRow({
               className="text-sm font-semibold text-white/80"
             >
               Your price
+              <RequiredMark />
             </label>
             <MoneyInput
               id={amountId}
@@ -281,6 +283,7 @@ function InvitationRow({
               className="text-sm font-semibold text-white/80"
             >
               Message to {invitation.client.name}
+              <RequiredMark />
             </label>
             <textarea
               id={messageId}

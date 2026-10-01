@@ -99,6 +99,7 @@ export function ReportDialog({
           id="report-reason"
           name="report-reason"
           legend="What's the problem?"
+          required
           options={REASONS}
           value={reason}
           onChange={(value) => {

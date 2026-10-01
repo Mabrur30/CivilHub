@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { AuthShell } from "../components/auth/AuthShell";
 import { GlassField } from "../components/auth/GlassField";
+import { RequiredLegend, RequiredMark } from "../components/dashboard/ui/RequiredMark";
 import { GlassSubmitButton } from "../components/auth/GlassSubmitButton";
 import {
   useAuth,
@@ -205,6 +206,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left">
+        <RequiredLegend />
         <GlassField
           id="fullName"
           name="fullName"
@@ -214,12 +216,14 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
           value={form.fullName}
           onChange={handleChange}
           placeholder={isCompany ? "e.g. Rahman Plant Hire Ltd" : "Your name"}
+          required
         />
 
         {isCompany ? (
           <fieldset>
             <legend className="mb-2 block text-sm font-semibold text-white/80">
               What does your company do?
+              <RequiredMark />
             </legend>
             <p className="mb-3 text-xs text-white/50">
               Choose one or both. You can change this later in your company
@@ -275,6 +279,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
             }}
             legend={isCompany ? "What does your company specialise in?" : "What's your speciality?"}
             hint="Pick your main speciality first, then up to 2 more. Clients find and filter engineers by these, and you can change them later."
+            required
           />
         ) : null}
 
@@ -287,6 +292,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
           value={form.email}
           onChange={handleChange}
           placeholder="you@example.com"
+          required
         />
 
         <GlassField
@@ -298,6 +304,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
           value={form.password}
           onChange={handleChange}
           placeholder="Create a secure password"
+          required
         />
 
         <GlassField
@@ -309,6 +316,7 @@ export function SignupPage({ role }: SignupPageProps): ReactElement {
           value={form.confirmPassword}
           onChange={handleChange}
           placeholder="Repeat your password"
+          required
         />
 
         <GlassSubmitButton disabled={isSubmitting}>

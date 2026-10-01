@@ -28,6 +28,7 @@ import { describeTimeline } from "../lib/timeline";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { findCategory, useProjectCriteria } from "../lib/projectCriteria";
 import { API_BASE_URL } from "../lib/apiBase";
+import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 
 interface MarketplaceProject {
   id: string;
@@ -679,6 +680,7 @@ export function EngineerMarketplacePage(): ReactElement {
                 className="text-sm font-semibold text-white/80"
               >
                 Your price
+                <RequiredMark />
               </label>
               <MoneyInput
                 id="bid-amount"
@@ -694,6 +696,7 @@ export function EngineerMarketplacePage(): ReactElement {
                 className="text-sm font-semibold text-white/80"
               >
                 Message to {selectedProject.clientName}
+                <RequiredMark />
               </label>
               <textarea
                 id="bid-message"

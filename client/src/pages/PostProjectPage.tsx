@@ -17,6 +17,7 @@ import {
 } from "../components/dashboard/ui/buttonStyles";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { RequiredLegend, RequiredMark } from "../components/dashboard/ui/RequiredMark";
 import { ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { SiteMap } from "../components/map/LazySiteMap";
 import { BriefCard } from "../components/project/BriefCard";
@@ -179,7 +180,10 @@ function CategoryPicker({
 }): ReactElement {
   return (
     <fieldset className="grid gap-3" aria-describedby={error ? "category-error" : undefined}>
-      <legend className="mb-2 text-sm font-semibold text-white/80">{fieldLabels.category}</legend>
+      <legend className="mb-2 text-sm font-semibold text-white/80">
+        {fieldLabels.category}
+        <RequiredMark />
+      </legend>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {categories.map((entry, index) => {
           const checked = entry.category === value;
@@ -484,6 +488,7 @@ export function PostProjectPage(): ReactElement {
       <div className="grid content-start gap-2">
         <label htmlFor={name} className="text-sm font-semibold text-white/80">
           {fieldLabels[name]}
+          <RequiredMark />
         </label>
         {control({
           id: name,
@@ -543,6 +548,7 @@ export function PostProjectPage(): ReactElement {
           noValidate
           className={`${panelClassName} grid gap-8 p-5 sm:p-8`}
         >
+          <RequiredLegend className="-mb-4" />
           {error ? (
             <p
               role="alert"

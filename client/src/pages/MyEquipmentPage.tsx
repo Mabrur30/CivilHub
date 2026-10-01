@@ -37,6 +37,7 @@ import {
 import { Dialog } from "../components/dashboard/ui/Dialog";
 import { FilterTabs } from "../components/dashboard/ui/FilterTabs";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
+import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency, formatDateRange } from "../lib/format";
@@ -844,7 +845,10 @@ export function MyEquipmentPage(): ReactElement {
             <div className="grid gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-white/80">Photos</p>
+                  <p className="text-sm font-semibold text-white/80">
+                    Photos
+                    <RequiredMark />
+                  </p>
                   <p className="text-xs text-white/45">
                     Up to {PHOTO_LIMIT}. JPG, PNG or WEBP, 5 MB each. The first
                     one is the cover.

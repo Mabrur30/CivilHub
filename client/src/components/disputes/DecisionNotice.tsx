@@ -127,7 +127,7 @@ export function DecisionNotice({
           isBusy={isBusy}
         >
           <div className="mt-5 grid gap-4">
-            <FormField id="appeal-reason" label="Why is the decision wrong?" hint="What did CivilHub miss or get wrong?">
+            <FormField id="appeal-reason" label="Why is the decision wrong?" hint="What did CivilHub miss or get wrong? A couple of sentences at least." required>
               <textarea
                 id="appeal-reason"
                 rows={5}

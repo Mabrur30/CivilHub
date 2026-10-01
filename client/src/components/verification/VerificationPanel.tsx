@@ -3,6 +3,7 @@ import { type FormEvent, type ReactElement, useEffect, useRef, useState } from "
 import { useLocation } from "react-router-dom";
 import { inputClassName, panelClassName, primaryButtonClassName } from "../dashboard/ui/buttonStyles";
 import { FormField } from "../dashboard/ui/FormField";
+import { RequiredLegend } from "../dashboard/ui/RequiredMark";
 import { VerifiedBadge } from "../VerifiedBadge";
 import { API_BASE_URL } from "../../lib/apiBase";
 
@@ -51,7 +52,7 @@ function FileField({
   onChange: (files: File[]) => void;
 }): ReactElement {
   return (
-    <FormField id={id} label={label} hint={hint}>
+    <FormField id={id} label={label} hint={hint} required>
       <input
         id={id}
         type="file"
@@ -242,12 +243,14 @@ export function VerificationPanel(): ReactElement {
 
       {canSubmit ? (
         <form className="mt-6 grid max-w-xl gap-4" noValidate onSubmit={(event) => void submit(event)}>
+          <RequiredLegend />
           {isCompany ? (
             <>
               <FormField
                 id="verify-licence-no"
                 label="Trade licence number"
                 hint="Exactly as it's printed on the licence. It's also shown on your company profile."
+                required
               >
                 <input
                   id="verify-licence-no"
@@ -270,7 +273,7 @@ export function VerificationPanel(): ReactElement {
             </>
           ) : (
             <>
-              <FormField id="verify-ieb-no" label="IEB membership number" hint="For example M/12345, A/1234 or F/5678.">
+              <FormField id="verify-ieb-no" label="IEB membership number" hint="For example M/12345, A/1234 or F/5678." required>
                 <input
                   id="verify-ieb-no"
                   value={iebNumber}

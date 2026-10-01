@@ -1,5 +1,6 @@
 import { type ReactElement } from "react";
 import { type CriteriaOption } from "../../lib/projectCriteria";
+import { RequiredMark } from "../dashboard/ui/RequiredMark";
 
 type ChoiceChipsProps = {
   /** Given to the first input, so a form can focus the group on an error. */
@@ -11,6 +12,8 @@ type ChoiceChipsProps = {
   options: CriteriaOption[];
   /** Quiet note after the legend, such as "(if known)". */
   note?: string;
+  /** Marks the legend with an asterisk. */
+  required?: boolean;
 } & (
   | { multiple: true; value: string[]; onChange: (value: string[]) => void }
   | { multiple?: false; value: string; onChange: (value: string) => void }
@@ -21,7 +24,7 @@ type ChoiceChipsProps = {
  * space and screen readers behave as they do for any native choice.
  */
 export function ChoiceChips(props: ChoiceChipsProps): ReactElement {
-  const { id, name, legend, hint, error, options, note } = props;
+  const { id, name, legend, hint, error, options, note, required } = props;
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
@@ -45,7 +48,8 @@ export function ChoiceChips(props: ChoiceChipsProps): ReactElement {
     <fieldset className="grid content-start gap-2" aria-describedby={describedBy}>
       <legend className="mb-2 text-sm font-semibold text-white/80">
         {legend}
-        {note ? <span className="font-normal text-white/40"> {note}</span> : null}
+        {required ? <RequiredMark /> : null}
+        {note ?<span className="font-normal text-white/40"> {note}</span> : null}
       </legend>
       <div className="flex flex-wrap gap-2">
         {options.map((option, index) => (

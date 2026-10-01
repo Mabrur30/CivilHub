@@ -6,6 +6,7 @@ import {
 } from "../../dashboard/ui/buttonStyles";
 import { type CustomerReview, isCustomerReview } from "./profileTypes";
 import { API_BASE_URL } from "../../../lib/apiBase";
+import { RequiredMark } from "../../dashboard/ui/RequiredMark";
 
 const TEXT_LIMIT = 1000;
 
@@ -108,7 +109,10 @@ export function CustomerReviewForm({
         }}
       >
         <fieldset>
-          <legend className="text-sm font-semibold text-white/80">Rating</legend>
+          <legend className="text-sm font-semibold text-white/80">
+            Rating
+            <RequiredMark />
+          </legend>
           <div className="mt-2 flex gap-1">
             {[1, 2, 3, 4, 5].map((value) => (
               <button
@@ -130,6 +134,7 @@ export function CustomerReviewForm({
         <div className="grid gap-2">
           <label htmlFor={fieldId} className="text-sm font-semibold text-white/80">
             Your review
+            <RequiredMark />
           </label>
           <textarea
             id={fieldId}

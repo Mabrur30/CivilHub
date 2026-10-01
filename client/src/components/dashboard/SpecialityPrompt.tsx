@@ -72,6 +72,7 @@ export function SpecialityPrompt(): ReactElement | null {
       <SpecialityChooser
         value={draft}
         legend={isCompany ? "Company specialities" : "Your speciality"}
+        required
         onChange={(next) => {
           setError("");
           setDraft(next);

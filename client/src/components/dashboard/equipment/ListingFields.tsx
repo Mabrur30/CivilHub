@@ -8,6 +8,7 @@ import {
 } from "../../../pages/equipment.api";
 import { inputClassName } from "../ui/buttonStyles";
 import { FormField } from "../ui/FormField";
+import { RequiredLegend } from "../ui/RequiredMark";
 import { DESCRIPTION_LIMIT, type ListingDetails } from "./listingDetails";
 import { MoneyInput } from "../ui/MoneyInput";
 
@@ -128,7 +129,8 @@ export function ListingFields({
 
   return (
     <div className="grid gap-5 sm:grid-cols-2">
-      <FormField id={id("title")} label="Title">
+      <RequiredLegend className="sm:col-span-2" />
+      <FormField id={id("title")} label="Title" required>
         <input
           id={id("title")}
           value={values.title}
@@ -138,7 +140,7 @@ export function ListingFields({
         />
       </FormField>
 
-      <FormField id={id("category")} label="Type">
+      <FormField id={id("category")} label="Type" required>
         <select
           id={id("category")}
           value={values.category}
@@ -158,6 +160,7 @@ export function ListingFields({
       <FormField
         id={id("description")}
         label="Description"
+        required
         hint={`Model, capacity, condition and anything renters should know. ${descriptionLength}/${DESCRIPTION_LIMIT}`}
         className="sm:col-span-2"
       >
@@ -173,6 +176,7 @@ export function ListingFields({
       <FormField
         id={id("location")}
         label="Location"
+        required
         hint="City or district where the equipment is kept."
       >
         <input
@@ -187,6 +191,7 @@ export function ListingFields({
       <FormField
         id={id("quantity")}
         label="Units available"
+        required
         hint="Identical machines you can rent out at the same time."
       >
         <input
@@ -206,7 +211,7 @@ export function ListingFields({
         body="Weekly and monthly rates are optional. Renters are never charged more than the next rate up, so six days never costs more than a week."
       />
 
-      <FormField id={id("rate")} label="Daily rate (per unit)">
+      <FormField id={id("rate")} label="Daily rate (per unit)" required>
         <MoneyInput
           id={id("rate")}
           value={values.dailyRate}
@@ -241,6 +246,7 @@ export function ListingFields({
       <FormField
         id={id("min-days")}
         label="Minimum rental (days)"
+        required
         hint="1 lets renters book a single day."
       >
         <input
@@ -258,6 +264,7 @@ export function ListingFields({
       <FormField
         id={id("deposit")}
         label="Security deposit (per unit)"
+        required
         hint="Held while the equipment is out, then released or claimed."
         className="sm:col-span-2"
       >
@@ -283,6 +290,7 @@ export function ListingFields({
         <FormField
           id={id("operator-rate")}
           label="Operator daily rate (per unit)"
+          required
           hint="Added for each day and each unit when a renter asks for an operator."
           className="sm:col-span-2"
         >
@@ -309,6 +317,7 @@ export function ListingFields({
         <FormField
           id={id("delivery-fee")}
           label="Delivery fee"
+          required
           hint="One flat fee for drop-off and collection, per booking. Enter 0 for free delivery."
           className="sm:col-span-2"
         >

@@ -20,6 +20,7 @@ import {
   secondaryButtonClassName,
 } from "../dashboard/ui/buttonStyles";
 import { Dialog } from "../dashboard/ui/Dialog";
+import { RequiredMark } from "../dashboard/ui/RequiredMark";
 
 export type PhaseStatus =
   | "not_started"
@@ -129,6 +130,7 @@ function RequestChangesDialog({
             className="text-sm font-semibold text-white/80"
           >
             What needs to change?
+            <RequiredMark />
           </label>
           <textarea
             id="change-note"
@@ -256,6 +258,7 @@ function SubmitPhaseDialog({
         <div className="grid gap-2">
           <label htmlFor="handover-note" className="text-sm font-semibold text-white/80">
             What are you handing over?
+            <RequiredMark />
           </label>
           <textarea
             id="handover-note"
