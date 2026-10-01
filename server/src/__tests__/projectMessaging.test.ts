@@ -35,7 +35,7 @@ const as = (user: IUser, req: request.Test): request.Test =>
 const openChat = (from: IUser, to: IUser, projectId?: string): request.Test =>
   as(
     from,
-    request(app).get(
+    request(app).post(
       `/api/conversations/with/${to._id.toString()}${projectId ? `?project=${projectId}` : ""}`,
     ),
   );
@@ -85,10 +85,18 @@ describe("masking contact details", () => {
     "01712.345.678",
     "০১৭১২৩৪৫৬৭৮",
     "rahman.eng@yahoo.com",
+    "0171,234,5678",
   ])("hides %s", (contact) => {
     const { text, masked } = maskContactInfo(`Reach me at ${contact} anytime`);
     expect(masked).toBe(true);
     expect(text).toBe(`Reach me at ${CONTACT_PLACEHOLDER} anytime`);
+  });
+
+  test("hides a mobile number even after a price word", () => {
+    expect(maskContactInfo("Send tk 01712345678 by bKash")).toEqual({
+      text: `Send tk ${CONTACT_PLACEHOLDER} by bKash`,
+      masked: true,
+    });
   });
 
   test.each([
@@ -97,6 +105,8 @@ describe("masking contact details", () => {
     "Start on 2026-10-01",
     "Plot is 5 katha, 6 storeys, road 20 ft",
     "৳ 1500000000 total",
+    "Frame 12,00,000, roof 5,00,000",
+    "Floors 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11",
   ])("keeps %s", (text) => {
     expect(maskContactInfo(text)).toEqual({ text, masked: false });
   });

@@ -11,8 +11,8 @@ import { BlockedPeoplePanel } from "../components/safety/BlockedPeoplePanel";
 import { GettingPaidPanel } from "../components/payouts/GettingPaidPanel";
 import { isProviderRole } from "../lib/dashboardPaths";
 import { VerificationPanel } from "../components/verification/VerificationPanel";
+import { API_BASE_URL } from "../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PASSWORD_MIN = 8;
 
 type Outcome = { kind: "saved" | "error"; message: string } | null;

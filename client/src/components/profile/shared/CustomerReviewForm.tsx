@@ -5,8 +5,8 @@ import {
   primaryButtonClassName,
 } from "../../dashboard/ui/buttonStyles";
 import { type CustomerReview, isCustomerReview } from "./profileTypes";
+import { API_BASE_URL } from "../../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const TEXT_LIMIT = 1000;
 
 const formatLongDate = (value: string): string =>

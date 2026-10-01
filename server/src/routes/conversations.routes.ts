@@ -24,7 +24,8 @@ conversationsRouter.get("/", protect, (req, res, next) =>
   getMyConversations(req as AuthenticatedRequest, res, next),
 );
 
-conversationsRouter.get("/with/:otherUserId", protect, (req, res, next) =>
+// POST: it can create the conversation and add a project to it.
+conversationsRouter.post("/with/:otherUserId", protect, (req, res, next) =>
   getOrCreateConversation(req as AuthenticatedRequest, res, next),
 );
 

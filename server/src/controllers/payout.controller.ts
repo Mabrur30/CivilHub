@@ -1,7 +1,10 @@
+import bcrypt from "bcryptjs";
 import { type NextFunction, type Response } from "express";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Payout } from "../models/Payout.model";
 import { PAYOUT_METHODS, type PayoutMethod, PayoutAccount } from "../models/PayoutAccount.model";
+import { Notification } from "../models/Notification.model";
+import { User } from "../models/User.model";
 import { getPayeeEarnings } from "../utils/earnings";
 import { isProviderRole } from "../utils/roles";
 
@@ -114,6 +117,18 @@ export const saveMyPayoutAccount = async (
     const branch = isBank ? field(req.body.branch, "The branch", 120, true) : undefined;
     const routingNumber = isBank ? field(req.body.routingNumber, "The routing number", 20, false) : undefined;
 
+    // Where the money goes: a stolen session alone mustn't be able to change it.
+    const user = await User.findById(userId).select("+passwordHash").exec();
+    const password = req.body.currentPassword;
+    const passwordMatches =
+      Boolean(user) &&
+      typeof password === "string" &&
+      password.length > 0 &&
+      (await bcrypt.compare(password, (user as NonNullable<typeof user>).passwordHash));
+    if (!passwordMatches) {
+      throw payoutError("Enter your current password to change where you're paid.", 403);
+    }
+
     const account = await PayoutAccount.findOneAndUpdate(
       { user: userId },
       {
@@ -124,6 +139,11 @@ export const saveMyPayoutAccount = async (
     )
       .lean()
       .exec();
+    await Notification.create({
+      recipient: userId,
+      type: "payout_account_updated",
+      message: `Your payout account was changed to ${method === "bank" ? "a bank account" : method} ending ${accountNumber.slice(-4)}. If this wasn't you, change your password and contact CivilHub.`,
+    });
     res.status(200).json(toAccountView(account!));
   } catch (error: unknown) {
     next(error);

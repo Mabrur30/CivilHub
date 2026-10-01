@@ -21,6 +21,7 @@ import {
   type PaymentStatus,
 } from "../lib/payments";
 import { dashboardBase } from "../lib/dashboardPaths";
+import { equipmentPathsFor } from "../components/dashboard/equipment/paths";
 
 /** SSLCommerz usually confirms within seconds; stop asking after about half a minute. */
 const POLL_INTERVAL_MS = 4000;
@@ -156,7 +157,15 @@ export function PaymentResultPage(): ReactElement {
   }, [payment, polls, load]);
 
   const fallbackPath = dashboardBase(currentUser?.role);
-  const backPath = payment?.returnPath ?? fallbackPath;
+  // The saved return path is the payer's page; the engineer or owner being
+  // paid has the same project or booking in their own dashboard.
+  const payeePath = ((): string | null => {
+    if (!payment || payment.viewerRole !== "payee" || !currentUser) return null;
+    if (payment.projectId) return `${dashboardBase(currentUser.role)}/projects/${payment.projectId}`;
+    const bookingId = payment.returnPath?.match(/\/bookings\/([0-9a-f]{24})$/)?.[1];
+    return bookingId ? equipmentPathsFor(currentUser.role).booking(bookingId) : null;
+  })();
+  const backPath = payeePath ?? payment?.returnPath ?? fallbackPath;
   const isFinished = payment?.status === "paid" && payment.projectCompleted === true && !payment.refundDue;
   const backLabel =
     payment?.type === "equipment_booking"

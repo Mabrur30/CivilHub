@@ -12,6 +12,7 @@ import { BackButton } from "../components/BackButton";
 import { RatingBadge } from "../components/RatingBadge";
 import { useAuth } from "../context/AuthContext";
 import {
+  cancelEquipmentBookingRequest,
   createEquipmentReview,
   confirmEquipmentPickup,
   confirmEquipmentReturn,
@@ -152,6 +153,8 @@ export function BookingDetailPage(): ReactElement {
     claimAmount: "",
   });
   const [isSubmittingAction, setIsSubmittingAction] = useState<boolean>(false);
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState<boolean>(false);
+  const [cancelError, setCancelError] = useState<string>("");
   const [reviewEligibility, setReviewEligibility] =
     useState<BookingReviewEligibilityResponse | null>(null);
   const [reviewRating, setReviewRating] = useState<number>(0);
@@ -395,9 +398,13 @@ export function BookingDetailPage(): ReactElement {
           : "upcoming",
       subtitle: booking.pickupConfirmedAt
         ? formatDateTime(booking.pickupConfirmedAt)
-        : "Pickup not confirmed yet",
+        : booking.pickupAutoConfirmAt
+          ? `Handed over by the owner; waiting for the renter to confirm (confirmed automatically on ${formatDateTime(booking.pickupAutoConfirmAt)})`
+          : "Pickup not confirmed yet",
       details:
-        booking.pickupConfirmedAt || booking.pickupConditionNotes ? renderConditionStage("pickup") : undefined,
+        booking.pickupConfirmedAt || booking.pickupAutoConfirmAt || booking.pickupConditionNotes
+          ? renderConditionStage("pickup")
+          : undefined,
     },
     {
       key: "return",
@@ -409,9 +416,13 @@ export function BookingDetailPage(): ReactElement {
           : "upcoming",
       subtitle: booking.returnConfirmedAt
         ? formatDateTime(booking.returnConfirmedAt)
-        : "Return not confirmed yet",
+        : booking.returnAutoConfirmAt
+          ? `Returned by the renter; waiting for the owner to confirm (confirmed automatically on ${formatDateTime(booking.returnAutoConfirmAt)})`
+          : "Return not confirmed yet",
       details:
-        booking.returnConfirmedAt || booking.returnConditionNotes ? renderConditionStage("return") : undefined,
+        booking.returnConfirmedAt || booking.returnAutoConfirmAt || booking.returnConditionNotes
+          ? renderConditionStage("return")
+          : undefined,
     },
     {
       key: "deposit",
@@ -483,12 +494,22 @@ export function BookingDetailPage(): ReactElement {
     viewerRole === "renter" &&
     booking.status === "approved" &&
     booking.paymentStatus === "unpaid";
+  // The renter confirms the pickup and the owner the return. The other side
+  // can mark it first, then waits for them.
+  const pickupAwaiting = Boolean(booking.pickupAutoConfirmAt);
+  const returnAwaiting = Boolean(booking.returnAutoConfirmAt);
   const canConfirmPickup =
     booking.paymentStatus === "paid" &&
     !booking.pickupConfirmedAt &&
-    booking.status === "approved";
+    booking.status === "approved" &&
+    (viewerRole === "renter" || !pickupAwaiting);
   const canConfirmReturn =
-    booking.status === "in_progress" && !booking.returnConfirmedAt;
+    booking.status === "in_progress" &&
+    !booking.returnConfirmedAt &&
+    (viewerRole === "owner" || !returnAwaiting);
+  const canCancel =
+    (booking.status === "pending" && viewerRole === "renter") ||
+    (booking.status === "approved" && !booking.pickupConfirmedAt && !pickupAwaiting);
   const canResolveDeposit =
     viewerRole === "owner" &&
     booking.status === "completed" &&
@@ -507,6 +528,22 @@ export function BookingDetailPage(): ReactElement {
     if (checkoutError) {
       setError(checkoutError);
       setIsPaying(false);
+    }
+  };
+
+  const submitCancel = async (): Promise<void> => {
+    setIsSubmittingAction(true);
+    setCancelError("");
+    try {
+      await cancelEquipmentBookingRequest(booking.id);
+      setIsConfirmingCancel(false);
+      await loadBooking();
+    } catch (actionError: unknown) {
+      setCancelError(
+        actionError instanceof Error ? actionError.message : "Unable to cancel this booking.",
+      );
+    } finally {
+      setIsSubmittingAction(false);
     }
   };
 
@@ -887,9 +924,14 @@ export function BookingDetailPage(): ReactElement {
           {canConfirmPickup ? (
             <section className="rounded-2xl border border-white/10 bg-surface p-5">
               <h2 className="font-heading text-xl font-bold text-white">
-                Confirm Pickup
+                {viewerRole === "owner" ? "Mark as Handed Over" : "Confirm Pickup"}
               </h2>
               <p className="mt-2 text-sm text-white/70">
+                {viewerRole === "owner"
+                  ? "The renter confirms the pickup. Once you mark it handed over, they have 48 hours to confirm before CivilHub does it for them. "
+                  : pickupAwaiting
+                    ? "The owner says they've handed it over. Confirm once you have it. "
+                    : ""}
                 Add optional notes and up to 4 condition photos.
               </p>
               <textarea
@@ -924,7 +966,11 @@ export function BookingDetailPage(): ReactElement {
                 disabled={isSubmittingAction}
                 className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
-                {isSubmittingAction ? "Submitting..." : "Confirm Pickup"}
+                {isSubmittingAction
+                  ? "Submitting..."
+                  : viewerRole === "owner"
+                    ? "Mark as Handed Over"
+                    : "Confirm Pickup"}
               </button>
             </section>
           ) : null}
@@ -932,9 +978,14 @@ export function BookingDetailPage(): ReactElement {
           {canConfirmReturn ? (
             <section className="rounded-2xl border border-white/10 bg-surface p-5">
               <h2 className="font-heading text-xl font-bold text-white">
-                Confirm Return
+                {viewerRole === "renter" ? "Mark as Returned" : "Confirm Return"}
               </h2>
               <p className="mt-2 text-sm text-white/70">
+                {viewerRole === "renter"
+                  ? "The owner confirms the return. Once you mark it returned, they have 48 hours to confirm before CivilHub does it for them. "
+                  : returnAwaiting
+                    ? "The renter says they've returned it. Confirm once you have it back. "
+                    : ""}
                 Add optional notes and up to 4 condition photos.
               </p>
               <textarea
@@ -969,9 +1020,50 @@ export function BookingDetailPage(): ReactElement {
                 disabled={isSubmittingAction}
                 className="mt-3 rounded-full bg-primary px-4 py-2 text-xs font-semibold text-on-primary transition-colors hover:bg-glow disabled:opacity-60"
               >
-                {isSubmittingAction ? "Submitting..." : "Confirm Return"}
+                {isSubmittingAction
+                  ? "Submitting..."
+                  : viewerRole === "renter"
+                    ? "Mark as Returned"
+                    : "Confirm Return"}
               </button>
             </section>
+          ) : null}
+
+          {canCancel ? (
+            <section className="rounded-2xl border border-white/10 bg-surface p-5">
+              <h2 className="font-heading text-xl font-bold text-white">
+                {booking.status === "pending" ? "Withdraw Request" : "Cancel Booking"}
+              </h2>
+              <p className="mt-2 text-sm text-white/70">
+                {booking.paymentStatus === "paid"
+                  ? "Nothing has been picked up yet, so CivilHub will refund everything the renter paid."
+                  : "You can call this off until the pickup."}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsConfirmingCancel(true)}
+                disabled={isSubmittingAction}
+                className="mt-3 rounded-full border border-rose-300/40 px-4 py-2 text-xs font-semibold text-rose-200 transition-colors hover:bg-rose-300/10 disabled:opacity-60"
+              >
+                {booking.status === "pending" ? "Withdraw request" : "Cancel booking"}
+              </button>
+            </section>
+          ) : null}
+          {isConfirmingCancel ? (
+            <ConfirmDialog
+              title={booking.status === "pending" ? "Withdraw this request?" : "Cancel this booking?"}
+              description={`${otherParty.name} will be told.${booking.paymentStatus === "paid" ? " CivilHub will refund what was paid." : ""}`}
+              confirmLabel={booking.status === "pending" ? "Withdraw request" : "Cancel booking"}
+              busyLabel="Cancelling..."
+              tone="danger"
+              isBusy={isSubmittingAction}
+              error={cancelError}
+              onConfirm={() => void submitCancel()}
+              onClose={() => {
+                setIsConfirmingCancel(false);
+                setCancelError("");
+              }}
+            />
           ) : null}
 
           {canResolveDeposit ? (

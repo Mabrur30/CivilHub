@@ -106,6 +106,8 @@ export type ActivityCategory =
 const categoryByType: Record<NotificationType, ActivityCategory> = {
   bid_accepted: "bids",
   bid_declined: "bids",
+  bid_invitation: "bids",
+  bid_invitation_answered: "bids",
 
   new_message: "messages",
 
@@ -132,6 +134,7 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   // Notes from the CivilHub team are usually about posts and comments.
   moderation_notice: "network",
   payout_sent: "projects",
+  payout_account_updated: "projects",
   verification_approved: "network",
   verification_rejected: "network",
   verification_lapsed: "network",
@@ -155,6 +158,7 @@ const categoryByType: Record<NotificationType, ActivityCategory> = {
   equipment_booking_approved: "bookings",
   equipment_booking_declined: "bookings",
   equipment_booking_auto_declined: "bookings",
+  equipment_booking_cancelled: "bookings",
   equipment_booking_payment_received: "bookings",
   equipment_pickup_confirmed: "bookings",
   equipment_return_confirmed: "bookings",

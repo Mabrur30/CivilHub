@@ -5,6 +5,12 @@ import { createBidForProject } from "./bid.controller";
 import { BidInvitation } from "../models/BidInvitation.model";
 import { Project } from "../models/Project.model";
 import { User } from "../models/User.model";
+import { isBlockedEitherWay } from "../utils/blocks";
+import { Notification } from "../models/Notification.model";
+import { formatTaka } from "../utils/money";
+
+const nameOf = async (userId: unknown): Promise<string> =>
+  (await User.findById(userId).select("name").lean().exec())?.name ?? "Someone";
 import {
   PROVIDER_ROLES,
   assertCanTakeProjects,
@@ -214,11 +220,21 @@ export const createBidInvitation = async (
       );
     }
 
+    if (await isBlockedEitherWay(clientUserId, engineerId)) {
+      throw createBidInvitationError("You can't invite this engineer", 403);
+    }
+
     const invitation = await BidInvitation.create({
       project: project._id,
       client: clientUserId,
       engineer: engineerId,
       status: "pending",
+    });
+    await Notification.create({
+      recipient: engineerId,
+      type: "bid_invitation",
+      message: `${await nameOf(clientUserId)} invited you to bid on ${getProjectTitle(project)}.`,
+      project: project._id,
     });
 
     res.status(201).json({
@@ -335,6 +351,13 @@ export const acceptBidInvitation = async (
     invitation.respondedAt = new Date();
     invitation.resultingBid = bid._id;
     await invitation.save();
+    await Notification.create({
+      recipient: invitation.client,
+      type: "bid_invitation_answered",
+      message: `${await nameOf(engineerUserId)} accepted your invitation and bid ${formatTaka(bid.amount)} on ${getProjectTitle(project)}.`,
+      project: project._id,
+      bid: bid._id,
+    });
 
     res.status(200).json({
       invitation: {
@@ -393,6 +416,13 @@ export const declineBidInvitation = async (
     invitation.status = "declined";
     invitation.respondedAt = new Date();
     await invitation.save();
+    const declinedProject = await Project.findById(invitation.project).select("title name").exec();
+    await Notification.create({
+      recipient: invitation.client,
+      type: "bid_invitation_answered",
+      message: `${await nameOf(engineerUserId)} declined your invitation to bid on ${declinedProject ? getProjectTitle(declinedProject) : "your project"}.`,
+      project: invitation.project,
+    });
 
     res.status(200).json({
       id: invitation._id.toString(),

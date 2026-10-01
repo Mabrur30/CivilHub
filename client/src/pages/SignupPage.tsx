@@ -23,6 +23,7 @@ import {
 } from "../context/AuthContext";
 import { dashboardBase } from "../lib/dashboardPaths";
 import { SpecialityChooser } from "../components/profile/shared/SpecialityChooser";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface SignupPageProps {
   role: UserRole;
@@ -38,8 +39,6 @@ interface SignupForm {
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {

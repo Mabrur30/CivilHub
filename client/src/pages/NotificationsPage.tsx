@@ -14,12 +14,12 @@ import {
   type NotificationListItem,
   type NotificationListResponse,
 } from "../components/dashboard/notificationUtils";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface ErrorResponse {
   message?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PAGE_LIMIT = 20;
 
 const getErrorMessage = (value: unknown): string => {
@@ -83,11 +83,16 @@ export function NotificationsPage(): ReactElement {
     void loadNotifications(1);
   }, []);
 
+  // Offline, the notification just shows as unread again on the next refresh.
   const markSingleRead = async (notificationId: string): Promise<void> => {
-    await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
-      method: "PATCH",
-      credentials: "include",
-    });
+    try {
+      await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+    } catch {
+      // Nothing to do; see above.
+    }
   };
 
   const handleNotificationClick = async (
@@ -124,6 +129,8 @@ export function NotificationsPage(): ReactElement {
         method: "PATCH",
         credentials: "include",
       });
+    } catch {
+      // The reload below shows what's really read.
     } finally {
       void loadNotifications(page);
     }

@@ -1,10 +1,11 @@
 import { type FormEvent, type ReactElement, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { EnvelopeIcon, LockIcon } from "@phosphor-icons/react";
 import { AuthShell } from "../components/auth/AuthShell";
 import { GlassField } from "../components/auth/GlassField";
 import { GlassSubmitButton } from "../components/auth/GlassSubmitButton";
 import { useAuth } from "../context/AuthContext";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface LoginForm {
   email: string;
@@ -18,8 +19,6 @@ interface LoginResponse {
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const isLoginResponse = (value: unknown): value is LoginResponse => {
   if (typeof value !== "object" || value === null) {
@@ -47,6 +46,11 @@ export function LoginPage(): ReactElement {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { refetchUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Where a protected page sent them from; only same-site paths are followed.
+  const from = (location.state as { from?: unknown } | null)?.from;
+  const returnTo =
+    typeof from === "string" && from.startsWith("/") && !from.startsWith("//") ? from : null;
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>,
@@ -70,7 +74,7 @@ export function LoginPage(): ReactElement {
       }
 
       await refetchUser();
-      navigate(`/dashboard/${body.role}`);
+      navigate(returnTo ?? `/dashboard/${body.role}`, { replace: Boolean(returnTo) });
     } catch {
       setError("Unable to connect to CivilHub. Please try again.");
     } finally {

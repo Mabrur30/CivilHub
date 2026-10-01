@@ -84,7 +84,18 @@ export const settleDueDeposits = async (now: Date = new Date()): Promise<{ remin
   let reminded = 0;
   let released = 0;
 
-  const toRelease = await EquipmentBooking.find(unsettledReturnedBefore(addDays(now, -DEPOSIT_AUTO_RELEASE_DAYS)))
+  // A rental with no deposit has nothing to settle. Older ones were left
+  // pending, which kept both sides from reviewing.
+  await EquipmentBooking.updateMany(
+    {
+      status: "completed",
+      depositResolution: "pending",
+      $or: [{ securityDeposit: { $lte: 0 } }, { securityDeposit: { $exists: false } }],
+    },
+    { $set: { depositResolution: "released" } },
+  ).exec();
+
+  const toRelease =await EquipmentBooking.find(unsettledReturnedBefore(addDays(now, -DEPOSIT_AUTO_RELEASE_DAYS)))
     .select("_id")
     .lean()
     .exec();

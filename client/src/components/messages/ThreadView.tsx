@@ -6,7 +6,7 @@ import {
   StarIcon,
   TrayArrowUpIcon,
 } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { type CurrentUser } from "../../context/AuthContext";
 import { Avatar } from "../Avatar";
@@ -57,11 +57,30 @@ export function ThreadView({
     [thread.messages, currentUser?.id, projectTitles],
   );
 
+  // Follows the newest message. Loading earlier ones doesn't change it, so
+  // that keeps the reader where they were instead (see below).
+  const newestId = thread.messages[thread.messages.length - 1]?.id;
   useEffect(() => {
     if (listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
-  }, [thread.messages.length, thread.conversationId]);
+  }, [newestId, thread.conversationId]);
+
+  // Distance from the bottom before older messages were added above.
+  const restoreFromBottom = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && restoreFromBottom.current !== null) {
+      list.scrollTop = list.scrollHeight - restoreFromBottom.current;
+      restoreFromBottom.current = null;
+    }
+  }, [thread.messages]);
+
+  const loadEarlier = (): void => {
+    const list = listRef.current;
+    if (list) restoreFromBottom.current = list.scrollHeight - list.scrollTop;
+    void thread.loadEarlier();
+  };
 
   if (thread.isLoading) {
     return (
@@ -221,6 +240,19 @@ export function ThreadView({
             </span>
           </p>
 
+          {thread.hasEarlier ? (
+            <div className="flex justify-center pb-2">
+              <button
+                type="button"
+                onClick={loadEarlier}
+                disabled={thread.isLoadingEarlier}
+                className="rounded-full border border-white/15 px-4 py-1.5 text-xs font-semibold text-white/70 transition-colors hover:border-white/35 hover:text-white disabled:opacity-60"
+              >
+                {thread.isLoadingEarlier ? "Loading..." : "Load earlier messages"}
+              </button>
+            </div>
+          ) : null}
+
           {items.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-white/50">
               No messages yet. Say hello to {other.name.split(" ")[0]}.
@@ -245,6 +277,7 @@ export function ThreadView({
           projectId={thread.activeProjectId}
           contactsHidden={thread.contactsHidden}
           viewerRole={currentUser?.role}
+          recipientRole={other.role}
           sendText={thread.sendText}
           onSent={(message) => {
             if (message) thread.addMessage(message);

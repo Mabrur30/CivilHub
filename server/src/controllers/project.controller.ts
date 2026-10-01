@@ -22,7 +22,7 @@ import {
   type PaymentType,
 } from "../models/Payment.model";
 import { getPaymentConfig } from "../config/payments";
-import { describePaymentMethod } from "../services/payments";
+import { GATEWAY_MINIMUM, describePaymentMethod } from "../services/payments";
 import {
   getAdvanceAmount,
   getPhaseAmountsDue,
@@ -49,6 +49,8 @@ import {
   type PublicSiteResponse,
 } from "../utils/projectSite";
 import { projectLockReason } from "../utils/projectMoney";
+import { restrictedUserIds } from "../utils/accountStatus";
+import { maskContactInfo } from "../utils/projectContact";
 import { getCommissionRate } from "../utils/platformSettings";
 
 export interface CreateProjectRequestBody {
@@ -422,7 +424,8 @@ export const createProject = async (
       name: title.trim(),
       client: req.user.userId,
       clientName: currentUser?.name ?? "Client",
-      description: description.trim(),
+      // Every engineer reads this before any hire, so contact details are hidden.
+      description: maskContactInfo(description.trim()).text,
       category: category.trim(),
       budgetMin: parsedBudgetMin,
       budgetMax: parsedBudgetMax,
@@ -556,7 +559,12 @@ export const getOpenProjects = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const projects = await Project.find({ status: "open_for_bids" })
+    // A banned or suspended client can't hire, so their projects are hidden.
+    const restricted = await restrictedUserIds();
+    const projects = await Project.find({
+      status: "open_for_bids",
+      client: { $nin: [...restricted].map((id) => new Types.ObjectId(id)) },
+    })
       .sort({ postedDate: -1 })
       .exec();
 
@@ -945,6 +953,19 @@ export const submitPhasePlanForApproval = async (
     if (difference > 0.01) {
       throw createProjectError(
         `Phase prices total ${formatTaka(totalPrice)} but must equal the agreed project value of ${formatTaka(totalAgreedValue)}. Difference: ${formatTaka(difference)}`,
+        400,
+      );
+    }
+
+    // Each phase may be paid on its own, and the gateway has a minimum charge.
+    const amountsDue = getPhaseAmountsDue(project, phases);
+    const tooSmall = phases.find((phase) => {
+      const due = amountsDue.get(phase._id.toString()) ?? 0;
+      return due > 0 && due < GATEWAY_MINIMUM;
+    });
+    if (tooSmall) {
+      throw createProjectError(
+        `${tooSmall.name} is too small to pay for online. After the advance, each phase must come to at least ${formatTaka(GATEWAY_MINIMUM)}. Raise its price or merge it with another phase.`,
         400,
       );
     }

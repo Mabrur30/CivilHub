@@ -30,6 +30,11 @@ export interface IRefund extends Document {
   /** The transaction id of a manual refund. */
   reference?: string;
   failureReason?: string;
+  /**
+   * "kind:paymentId" while the refund is processing or completed; removed if
+   * it fails. Unique, so the same money can't be refunded twice at once.
+   */
+  openKey?: string;
   admin: Types.ObjectId;
   completedAt?: Date;
   createdAt: Date;
@@ -48,6 +53,7 @@ const refundSchema = new Schema<IRefund>(
     gatewayRefundId: { type: String },
     reference: { type: String, trim: true, maxlength: 120 },
     failureReason: { type: String, trim: true, maxlength: 500 },
+    openKey: { type: String, unique: true, sparse: true },
     admin: { type: Schema.Types.ObjectId, ref: "Admin", required: true },
     completedAt: { type: Date },
   },

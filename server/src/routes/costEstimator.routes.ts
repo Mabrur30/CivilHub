@@ -21,7 +21,7 @@ costEstimatorRouter.get("/locations", getLocations);
 costEstimatorRouter.post("/predict", protect, canEstimate, predictCost);
 costEstimatorRouter.post("/save", protect, canEstimate, saveEstimate);
 costEstimatorRouter.get("/history", protect, canEstimate, getUserEstimates);
-costEstimatorRouter.get("/:id", getEstimateById);
+costEstimatorRouter.get("/:id", protect, getEstimateById);
 costEstimatorRouter.delete("/:id", protect, canEstimate, deleteEstimate);
 
 export default costEstimatorRouter;

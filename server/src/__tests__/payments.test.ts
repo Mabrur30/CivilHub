@@ -12,6 +12,7 @@ import {
 } from "../models/EquipmentBooking.model";
 import { Notification } from "../models/Notification.model";
 import { Payment } from "../models/Payment.model";
+import { Project } from "../models/Project.model";
 import { type IUser, User } from "../models/User.model";
 import equipmentBookingRouter from "../routes/equipmentBooking.routes";
 import paymentsRouter from "../routes/payments.routes";
@@ -82,7 +83,7 @@ beforeEach(async () => {
   gateway.failInitWith = null;
   process.env.SSLCOMMERZ_STORE_ID = "civilhubtest";
   await Promise.all(
-    [Equipment, EquipmentBooking, Notification, Payment, User].map((model) =>
+    [Equipment, EquipmentBooking, Notification, Payment, Project, User].map((model) =>
       (model as unknown as mongoose.Model<unknown>).deleteMany({}),
     ),
   );
@@ -275,5 +276,86 @@ describe("Payment result", () => {
 
     const result = await request(app).get(`/api/payments/${tranId}`).set("Cookie", cookieFor(renter));
     expect(result.body.status).toBe("expired");
+  });
+});
+
+describe("Payments that went wrong halfway", () => {
+  /** A booking payment marked paid by an attempt that stopped before applying it. */
+  const stalledPayment = async () => {
+    const opened = await checkout(renter, { purpose: "equipment_booking", bookingId: booking._id.toString() });
+    const tranId = opened.body.tranId as string;
+    const paidAt = new Date(Date.now() - 5 * 60 * 1000);
+    await Payment.updateOne(
+      { tranId },
+      { $set: { status: "paid", paidAt, applyState: "pending", applyStartedAt: paidAt, bankTranId: `BANK${tranId}` } },
+    );
+    return { tranId, paidAt };
+  };
+
+  test("a payment marked paid but never applied is applied when the IPN comes again", async () => {
+    const { tranId } = await stalledPayment();
+    gateway.validations.set("VAL-RETRY", validRecord(tranId, 50_000, "VAL-RETRY"));
+
+    const ipn = await request(app)
+      .post("/api/payments/sslcommerz/ipn")
+      .type("form")
+      .send({ tran_id: tranId, val_id: "VAL-RETRY", status: "VALID" });
+    expect(ipn.status).toBe(200);
+
+    expect((await EquipmentBooking.findById(booking._id).exec())?.paymentStatus).toBe("paid");
+    const payment = await Payment.findOne({ tranId }).exec();
+    expect(payment).toMatchObject({ applyState: "applied", refundDue: false });
+  });
+
+  test("a payment that was applied before the server stopped isn't refunded on retry", async () => {
+    const { tranId, paidAt } = await stalledPayment();
+    // The booking was updated; only the bookkeeping afterwards was lost.
+    await EquipmentBooking.updateOne({ _id: booking._id }, { $set: { paymentStatus: "paid", paidAt } });
+
+    const result = await request(app).get(`/api/payments/${tranId}`).set("Cookie", cookieFor(renter));
+    expect(result.body.status).toBe("paid");
+    const payment = await Payment.findOne({ tranId }).exec();
+    expect(payment).toMatchObject({ applyState: "applied", refundDue: false });
+    expect(await Notification.countDocuments({ type: "payment_refund_due" })).toBe(0);
+  });
+
+  test("a forged fail notice doesn't stop a real payment from being found later", async () => {
+    const opened = await checkout(renter, { purpose: "equipment_booking", bookingId: booking._id.toString() });
+    const tranId = opened.body.tranId as string;
+    await request(app).post("/api/payments/sslcommerz/fail").type("form").send({ tran_id: tranId });
+    expect((await Payment.findOne({ tranId }).exec())?.status).toBe("failed");
+
+    // No IPN ever arrives, but SSLCommerz has the money.
+    await Payment.collection.updateOne({ tranId }, { $set: { createdAt: new Date(Date.now() - 5 * 60 * 1000) } });
+    gateway.queries.set(tranId, [validRecord(tranId, 50_000, "VALQ")]);
+
+    const result = await request(app).get(`/api/payments/${tranId}`).set("Cookie", cookieFor(renter));
+    expect(result.body.status).toBe("paid");
+    expect((await EquipmentBooking.findById(booking._id).exec())?.paymentStatus).toBe("paid");
+  });
+
+  test("an advance paid after the project was cancelled is refunded, not applied", async () => {
+    const project = await Project.create({
+      title: "Duplex in Mirpur",
+      client: renter._id,
+      assignedEngineer: owner._id,
+      status: "in-progress",
+      totalAgreedValue: 100_000,
+      paymentPlan: "phase_by_phase",
+      phasePlanStatus: "approved",
+      advanceRequiredAmount: 20_000,
+    });
+    const opened = await checkout(renter, { purpose: "advance", projectId: project._id.toString() });
+    expect(opened.status).toBe(201);
+    const tranId = opened.body.tranId as string;
+
+    // Cancelled while the client was on the gateway page.
+    await Project.updateOne({ _id: project._id }, { $set: { status: "cancelled" } });
+    gateway.validations.set("VAL-LATE", validRecord(tranId, 20_000, "VAL-LATE"));
+    await request(app).post("/api/payments/sslcommerz/success").type("form").send({ tran_id: tranId, val_id: "VAL-LATE" });
+
+    expect((await Project.findById(project._id).exec())?.advancePaid).toBe(false);
+    expect(await Payment.findOne({ tranId }).exec()).toMatchObject({ status: "paid", refundDue: true });
+    expect(await Notification.countDocuments({ recipient: renter._id, type: "payment_refund_due" })).toBe(1);
   });
 });

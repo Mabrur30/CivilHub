@@ -27,6 +27,7 @@ import { countOf } from "../lib/format";
 import { isProjectProgress, type ProjectProgress } from "../lib/projectProgress";
 import { getGreeting } from "../lib/greeting";
 import { useDashboardBase } from "../lib/dashboardPaths";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface EngineerOverview {
   activeProjects: number;
@@ -36,7 +37,6 @@ interface EngineerOverview {
   recentActivity: FeedEntry[];
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const ACTIVITY_SKELETON_ROWS = 4;
 
 const activityFilterTabs: { key: ActivityCategory; label: string }[] = [
@@ -48,17 +48,25 @@ const activityFilterTabs: { key: ActivityCategory; label: string }[] = [
   { key: "network", label: "Network" },
 ];
 
-const isEngineerOverview = (value: unknown): value is EngineerOverview => {
-  if (typeof value !== "object" || value === null) return false;
+/**
+ * The overview, or null if it isn't one. Activity this version doesn't
+ * recognise (a newer notification type, say) is left out rather than
+ * failing the whole page, as on the client overview.
+ */
+const toEngineerOverview = (value: unknown): EngineerOverview | null => {
+  if (typeof value !== "object" || value === null) return null;
   const overview = value as Record<string, unknown>;
-  return (
+  const isValid =
     typeof overview.activeProjects === "number" &&
     typeof overview.pendingBids === "number" &&
     typeof overview.unreadMessages === "number" &&
     typeof overview.upcomingMilestones === "number" &&
-    Array.isArray(overview.recentActivity) &&
-    overview.recentActivity.every(isFeedEntry)
-  );
+    Array.isArray(overview.recentActivity);
+  if (!isValid) return null;
+  return {
+    ...(overview as unknown as EngineerOverview),
+    recentActivity: (overview.recentActivity as unknown[]).filter(isFeedEntry),
+  };
 };
 
 const getErrorMessage = (value: unknown, fallback: string): string => {
@@ -176,13 +184,14 @@ export function EngineerOverviewPage(): ReactElement {
           { credentials: "include" },
         );
         const body: unknown = await response.json();
-        if (!response.ok || !isEngineerOverview(body)) {
+        const loaded = response.ok ? toEngineerOverview(body) : null;
+        if (!loaded) {
           setError(
             getErrorMessage(body, "Unable to load your dashboard overview."),
           );
           return;
         }
-        setOverview(body);
+        setOverview(loaded);
       } catch {
         setError("Unable to connect to CivilHub. Please try again.");
       } finally {

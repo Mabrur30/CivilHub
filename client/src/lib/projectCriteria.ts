@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_BASE_URL } from "./apiBase";
 
 /**
  * The questions each project type asks, served by GET /api/projects/criteria
@@ -57,8 +58,6 @@ export interface ProjectCriteriaSpec {
 export type AreaValue = { value: number; unit: string };
 export type RequirementValue = number | string | string[] | AreaValue;
 export type ProjectRequirements = Record<string, RequirementValue>;
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 // The spec changes only with a deploy, so one fetch serves the whole visit.
 let cachedSpec: ProjectCriteriaSpec | null = null;

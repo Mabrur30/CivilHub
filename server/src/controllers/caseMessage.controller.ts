@@ -20,6 +20,7 @@ import {
   uploadCaseFile,
 } from "../utils/disputeCases";
 import { logAction } from "./admin.controller";
+import { deletePrivateAsset, uploadAllOrNone } from "../utils/cloudinaryUpload";
 
 /**
  * Messages between CivilHub and each side of a dispute. A user reads and
@@ -75,7 +76,11 @@ export const postMyCaseMessage = async (
 
     let uploaded;
     try {
-      uploaded = await Promise.all(files.map((file) => uploadCaseFile(file, party.user)));
+      uploaded = await uploadAllOrNone(
+        files,
+        (file) => uploadCaseFile(file, party.user),
+        (file) => deletePrivateAsset(file.publicId, file.resourceType),
+      );
     } catch {
       throw caseError("Your files couldn't be uploaded. Try again.", 422);
     }
@@ -87,6 +92,10 @@ export const postMyCaseMessage = async (
       from: "party",
       text,
       files: uploaded,
+    }).catch(async (error: unknown) => {
+      // Not saved, so the files it carried are deleted again.
+      await Promise.allSettled(uploaded.map((file) => deletePrivateAsset(file.publicId, file.resourceType)));
+      throw error;
     });
     res.status(201).json(toCaseMessageView(message));
   } catch (error: unknown) {

@@ -24,7 +24,12 @@ import {
 } from "./customerReview.controller";
 import { User, type UserRole } from "../models/User.model";
 import { messageAttachmentTypes } from "../middleware/upload.middleware";
-import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
+import {
+  STRIP_IMAGE_METADATA,
+  deleteCloudinaryAsset,
+  uploadAllOrNone,
+  uploadBuffer,
+} from "../utils/cloudinaryUpload";
 import { factsForUpload } from "../utils/evidence";
 import {
   getAdvanceAmount,
@@ -763,7 +768,7 @@ const uploadDeliverable = async (
       resource_type: resourceType,
       ...(resourceType === "raw"
         ? { use_filename: true, unique_filename: true, filename_override: name }
-        : {}),
+        : STRIP_IMAGE_METADATA),
     }),
     // Who handed it over, and for photos the camera's date and place.
     factsForUpload(file, uploadedBy),
@@ -852,7 +857,11 @@ export const submitPhase = async (
       );
     }
 
-    const files = await Promise.all(uploads.map((file) => uploadDeliverable(file, req.user.userId)));
+    const files = await uploadAllOrNone(
+      uploads,
+      (file) => uploadDeliverable(file, req.user.userId),
+      (file) => deleteCloudinaryAsset(file.publicId, file.resourceType),
+    );
     const submission: PhaseSubmission = { note, files, submittedAt: new Date() };
 
     // Conditional on the status we checked, so a double submit can't add two
@@ -1006,7 +1015,7 @@ const claimRemainingBalance = async (
   paidAt: Date,
 ): Promise<boolean> => {
   const claimed = await Project.findOneAndUpdate(
-    { _id: projectId, advancePaid: true, fullPaymentPaid: false },
+    { _id: projectId, status: "in-progress", advancePaid: true, fullPaymentPaid: false },
     { $set: { fullPaymentPaid: true, fullPaymentPaidAt: paidAt } },
     { returnDocument: "after" },
   ).exec();
@@ -1375,8 +1384,9 @@ export const prepareProjectCharge = async (
 
 /**
  * Applies a verified payment to its project. Returns false when there was
- * nothing left to pay for (already paid, or the phase moved on), so the
- * caller can flag the money for a refund.
+ * nothing left to pay for (already paid, the phase moved on, or the project
+ * was cancelled while the client was at checkout), so the caller can flag
+ * the money for a refund.
  */
 export const applyProjectPayment = async (
   payment: IPayment,
@@ -1384,7 +1394,7 @@ export const applyProjectPayment = async (
   const project = payment.project
     ? await Project.findById(payment.project).exec()
     : null;
-  if (!project) return false;
+  if (!project || project.status !== "in-progress") return false;
 
   const paidAt = payment.paidAt ?? new Date();
   const label = projectLabel(project, "your project");
@@ -1396,7 +1406,7 @@ export const applyProjectPayment = async (
 
   if (payment.type === "advance") {
     const claimed = await Project.findOneAndUpdate(
-      { _id: project._id, phasePlanStatus: "approved", advancePaid: false },
+      { _id: project._id, status: "in-progress", phasePlanStatus: "approved", advancePaid: false },
       { $set: { advancePaid: true, advancePaidAt: paidAt } },
       { returnDocument: "after" },
     ).exec();

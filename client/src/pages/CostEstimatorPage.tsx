@@ -8,8 +8,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { BrandLogo } from "../components/BrandLogo";
 import { useAuth } from "../context/AuthContext";
 import { COST_ESTIMATOR_DISTRICTS } from "../lib/siteDetails";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface CityInfo {
   id: string;
@@ -241,9 +240,18 @@ export function CostEstimatorPage({
     fetchSavedEstimates();
   }, [currentUser]);
 
-  // Execute prediction
-  const handleCalculate = async (e?: React.FormEvent): Promise<void> => {
-    if (e) e.preventDefault();
+  // Execute prediction. Takes the inputs explicitly, so a caller that has just
+  // set them (Load Parameters) doesn't predict from the previous values.
+  const runPrediction = async (inputs: {
+    city: string;
+    location: string;
+    floorArea: number;
+    floors: number;
+    bedrooms: number;
+    bathrooms: number;
+    qualityTier: string;
+    constructionType: string;
+  }): Promise<void> => {
     try {
       setLoading(true);
       setError("");
@@ -251,20 +259,17 @@ export function CostEstimatorPage({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          city,
-          location,
-          floorArea,
-          floors,
-          bedrooms,
-          bathrooms,
-          qualityTier,
-          constructionType,
-        }),
+        body: JSON.stringify(inputs),
       });
 
       if (!res.ok) {
-        throw new Error("Failed to predict building cost");
+        // The server says why, e.g. that this account can't use the estimator.
+        const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+        throw new Error(
+          typeof body?.message === "string" && body.message
+            ? body.message
+            : "Failed to predict building cost",
+        );
       }
 
       const result: EstimationResult = await res.json();
@@ -274,6 +279,20 @@ export function CostEstimatorPage({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCalculate = async (e?: React.FormEvent): Promise<void> => {
+    if (e) e.preventDefault();
+    await runPrediction({
+      city,
+      location,
+      floorArea,
+      floors,
+      bedrooms,
+      bathrooms,
+      qualityTier,
+      constructionType,
+    });
   };
 
   // Run initial calculation when meta finishes loading or on initial mount
@@ -916,14 +935,17 @@ Generated via CivilHub AI & BNBC Construction Model`;
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handlePostProject}
-                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-on-primary shadow-glow transition hover:bg-glow"
-                >
-                  <span>🚀</span>
-                  <span>Post Project with this Estimate</span>
-                </button>
+                {/* Posting projects is for clients (and visitors, who sign up as one). */}
+                {!currentUser || currentUser.role === "client" ? (
+                  <button
+                    type="button"
+                    onClick={handlePostProject}
+                    className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-on-primary shadow-glow transition hover:bg-glow"
+                  >
+                    <span>🚀</span>
+                    <span>Post Project with this Estimate</span>
+                  </button>
+                ) : null}
               </div>
 
               {/* Detail Tabs */}
@@ -1161,6 +1183,16 @@ Generated via CivilHub AI & BNBC Construction Model`;
                                   setQualityTier(saved.inputs.qualityTier);
                                   setConstructionType(saved.inputs.constructionType);
                                   setActiveTab("breakdown");
+                                  void runPrediction({
+                                    city: saved.inputs.city,
+                                    location: saved.inputs.location || "",
+                                    floorArea: saved.inputs.floorArea,
+                                    floors: saved.inputs.floors,
+                                    bedrooms: saved.inputs.bedrooms,
+                                    bathrooms: saved.inputs.bathrooms,
+                                    qualityTier: saved.inputs.qualityTier,
+                                    constructionType: saved.inputs.constructionType,
+                                  });
                                 }}
                                 className="mt-1 text-xs font-semibold text-white/70 underline hover:text-white"
                               >

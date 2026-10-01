@@ -2,8 +2,7 @@ import { FlagIcon, ProhibitIcon } from "@phosphor-icons/react";
 import { type ReactElement, useState } from "react";
 import { ConfirmDialog } from "../dashboard/ui/ConfirmDialog";
 import { ReportDialog } from "./ReportDialog";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 const quietAction =
   "inline-flex items-center gap-1.5 rounded text-xs font-semibold text-white/45 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-glow disabled:opacity-50";

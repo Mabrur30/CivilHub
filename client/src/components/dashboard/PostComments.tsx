@@ -2,8 +2,10 @@ import { type ReactElement, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { RatingBadge } from "../RatingBadge";
+import { VerifiedBadge } from "../VerifiedBadge";
 import { isProviderRole } from "../../lib/dashboardPaths";
 import { ReportDialog } from "../safety/ReportDialog";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 export interface CommentAuthor {
   userId: string;
@@ -12,6 +14,8 @@ export interface CommentAuthor {
   profilePhotoUrl: string | null;
   rating?: number | null;
   reviewCount?: number;
+  /** Checked by CivilHub; missing from older responses. */
+  verified?: boolean;
 }
 
 export interface PostComment {
@@ -38,8 +42,6 @@ const COMMENT_PAGE_SIZE = 20;
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {
@@ -336,6 +338,7 @@ export function CommentPanel({
                 >
                   {comment.author.name}
                 </Link>
+                {comment.author.verified ? <VerifiedBadge compact className="text-xs" /> : null}
                 {isProviderRole(comment.author.role) && (
                   <RatingBadge
                     rating={comment.author.rating ?? null}
@@ -397,7 +400,7 @@ export function CommentPanel({
                     maxLength={500}
                     aria-label={`Reply to ${comment.author.name}`}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                         event.preventDefault();
                         void submitComment(comment.id);
                       }
@@ -431,7 +434,7 @@ export function CommentPanel({
             maxLength={500}
             aria-label="Write a comment"
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 void submitComment();
               }

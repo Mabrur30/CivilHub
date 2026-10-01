@@ -15,8 +15,8 @@ import {
   TEAM_SIZES,
 } from "./organisationProfile";
 import { SpecialityChooser } from "../shared/SpecialityChooser";
+import { API_BASE_URL } from "../../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const ABOUT_LIMIT = 1000;
 
 interface EditOrganisationProfileDialogProps {

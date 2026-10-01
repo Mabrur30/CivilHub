@@ -3,6 +3,9 @@ import { getPaymentConfig } from "../config/payments";
 import { Payment } from "../models/Payment.model";
 import { formatTaka } from "../utils/money";
 
+/** SSLCommerz won't open a checkout for less than this, in taka. */
+export const GATEWAY_MINIMUM = 10;
+
 /** How long a checkout may stay open before we stop waiting for it. */
 export const CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
 /** A checkout this recent is probably still on the gateway page. */

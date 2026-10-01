@@ -4,8 +4,8 @@ import { useLocation } from "react-router-dom";
 import { inputClassName, panelClassName, primaryButtonClassName } from "../dashboard/ui/buttonStyles";
 import { FormField } from "../dashboard/ui/FormField";
 import { VerifiedBadge } from "../VerifiedBadge";
+import { API_BASE_URL } from "../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const FILE_TYPES = "image/jpeg,image/png,image/webp,application/pdf";
 const MAX_BYTES = 10 * 1024 * 1024;
 

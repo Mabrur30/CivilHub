@@ -16,6 +16,7 @@ import {
   type NotificationListItem,
   type NotificationListResponse,
 } from "./notificationUtils";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 interface TopNavAlertsProps {
   role: UserRole;
@@ -25,7 +26,6 @@ interface ErrorResponse {
   message?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const POLL_MS = 9000;
 const DROPDOWN_LIMIT = 8;
 
@@ -218,11 +218,16 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
     }
   };
 
+  // Offline, the notification just shows as unread again on the next refresh.
   const markSingleRead = async (notificationId: string): Promise<void> => {
-    await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
-      method: "PATCH",
-      credentials: "include",
-    });
+    try {
+      await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+    } catch {
+      // Nothing to do; see above.
+    }
   };
 
   const handleNotificationClick = async (
@@ -258,6 +263,8 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
         method: "PATCH",
         credentials: "include",
       });
+    } catch {
+      // The reload below shows what's really read.
     } finally {
       void loadNotifications({ silent: true, limit: DROPDOWN_LIMIT });
     }

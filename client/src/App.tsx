@@ -1,5 +1,5 @@
 import { type ReactElement } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ClientDashboardLayout } from "./components/dashboard/ClientDashboardLayout";
 import { ClientBidsPage } from "./pages/ClientBidsPage";
@@ -63,6 +63,15 @@ function CostEstimatorRedirect(): ReactElement {
   );
 }
 
+/**
+ * One page per project: moving from one project to another (say, from a
+ * notification) starts fresh, so nothing from the last project carries over.
+ */
+function ProjectPage(): ReactElement {
+  const { projectId } = useParams<{ projectId: string }>();
+  return <ProjectProgressPage key={projectId} />;
+}
+
 /** Project pages for someone who doesn't take on projects go to Equipment. */
 function RequireProjects({
   children,
@@ -112,7 +121,7 @@ const providerRoutes = (): ReactElement => (
       path="projects/:projectId"
       element={
         <RequireProjects>
-          <ProjectProgressPage />
+          <ProjectPage />
         </RequireProjects>
       }
     />
@@ -214,7 +223,7 @@ function App(): ReactElement {
         <Route index element={<Navigate to="overview" replace />} />
         <Route path="overview" element={<ClientOverviewPage />} />
         <Route path="projects" element={<ClientProjectsPage />} />
-        <Route path="projects/:projectId" element={<ProjectProgressPage />} />
+        <Route path="projects/:projectId" element={<ProjectPage />} />
         <Route path="history" element={<ProjectHistoryPage />} />
         <Route path="post-project" element={<PostProjectPage />} />
         <Route path="cost-estimator" element={<CostEstimatorPage />} />

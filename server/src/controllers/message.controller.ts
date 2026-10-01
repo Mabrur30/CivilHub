@@ -18,6 +18,7 @@ import { isProviderRole } from "../utils/roles";
 import {
   type ChatUser,
   type ConversationProjectView,
+  canSendVoiceMessage,
   clientAndProvider,
   describeConversationProjects,
   hiredPartnerIds,
@@ -27,6 +28,7 @@ import {
 } from "../utils/projectContact";
 import { type IConversation } from "../models/Conversation.model";
 import { isBlockedEitherWay } from "../utils/blocks";
+import { STRIP_IMAGE_METADATA } from "../utils/cloudinaryUpload";
 
 interface MessageError extends Error {
   statusCode: number;
@@ -215,6 +217,9 @@ const markConversationMessagesRead = async (
 const getBaseMimeType = (mimeType: string): string =>
   mimeType.split(";")[0].trim().toLowerCase();
 
+/** Messages per page of a conversation's history. */
+const MESSAGE_PAGE_SIZE = 50;
+
 // Recorded audio can run slightly past the client-side cap before the recorder stops.
 const AUDIO_DURATION_TOLERANCE_SECONDS = 2;
 
@@ -303,7 +308,7 @@ const uploadMessageAttachment = async (
     resource_type: resourceType,
     ...(resourceType === "raw"
       ? { use_filename: true, unique_filename: true, filename_override: name }
-      : {}),
+      : STRIP_IMAGE_METADATA),
   });
 
   return {
@@ -628,10 +633,25 @@ export const getMessages = async (
       userId,
     );
 
-    const messages = await Message.find({ conversation: conversation._id })
+    // Pages of history, newest first: ?before=<id> for older ones, and
+    // ?after=<id> for what's new since the last poll.
+    const { before, after } = req.query as { before?: string; after?: string };
+    const cursor = after ?? before;
+    if (cursor !== undefined && !Types.ObjectId.isValid(cursor)) {
+      throw createMessageError("Invalid message cursor", 400);
+    }
+    const filter: Record<string, unknown> = { conversation: conversation._id };
+    if (after) filter._id = { $gt: new Types.ObjectId(after) };
+    else if (before) filter._id = { $lt: new Types.ObjectId(before) };
+
+    const found = await Message.find(filter)
       .populate("sender", "name role")
-      .sort({ createdAt: 1 })
+      .sort({ _id: after ? 1 : -1 })
+      .limit(MESSAGE_PAGE_SIZE + 1)
       .exec();
+    const hasMore = found.length > MESSAGE_PAGE_SIZE;
+    const page = found.slice(0, MESSAGE_PAGE_SIZE);
+    const messages = after ? page : page.reverse();
 
     const senders = messages
       .map((message) => message.sender as unknown as PopulatedUser)
@@ -643,7 +663,8 @@ export const getMessages = async (
 
     const photoByUser = await getPhotoMap(senders);
 
-    await markConversationMessagesRead(conversation._id, userId);
+    // Reading is a GET, so it changes nothing: the thread marks itself read
+    // with PATCH /:conversationId/read once it's on screen.
 
     const participants = await User.find({
       _id: { $in: conversation.participants },
@@ -673,6 +694,8 @@ export const getMessages = async (
         : null,
       projects: context?.projects ?? [],
       contactsHidden: context?.contactsHidden ?? false,
+      // Older messages remain before this page (or, after a poll, more new ones).
+      hasMore,
       messages: messages.map((message) => {
         const sender = message.sender as unknown as PopulatedUser;
         return {
@@ -714,7 +737,8 @@ export const sendMessage = async (
       throw createMessageError("Conversation ID is required", 400);
     }
 
-    const typed = req.body.content?.trim();
+    const typed =
+      typeof req.body.content === "string" ? req.body.content.trim() : undefined;
     if (!typed && !req.file) {
       throw createMessageError("Message content is required", 400);
     }
@@ -761,6 +785,24 @@ export const sendMessage = async (
       typed && masking
         ? maskContactInfo(typed)
         : { text: typed, masked: false };
+
+    if (
+      req.file &&
+      req.body.messageType === "audio" &&
+      !(
+        recipientId &&
+        recipientUser &&
+        (await canSendVoiceMessage(
+          { id: userId, role: req.user.role },
+          { id: recipientId, role: recipientUser.role },
+        ))
+      )
+    ) {
+      throw createMessageError(
+        "Voice messages open up once you've hired or been hired.",
+        403,
+      );
+    }
 
     const senderObjectId = new Types.ObjectId(userId);
 

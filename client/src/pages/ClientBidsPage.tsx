@@ -29,6 +29,7 @@ import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { VerifiedBadge } from "../components/VerifiedBadge";
+import { API_BASE_URL } from "../lib/apiBase";
 
 type BidStatus = "pending" | "accepted" | "declined";
 
@@ -62,8 +63,6 @@ interface ProjectBids {
 
 type ProjectFilter = "needs_decision" | "decided" | "all";
 type BidSort = "price" | "rating" | "newest";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;

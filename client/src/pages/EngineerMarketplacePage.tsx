@@ -27,6 +27,7 @@ import { formatBudgetShort, moneyValue } from "../lib/money";
 import { describeTimeline } from "../lib/timeline";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { findCategory, useProjectCriteria } from "../lib/projectCriteria";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface MarketplaceProject {
   id: string;
@@ -65,7 +66,6 @@ interface EngineerBidSummary {
 
 type BudgetFilter = "any" | "under-10l" | "10l-1cr" | "over-1cr";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const ALL_CATEGORIES = "All categories";
 const ALL_DISTRICTS = "All districts";
 

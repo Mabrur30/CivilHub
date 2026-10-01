@@ -22,10 +22,14 @@ export interface CreateCommentBody {
   content: string;
   parentCommentId?: string;
 }
+/** What a comment's author is loaded with; verifiedAt drives the Verified badge. */
+const AUTHOR_FIELDS = "name role verifiedAt";
+
 interface CommentAuthor {
   _id: Types.ObjectId;
   name: string;
   role: UserRole;
+  verifiedAt?: Date | null;
 }
 export interface CommentResponse {
   id: string;
@@ -35,7 +39,12 @@ export interface CommentResponse {
     name: string;
     role: UserRole;
     profilePhotoUrl: string | null;
+    /** Checked by CivilHub: shows the Verified badge. */
+    verified: boolean;
+    rating: number | null;
+    reviewCount: number;
   };
+  /** Also on author, where the client reads it; kept here for older clients. */
   rating: number | null;
   reviewCount: number;
   content: string;
@@ -113,6 +122,9 @@ const toCommentResponses = async (
         name: author.name,
         role: author.role,
         profilePhotoUrl: photoByUser.get(authorId) ?? null,
+        verified: Boolean(author.verifiedAt),
+        rating: rating?.rating ?? null,
+        reviewCount: rating?.reviewCount ?? 0,
       },
       rating: rating?.rating ?? null,
       reviewCount: rating?.reviewCount ?? 0,
@@ -162,6 +174,9 @@ export const createComment = async (
       parent = await Comment.findById(parentCommentId).exec();
       if (!parent || parent.post.toString() !== postId)
         throw createCommentError("Parent comment not found", 404);
+      if (await isBlockedEitherWay(userId, parent.author.toString())) {
+        throw createCommentError("You can't reply to this comment", 403);
+      }
     }
     const comment = await Comment.create({
       post: post._id,
@@ -170,7 +185,7 @@ export const createComment = async (
       parentComment: parent?._id ?? null,
     });
     const populated = await Comment.findById(comment._id)
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .exec();
     if (!populated)
       throw createCommentError("Unable to load created comment", 500);
@@ -210,7 +225,7 @@ export const getCommentsForPost = async (
     // Return a flat array so the frontend can build the threaded tree without recursive API calls.
     const query = req.query as { limit?: string; offset?: string };
     const all = await Comment.find({ post: postId })
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .sort({ createdAt: 1, _id: 1 })
       .exec();
     // A deleted account leaves no author; people you've blocked (or who
@@ -265,10 +280,11 @@ export const deleteComment = async (
     if (!commentId || !Types.ObjectId.isValid(commentId))
       throw createCommentError("Comment not found", 404);
     const comment = await Comment.findById(commentId)
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .exec();
     if (!comment) throw createCommentError("Comment not found", 404);
-    if (comment.author._id.toString() !== userId)
+    // The author may be null if their account is gone.
+    if (comment.author?._id.toString() !== userId)
       throw createCommentError("Only the author can delete this comment", 403);
     comment.content = "[deleted]";
     await comment.save();

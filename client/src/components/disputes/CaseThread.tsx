@@ -1,8 +1,11 @@
 import { ChatsCircleIcon, FileTextIcon, ImageIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { type FormEvent, type ReactElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import { inlineLinkClassName, inputClassName, primaryButtonClassName } from "../dashboard/ui/buttonStyles";
+import { API_BASE_URL } from "../../lib/apiBase";
+import { ErrorPanel } from "../dashboard/ui/StatePanels";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+/** CivilHub may reply while the page is open; checked this often. */
+const REFRESH_MS = 60_000;
 
 // Mirror the server's limits in CaseMessage.model.ts.
 const TEXT_LIMIT = 2000;
@@ -59,21 +62,36 @@ export function CaseThread({
   const textId = useId();
   const path = `${API_BASE_URL}/api/dispute-cases/${caseType}/${caseId}/messages`;
 
+  const [loadFailed, setLoadFailed] = useState<boolean>(false);
+
+  // No thread for this viewer (403/404) keeps the panel hidden; a failure to
+  // load it says so, since a missed reply-by date matters.
   const load = useCallback(async (): Promise<void> => {
     try {
       const response = await fetch(path, { credentials: "include" });
       const body: unknown = await response.json().catch(() => null);
-      if (response.ok && isThread(body)) setThread(body);
+      if (response.ok && isThread(body)) {
+        setThread(body);
+        setLoadFailed(false);
+      } else if (response.status >= 500) {
+        setLoadFailed(true);
+      }
     } catch {
-      // The panel just stays hidden; the rest of the page still works.
+      setLoadFailed(true);
     }
   }, [path]);
 
   useEffect(() => {
     void load();
+    const timer = window.setInterval(() => void load(), REFRESH_MS);
+    return () => window.clearInterval(timer);
   }, [load]);
 
-  if (!thread) return null;
+  if (!thread) {
+    return loadFailed ? (
+      <ErrorPanel message="Your messages with CivilHub couldn't be loaded." onRetry={() => void load()} />
+    ) : null;
+  }
 
   const send = async (event: FormEvent): Promise<void> => {
     event.preventDefault();

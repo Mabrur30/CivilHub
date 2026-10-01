@@ -3,8 +3,8 @@ import rateLimit from "express-rate-limit";
 
 /**
  * Request limits that keep one person or script from flooding the app.
- * Limits are per IP address. If the API is deployed behind a proxy, set
- * `app.set("trust proxy", 1)` so the real client address is used.
+ * Limits are per IP address. Behind a proxy, set TRUST_PROXY (see index.ts)
+ * so the real client address is used rather than the proxy's.
  */
 
 const tooMany = (message: string) => ({ message });
@@ -29,6 +29,19 @@ export const adminLoginLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: tooMany("Too many sign-in attempts. Please wait 15 minutes and try again."),
+});
+
+/**
+ * Changes that check the current password (email, password, payout
+ * account): slows guessing it from a stolen session. Only failures count.
+ */
+export const passwordCheckLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: tooMany("Too many wrong passwords. Please wait 15 minutes and try again."),
 });
 
 /**

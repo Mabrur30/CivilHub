@@ -92,6 +92,14 @@ export interface IEquipmentBooking extends Document {
   returnConditionPhotos: BookingConditionPhoto[];
   returnConfirmedAt?: Date;
   returnConfirmedBy?: Types.ObjectId | null;
+  /**
+   * Set when the side that isn't the one to confirm a step marks it done (the
+   * owner hands the machine over; the renter hands it back). The renter
+   * confirms pickup, the owner confirms return, or CivilHub confirms it for
+   * them after a wait.
+   */
+  pickupAwaitingSince?: Date | null;
+  returnAwaitingSince?: Date | null;
   /** The other side's own photos and notes of the pickup or return. */
   counterReports: ConditionReport[];
   depositResolution: DepositResolutionStatus;
@@ -266,6 +274,8 @@ const equipmentBookingSchema = new Schema<IEquipmentBooking>(
       required: false,
     },
     returnConfirmedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    pickupAwaitingSince: { type: Date, default: null },
+    returnAwaitingSince: { type: Date, default: null },
     counterReports: { type: [conditionReportSchema], default: [] },
     depositResolution: {
       type: String,

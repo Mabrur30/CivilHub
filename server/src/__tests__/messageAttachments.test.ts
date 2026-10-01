@@ -9,8 +9,10 @@ import errorHandler from "../middleware/errorHandler";
 import { Conversation, type IConversation } from "../models/Conversation.model";
 import { Message } from "../models/Message.model";
 import { Notification } from "../models/Notification.model";
-import { type IUser, User } from "../models/User.model";
+import { Project } from "../models/Project.model";
+import { type IUser, User, type UserRole } from "../models/User.model";
 import conversationsRouter from "../routes/conversations.routes";
+import { fakeFile } from "./helpers/fakeFiles";
 
 jest.mock("../config/cloudinary", () => ({
   __esModule: true,
@@ -45,8 +47,12 @@ const authCookieForUser = (user: IUser): string => {
   return `civilhub_token=${token}`;
 };
 
-const createUser = (name: string, email: string): Promise<IUser> =>
-  User.create({ name, email, passwordHash: "hashed-password", role: "client" });
+const createUser = (
+  name: string,
+  email: string,
+  role: UserRole = "engineer",
+): Promise<IUser> =>
+  User.create({ name, email, passwordHash: "hashed-password", role });
 
 interface Fixture {
   sender: IUser;
@@ -55,9 +61,16 @@ interface Fixture {
   conversation: IConversation;
 }
 
-const createFixture = async (): Promise<Fixture> => {
+// Two engineers by default, who can send voice messages to each other.
+const createFixture = async (
+  recipientRole: UserRole = "engineer",
+): Promise<Fixture> => {
   const sender = await createUser("Sender", "sender@test.dev");
-  const recipient = await createUser("Recipient", "recipient@test.dev");
+  const recipient = await createUser(
+    "Recipient",
+    "recipient@test.dev",
+    recipientRole,
+  );
   const outsider = await createUser("Outsider", "outsider@test.dev");
   const conversation = await Conversation.create({
     participants: [sender._id, recipient._id],
@@ -90,6 +103,7 @@ beforeEach(async () => {
     Conversation.deleteMany({}),
     Message.deleteMany({}),
     Notification.deleteMany({}),
+    Project.deleteMany({}),
   ]);
 });
 
@@ -176,7 +190,7 @@ describe("Message attachments", () => {
       .set("Cookie", authCookieForUser(sender))
       .field("messageType", "audio")
       .field("durationSeconds", "3")
-      .attach("attachment", Buffer.from("fake-audio"), {
+      .attach("attachment", fakeFile("audio/webm"), {
         filename: "voice-message.webm",
         contentType: "audio/webm;codecs=opus",
       });
@@ -210,7 +224,7 @@ describe("Message attachments", () => {
       .post(`/api/conversations/${conversation._id.toString()}/messages`)
       .set("Cookie", authCookieForUser(sender))
       .field("messageType", "audio")
-      .attach("attachment", Buffer.from("fake-audio"), {
+      .attach("attachment", fakeFile("audio/webm"), {
         filename: "voice-message.webm",
         contentType: "audio/webm",
       });
@@ -220,6 +234,86 @@ describe("Message attachments", () => {
       resource_type: "video",
     });
     expect(await Message.countDocuments()).toBe(0);
+  });
+
+  test("an engineer can't send a voice message to a client before a hire", async () => {
+    const { sender, conversation } = await createFixture("client");
+
+    const response = await request(createTestApp())
+      .post(`/api/conversations/${conversation._id.toString()}/messages`)
+      .set("Cookie", authCookieForUser(sender))
+      .field("messageType", "audio")
+      .attach("attachment", fakeFile("audio/webm"), {
+        filename: "voice-message.webm",
+        contentType: "audio/webm",
+      });
+
+    expect(response.status).toBe(403);
+    expect(uploadBufferMock).not.toHaveBeenCalled();
+    expect(await Message.countDocuments()).toBe(0);
+  });
+
+  test("a client can't send a voice message to an engineer before a hire", async () => {
+    const { recipient, conversation } = await createFixture("client");
+
+    const response = await request(createTestApp())
+      .post(`/api/conversations/${conversation._id.toString()}/messages`)
+      .set("Cookie", authCookieForUser(recipient))
+      .field("messageType", "audio")
+      .attach("attachment", fakeFile("audio/webm"), {
+        filename: "voice-message.webm",
+        contentType: "audio/webm",
+      });
+
+    expect(response.status).toBe(403);
+    expect(uploadBufferMock).not.toHaveBeenCalled();
+  });
+
+  test("an engineer and client can send voice messages once hired", async () => {
+    const { sender, recipient, conversation } = await createFixture("client");
+    await Project.create({
+      title: "Duplex",
+      client: recipient._id,
+      assignedEngineer: sender._id,
+      status: "in-progress",
+    });
+    uploadBufferMock.mockResolvedValueOnce(
+      mockUploadResult({
+        secure_url: "https://res.cloudinary.com/demo/video/upload/note.webm",
+        public_id: "civilhub/messages/audio/note",
+        resource_type: "video",
+        duration: 12,
+      }),
+    );
+
+    const response = await request(createTestApp())
+      .post(`/api/conversations/${conversation._id.toString()}/messages`)
+      .set("Cookie", authCookieForUser(recipient))
+      .field("messageType", "audio")
+      .attach("attachment", fakeFile("audio/webm"), {
+        filename: "voice-message.webm",
+        contentType: "audio/webm",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.messageType).toBe("audio");
+  });
+
+  test("an engineer can still send files to a client before a hire", async () => {
+    const { sender, conversation } = await createFixture("client");
+    uploadBufferMock.mockResolvedValueOnce(mockUploadResult());
+
+    const response = await request(createTestApp())
+      .post(`/api/conversations/${conversation._id.toString()}/messages`)
+      .set("Cookie", authCookieForUser(sender))
+      .field("messageType", "file")
+      .attach("attachment", Buffer.from("%PDF-1.4 test"), {
+        filename: "site-plan.pdf",
+        contentType: "application/pdf",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.messageType).toBe("file");
   });
 
   test("unsupported file types are rejected before upload", async () => {

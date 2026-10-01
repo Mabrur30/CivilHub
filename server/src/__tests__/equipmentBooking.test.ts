@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
+import cloudinary from "../config/cloudinary";
 import errorHandler from "../middleware/errorHandler";
 import { Engineer } from "../models/Engineer.model";
 import { Equipment, type IEquipment } from "../models/Equipment.model";
@@ -12,6 +13,7 @@ import { Notification } from "../models/Notification.model";
 import { Payment } from "../models/Payment.model";
 import { Review } from "../models/Review.model";
 import { type IUser, User } from "../models/User.model";
+import { settleDueConfirmations } from "../utils/bookingConfirmations";
 import equipmentRouter from "../routes/equipment.routes";
 import equipmentBookingRouter from "../routes/equipmentBooking.routes";
 import reviewsRouter from "../routes/reviews.routes";
@@ -575,12 +577,12 @@ describe("Equipment Booking integration: status transition guards", () => {
     );
     await confirmPickup(
       app,
-      fixture.ownerUser,
+      fixture.renterUser,
       bookingResponse.body.id as string,
     );
     await confirmReturn(
       app,
-      fixture.renterUser,
+      fixture.ownerUser,
       bookingResponse.body.id as string,
     );
 
@@ -672,8 +674,8 @@ describe("Equipment Booking integration: status transition guards", () => {
 
     await approveBooking(app, fixture.ownerUser, bookingId);
     await payBooking(app, fixture.renterUser, bookingId);
-    await confirmPickup(app, fixture.ownerUser, bookingId);
-    await confirmReturn(app, fixture.renterUser, bookingId);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+    await confirmReturn(app, fixture.ownerUser, bookingId);
 
     const beforeResolve = await request(app)
       .get(`/api/equipment-bookings/${bookingId}/can-review`)
@@ -710,8 +712,8 @@ describe("Equipment Booking integration: status transition guards", () => {
 
     await approveBooking(app, fixture.ownerUser, bookingId);
     await payBooking(app, fixture.renterUser, bookingId);
-    await confirmPickup(app, fixture.ownerUser, bookingId);
-    await confirmReturn(app, fixture.renterUser, bookingId);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+    await confirmReturn(app, fixture.ownerUser, bookingId);
     await resolveDeposit(app, fixture.ownerUser, bookingId);
 
     const createReviewResponse = await request(app)
@@ -768,5 +770,199 @@ describe("Equipment Booking integration: status transition guards", () => {
     expect(canReviewAfterSubmit.status).toBe(200);
     expect(canReviewAfterSubmit.body.canReview).toBe(false);
     expect(canReviewAfterSubmit.body.alreadyReviewed).toBe(true);
+  });
+});
+
+describe("Equipment Booking integration: who confirms, races and cancellations", () => {
+  /** An approved, paid booking of the fixture's excavator. */
+  const paidBooking = async (app: Express, fixture: TestFixture, offset: number): Promise<string> => {
+    const created = await createBookingRequest({
+      app,
+      authCookie: authCookieForUser(fixture.renterUser),
+      equipmentId: fixture.equipment._id.toString(),
+      startDate: addDays(new Date(), offset),
+      endDate: addDays(new Date(), offset + 2),
+    });
+    const bookingId = created.body.id as string;
+    await approveBooking(app, fixture.ownerUser, bookingId);
+    await payBooking(app, fixture.renterUser, bookingId);
+    return bookingId;
+  };
+
+  test("two overlapping requests approved at once: only one is approved", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const otherRenter = await createEngineerUser("Second Renter", "second@test.dev");
+    const [first, second] = await Promise.all(
+      [fixture.renterUser, otherRenter].map((user) =>
+        createBookingRequest({
+          app,
+          authCookie: authCookieForUser(user),
+          equipmentId: fixture.equipment._id.toString(),
+          startDate: addDays(new Date(), 70),
+          endDate: addDays(new Date(), 72),
+        }),
+      ),
+    );
+
+    const results = await Promise.all(
+      [first, second].map((created) => approveBooking(app, fixture.ownerUser, created.body.id as string)),
+    );
+
+    expect(results.filter((result) => result.status === 200).length).toBeLessThanOrEqual(1);
+    expect(await EquipmentBooking.countDocuments({ status: "approved" })).toBeLessThanOrEqual(1);
+  });
+
+  test("the owner marking the pickup waits for the renter, who completes it", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const bookingId = await paidBooking(app, fixture, 74);
+
+    const marked = await confirmPickup(app, fixture.ownerUser, bookingId);
+    expect(marked.status).toBe(200);
+    expect(marked.body).toMatchObject({ status: "approved", pickupConfirmedAt: null });
+    expect(marked.body.autoConfirmAt).toEqual(expect.any(String));
+    expect((await confirmPickup(app, fixture.ownerUser, bookingId)).status).toBe(409);
+    // Can't be cancelled once the machine is on its way.
+    const cancel = await request(app)
+      .patch(`/api/equipment-bookings/${bookingId}/cancel`)
+      .set("Cookie", authCookieForUser(fixture.renterUser));
+    expect(cancel.status).toBe(409);
+
+    const confirmed = await confirmPickup(app, fixture.renterUser, bookingId);
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.status).toBe("in_progress");
+    const booking = await EquipmentBooking.findById(bookingId).exec();
+    expect(booking?.pickupConfirmedBy?.toString()).toBe(fixture.ownerUser._id.toString());
+    expect(booking?.counterReports).toEqual([
+      expect.objectContaining({ stage: "pickup", role: "renter", notes: "Pickup condition looks good" }),
+    ]);
+  });
+
+  test("a return only the renter marked completes itself after 48 hours", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const bookingId = await paidBooking(app, fixture, 78);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+
+    const marked = await confirmReturn(app, fixture.renterUser, bookingId);
+    expect(marked.body.status).toBe("in_progress");
+    expect(await settleDueConfirmations(new Date(Date.now() + 47 * 60 * 60 * 1000))).toBe(0);
+    expect(await settleDueConfirmations(new Date(Date.now() + 49 * 60 * 60 * 1000))).toBe(1);
+
+    const booking = await EquipmentBooking.findById(bookingId).exec();
+    expect(booking?.status).toBe("completed");
+    expect(booking?.returnConfirmedAt).toBeInstanceOf(Date);
+    expect(await Notification.countDocuments({ type: "equipment_return_confirmed", message: /automatically/ })).toBe(2);
+  });
+
+  test("an approved, paid booking cancelled before pickup is refunded in full", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const bookingId = await paidBooking(app, fixture, 82);
+
+    const cancelled = await request(app)
+      .patch(`/api/equipment-bookings/${bookingId}/cancel`)
+      .set("Cookie", authCookieForUser(fixture.ownerUser));
+    expect(cancelled.status).toBe(200);
+    expect((await EquipmentBooking.findById(bookingId).exec())?.status).toBe("cancelled");
+    expect(await Payment.findOne({ equipmentBooking: bookingId }).exec()).toMatchObject({ refundDue: true });
+    expect(
+      await Notification.countDocuments({ recipient: fixture.renterUser._id, type: "equipment_booking_cancelled" }),
+    ).toBe(1);
+  });
+
+  test("the owner can't withdraw a renter's pending request; they decline it", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const created = await createBookingRequest({
+      app,
+      authCookie: authCookieForUser(fixture.renterUser),
+      equipmentId: fixture.equipment._id.toString(),
+      startDate: addDays(new Date(), 86),
+      endDate: addDays(new Date(), 88),
+    });
+    const asOwner = await request(app)
+      .patch(`/api/equipment-bookings/${created.body.id as string}/cancel`)
+      .set("Cookie", authCookieForUser(fixture.ownerUser));
+    expect(asOwner.status).toBe(409);
+    const asRenter = await request(app)
+      .patch(`/api/equipment-bookings/${created.body.id as string}/cancel`)
+      .set("Cookie", authCookieForUser(fixture.renterUser));
+    expect(asRenter.status).toBe(200);
+  });
+
+  test("a deposit can't be claimed after its release deadline", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const bookingId = await paidBooking(app, fixture, 90);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+    await confirmReturn(app, fixture.ownerUser, bookingId);
+    await EquipmentBooking.updateOne(
+      { _id: bookingId },
+      { $set: { returnConfirmedAt: addDays(new Date(), -8) } },
+    );
+
+    const claim = await request(app)
+      .patch(`/api/equipment-bookings/${bookingId}/resolve-deposit`)
+      .set("Cookie", authCookieForUser(fixture.ownerUser))
+      .send({ resolution: "claimed", claimAmount: 100, claimNotes: "Scratched boom" });
+    expect(claim.status).toBe(409);
+    expect((await EquipmentBooking.findById(bookingId).exec())?.depositResolution).toBe("pending");
+  });
+
+  test("a rental with no deposit can be reviewed as soon as it's returned", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    await Equipment.updateOne({ _id: fixture.equipment._id }, { $set: { securityDeposit: 0 } });
+    const bookingId = await paidBooking(app, fixture, 94);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+    await confirmReturn(app, fixture.ownerUser, bookingId);
+
+    expect((await EquipmentBooking.findById(bookingId).exec())?.depositResolution).toBe("released");
+    const eligibility = await request(app)
+      .get(`/api/equipment-bookings/${bookingId}/can-review`)
+      .set("Cookie", authCookieForUser(fixture.renterUser));
+    expect(eligibility.body.canReview).toBe(true);
+  });
+
+  test("a listing can't be deleted while a deposit on it is unsettled", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    const bookingId = await paidBooking(app, fixture, 98);
+    await confirmPickup(app, fixture.renterUser, bookingId);
+    await confirmReturn(app, fixture.ownerUser, bookingId);
+
+    const blocked = await request(app)
+      .delete(`/api/equipment/${fixture.equipment._id.toString()}`)
+      .set("Cookie", authCookieForUser(fixture.ownerUser));
+    expect(blocked.status).toBe(409);
+
+    await resolveDeposit(app, fixture.ownerUser, bookingId);
+    const destroy = jest.spyOn(cloudinary.uploader, "destroy").mockResolvedValue({ result: "ok" });
+    const deleted = await request(app)
+      .delete(`/api/equipment/${fixture.equipment._id.toString()}`)
+      .set("Cookie", authCookieForUser(fixture.ownerUser));
+    expect(deleted.status).toBe(200);
+    destroy.mockRestore();
+  });
+
+  test("a banned owner's listing can't be booked or found", async () => {
+    const app = createTestApp();
+    const fixture = await createBaseFixture();
+    await User.updateOne({ _id: fixture.ownerUser._id }, { $set: { status: "banned" } });
+
+    const created = await createBookingRequest({
+      app,
+      authCookie: authCookieForUser(fixture.renterUser),
+      equipmentId: fixture.equipment._id.toString(),
+      startDate: addDays(new Date(), 102),
+      endDate: addDays(new Date(), 104),
+    });
+    expect(created.status).toBe(409);
+    const browse = await request(app)
+      .get("/api/equipment/browse")
+      .set("Cookie", authCookieForUser(fixture.renterUser));
+    expect(browse.body.items).toHaveLength(0);
   });
 });

@@ -17,6 +17,7 @@ import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
 import { useDashboardBase } from "../lib/dashboardPaths";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface EngineerBid {
   id: string;
@@ -48,8 +49,6 @@ interface ErrorResponse {
 }
 
 type BidFilter = "all" | EngineerBid["status"];
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const isEngineerBid = (value: unknown): value is EngineerBid => {
   if (typeof value !== "object" || value === null) return false;

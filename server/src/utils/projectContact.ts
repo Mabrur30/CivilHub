@@ -114,6 +114,13 @@ export const hiredPartnerIds = async (
 export const needsContactMasking = async (a: ChatUser, b: ChatUser): Promise<boolean> =>
   clientAndProvider(a, b) !== null && !(await hasHireTogether(a, b));
 
+/**
+ * Voice messages: engineers and companies can always send them to each other;
+ * a client and a provider only once one has hired the other.
+ */
+export const canSendVoiceMessage = async (a: ChatUser, b: ChatUser): Promise<boolean> =>
+  (isProviderRole(a.role) && isProviderRole(b.role)) || hasHireTogether(a, b);
+
 export const CONTACT_PLACEHOLDER = "[contact hidden until hire]";
 
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)*\.[A-Z]{2,}/gi;
@@ -123,6 +130,23 @@ const PHONE_CANDIDATE = /\+?[0-9০-৯][0-9০-৯\s\-.()]{6,}[0-9০-৯]/g;
 const MONEY_BEFORE = /(৳|tk\.?|taka|bdt|rs\.?)\s*$/i;
 
 const countDigits = (value: string): number => (value.match(/[0-9০-৯]/g) ?? []).length;
+
+const BANGLA_ZERO = "০".charCodeAt(0);
+const latinDigitsOf = (value: string): string =>
+  value.replace(/[০-৯]/g, (digit) => String(digit.charCodeAt(0) - BANGLA_ZERO)).replace(/\D/g, "");
+
+/** A Bangladeshi mobile number however it's written: 01XXXXXXXXX, with or without 88. */
+const isBdMobile = (value: string): boolean => /^(?:88)?01[3-9]\d{8}$/.test(latinDigitsOf(value));
+
+// Exactly a mobile's 11 digits (13 with 88), with any separators between
+// them, commas included ("0171,234,5678"). Only real mobile numbers are
+// masked this way, so amounts like 12,00,000 stay.
+const DIGIT = "[0-9০-৯]";
+const SEP = "[\\s\\-.,()]*";
+const MOBILE_WITH_COMMAS = new RegExp(
+  `(?<!${DIGIT})(?:\\+?${DIGIT}${SEP}${DIGIT}${SEP})?${DIGIT}${SEP}${DIGIT}(?:${SEP}${DIGIT}){9}(?!${DIGIT})`,
+  "g",
+);
 
 /**
  * Replaces emails and phone numbers (10–15 digits, e.g. 01712-345678,
@@ -138,11 +162,17 @@ export const maskContactInfo = (text: string): { text: string; masked: boolean }
   const result = withoutEmails.replace(PHONE_CANDIDATE, (match, offset: number, whole: string) => {
     const digits = countDigits(match);
     if (digits < 10 || digits > 15) return match;
-    if (MONEY_BEFORE.test(whole.slice(Math.max(0, offset - 6), offset))) return match;
+    // "tk 01712345678" is still a phone number, whatever comes before it.
+    if (MONEY_BEFORE.test(whole.slice(Math.max(0, offset - 6), offset)) && !isBdMobile(match)) return match;
     masked = true;
     return CONTACT_PLACEHOLDER;
   });
-  return { text: result, masked };
+  const withoutMobiles = result.replace(MOBILE_WITH_COMMAS, (match) => {
+    if (!isBdMobile(match)) return match;
+    masked = true;
+    return CONTACT_PLACEHOLDER;
+  });
+  return { text: withoutMobiles, masked };
 };
 
 /**

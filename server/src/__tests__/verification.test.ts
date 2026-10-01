@@ -26,8 +26,12 @@ import userRouter from "../routes/user.routes";
 import verificationRouter from "../routes/verification.routes";
 import { deletePrivateAsset, uploadBuffer } from "../utils/cloudinaryUpload";
 import { settleVerificationExpiries } from "../utils/verification";
+import { fakeFile } from "./helpers/fakeFiles";
 
 jest.mock("../utils/cloudinaryUpload", () => ({
+  // The real helpers, so they call the mocked uploads below.
+  uploadAllOrNone: jest.requireActual("../utils/cloudinaryUpload").uploadAllOrNone,
+  STRIP_IMAGE_METADATA: {},
   uploadBuffer: jest.fn(),
   deleteCloudinaryAsset: jest.fn().mockResolvedValue(undefined),
   deletePrivateAsset: jest.fn().mockResolvedValue(undefined),
@@ -62,7 +66,7 @@ const signedInAdmin = async (): Promise<ReturnType<typeof request.agent>> => {
   return agent;
 };
 
-const jpg = (name: string) => [Buffer.from("fake image bytes"), { filename: name, contentType: "image/jpeg" }] as const;
+const jpg = (name: string) => [fakeFile("image/jpeg"), { filename: name, contentType: "image/jpeg" }] as const;
 
 const submitEngineer = (user: IUser = engineer, iebNumber = "m 12345"): request.Test =>
   as(user, request(app).post("/api/verification/me"))

@@ -23,11 +23,15 @@ import {
   type FakeGateway,
   type GatewayPaymentResult,
 } from "./helpers/fakeGateway";
+import { fakeFile } from "./helpers/fakeFiles";
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 
 // Deliverables would go to Cloudinary; the tests only need an upload result.
 jest.mock("../utils/cloudinaryUpload", () => ({
+  // The real helpers, so they call the mocked uploads below.
+  uploadAllOrNone: jest.requireActual("../utils/cloudinaryUpload").uploadAllOrNone,
+  STRIP_IMAGE_METADATA: {},
   uploadBuffer: jest.fn(),
   deleteCloudinaryAsset: jest.fn().mockResolvedValue(undefined),
 }));
@@ -132,7 +136,7 @@ const handOver = (
     request(app).post(`/api/projects/${projectId}/phases/${phaseId}/submit`),
   ).field("note", note);
   for (const file of files) {
-    req = req.attach("files", Buffer.from("file body"), {
+    req = req.attach("files", fakeFile(file.type), {
       filename: file.name,
       contentType: file.type,
     });

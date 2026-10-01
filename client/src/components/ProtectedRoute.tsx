@@ -1,5 +1,5 @@
 import { type ReactElement, type ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, type UserRole } from "../context/AuthContext";
 import { dashboardBase } from "../lib/dashboardPaths";
 
@@ -14,6 +14,7 @@ export function ProtectedRoute({
   children,
 }: ProtectedRouteProps): ReactElement {
   const { currentUser, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -26,7 +27,14 @@ export function ProtectedRoute({
   }
 
   if (!currentUser) {
-    return <Navigate to="/login" replace />;
+    // Remembered so signing in returns here, e.g. to a message link.
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+      />
+    );
   }
 
   const allowed =

@@ -259,8 +259,8 @@ describe("What a company can do depends on its services", () => {
 
 describe("Messaging and discovery", () => {
   test("a client can message a company directly; another provider needs a connection", async () => {
-    expect((await as(client, request(app).get(`/api/conversations/with/${builder._id.toString()}`))).status).toBe(201);
-    expect((await as(engineer, request(app).get(`/api/conversations/with/${builder._id.toString()}`))).status).toBe(403);
+    expect((await as(client, request(app).post(`/api/conversations/with/${builder._id.toString()}`))).status).toBe(201);
+    expect((await as(engineer, request(app).post(`/api/conversations/with/${builder._id.toString()}`))).status).toBe(403);
   });
 
   test("Browse Engineers lists project companies alongside engineers, and can filter", async () => {

@@ -31,6 +31,7 @@ import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
 import { moneyValue } from "../lib/money";
 import { ENGINEER_DISCIPLINES } from "../lib/disciplines";
 import { VerifiedBadge } from "../components/VerifiedBadge";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface EngineerDirectoryItem {
   id: string;
@@ -62,7 +63,6 @@ interface DirectoryResponse {
   total: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PAGE_SIZE = 12;
 const TYPING_DELAY_MS = 300;
 

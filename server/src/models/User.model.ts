@@ -23,6 +23,11 @@ export interface IUser extends Document {
   statusReason?: string | null;
   /** Set while CivilHub has verified this engineer or company: the badge. */
   verifiedAt?: Date | null;
+  /**
+   * Goes up when the password changes; session tokens carry the version they
+   * were issued at, so older sessions stop working. Missing means 0.
+   */
+  sessionVersion?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,6 +64,7 @@ const userSchema = new Schema<IUser>(
     suspendedUntil: { type: Date, default: null },
     statusReason: { type: String, trim: true, maxlength: 500, default: null },
     verifiedAt: { type: Date, default: null },
+    sessionVersion: { type: Number, default: 0 },
   },
   {
     timestamps: true,

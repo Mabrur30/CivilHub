@@ -8,8 +8,8 @@ import {
   toConversationSummary,
 } from "./types";
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
+export { API_BASE_URL };
 
 export const CONNECTION_ERROR =
   "Unable to connect to CivilHub. Please try again.";
@@ -59,11 +59,21 @@ export type FetchMessagesResult =
   | { status: "not_found" }
   | { status: "forbidden"; error: string };
 
+/**
+ * One page of a conversation: the newest messages, those before a message
+ * (older history), or those after one (new since the last poll).
+ */
 export const fetchMessages = async (
   conversationId: string,
+  cursor: { before?: string; after?: string } = {},
 ): Promise<FetchMessagesResult> => {
+  const query = cursor.after
+    ? `?after=${encodeURIComponent(cursor.after)}`
+    : cursor.before
+      ? `?before=${encodeURIComponent(cursor.before)}`
+      : "";
   const response = await fetch(
-    `${API_BASE_URL}/api/conversations/${conversationId}/messages`,
+    `${API_BASE_URL}/api/conversations/${conversationId}/messages${query}`,
     { credentials: "include" },
   );
   const body = await readJson(response);
@@ -92,7 +102,7 @@ export const resolveConversationWithUser = async (
   const query = projectId ? `?project=${encodeURIComponent(projectId)}` : "";
   const response = await fetch(
     `${API_BASE_URL}/api/conversations/with/${userId}${query}`,
-    { credentials: "include" },
+    { method: "POST", credentials: "include" },
   );
   const body = await readJson(response);
 

@@ -7,8 +7,8 @@ import {
 import { Dialog } from "../../dashboard/ui/Dialog";
 import { FormField } from "../../dashboard/ui/FormField";
 import { getErrorMessage } from "./organisationProfile";
+import { API_BASE_URL } from "../../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_LIMIT = 5 * 1024 * 1024;
 

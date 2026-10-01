@@ -8,6 +8,7 @@ import {
   type IClient,
 } from "../models/Client.model";
 import { User } from "../models/User.model";
+import { STRIP_IMAGE_METADATA } from "../utils/cloudinaryUpload";
 
 export interface UpdateClientProfileBody {
   phone?: string;
@@ -142,6 +143,7 @@ export const uploadClientProfilePhoto = async (
     const result = await uploadBuffer(req.file.buffer, {
       folder: "civilhub/profile-photos",
       resource_type: "image",
+      ...STRIP_IMAGE_METADATA,
     });
 
     const oldPhoto = client.profilePhoto;

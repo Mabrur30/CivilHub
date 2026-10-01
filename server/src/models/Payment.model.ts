@@ -28,6 +28,8 @@ export const PAYMENT_STATUSES: PaymentStatus[] = [
   "expired",
 ];
 
+export type PaymentApplyState = "pending" | "applied" | "refund_due";
+
 export interface IPayment extends Document {
   project?: Types.ObjectId;
   equipmentBooking?: Types.ObjectId;
@@ -54,6 +56,13 @@ export interface IPayment extends Document {
   depositAmount: number;
   /** Paid, but the thing it paid for was already settled or withdrawn. */
   refundDue: boolean;
+  /**
+   * Whether a gateway-confirmed payment has been applied to what it paid for.
+   * "pending" between marking it paid and applying it, so a retry can finish
+   * the job if that step was interrupted. Unset on older payments.
+   */
+  applyState?: PaymentApplyState;
+  applyStartedAt?: Date;
   failureReason?: string;
   /** What the payer sees this was for, e.g. "Advance for Duplex in Mirpur". */
   description?: string;
@@ -121,6 +130,8 @@ const paymentSchema = new Schema<IPayment>(
     payeeAmount: { type: Number, min: 0, default: 0 },
     depositAmount: { type: Number, min: 0, default: 0 },
     refundDue: { type: Boolean, default: false },
+    applyState: { type: String, enum: ["pending", "applied", "refund_due"] },
+    applyStartedAt: { type: Date },
     failureReason: { type: String, maxlength: 300 },
     description: { type: String, maxlength: 300 },
     returnPath: { type: String, maxlength: 300 },

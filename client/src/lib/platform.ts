@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "./apiBase";
 
 /** The server's default (PLATFORM_COMMISSION_RATE), used if the rate can't be fetched. */
 const DEFAULT_COMMISSION_RATE = 0.1;

@@ -4,10 +4,13 @@ import { dashboardBase } from "../../lib/dashboardPaths";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
+  | "bid_invitation"
+  | "bid_invitation_answered"
   | "equipment_booking_request"
   | "equipment_booking_approved"
   | "equipment_booking_declined"
   | "equipment_booking_auto_declined"
+  | "equipment_booking_cancelled"
   | "equipment_booking_payment_received"
   | "equipment_pickup_confirmed"
   | "equipment_return_confirmed"
@@ -39,6 +42,7 @@ export type NotificationType =
   | "moderation_notice"
   /** CivilHub sent a payee what they'd earned. */
   | "payout_sent"
+  | "payout_account_updated"
   /** CivilHub refunded a payer. */
   | "refund_issued"
   /** Verification: approved, rejected, lapsed, or a licence about to expire. */
@@ -91,10 +95,13 @@ export interface NotificationListResponse {
 const notificationTypes: NotificationType[] = [
   "bid_accepted",
   "bid_declined",
+  "bid_invitation",
+  "bid_invitation_answered",
   "equipment_booking_request",
   "equipment_booking_approved",
   "equipment_booking_declined",
   "equipment_booking_auto_declined",
+  "equipment_booking_cancelled",
   "equipment_booking_payment_received",
   "equipment_pickup_confirmed",
   "equipment_return_confirmed",
@@ -124,6 +131,7 @@ const notificationTypes: NotificationType[] = [
   "customer_review_received",
   "moderation_notice",
   "payout_sent",
+  "payout_account_updated",
   "refund_issued",
   "verification_approved",
   "verification_rejected",
@@ -215,6 +223,7 @@ export const mapNotificationTypeToActivityType = (
     type === "equipment_booking_approved" ||
     type === "equipment_booking_declined" ||
     type === "equipment_booking_auto_declined" ||
+    type === "equipment_booking_cancelled" ||
     type === "equipment_booking_payment_received" ||
     type === "equipment_pickup_confirmed" ||
     type === "equipment_return_confirmed" ||
@@ -311,9 +320,20 @@ export const getNotificationTargetPath = (
     return `${dashboardBase(role)}/projects/${notification.projectId}`;
   }
 
+  // Invitations are listed on the engineer's bids page; the client sees
+  // the answer with that project's bids.
+  if (notification.type === "bid_invitation") {
+    return `${dashboardBase(role)}/bids`;
+  }
+  if (notification.type === "bid_invitation_answered") {
+    return notification.projectId
+      ? `${dashboardBase(role)}/bids?project=${notification.projectId}`
+      : `${dashboardBase(role)}/bids`;
+  }
+
   // Payouts are listed with the payout account, under Settings, and
   // verification lives there too.
-  if (notification.type === "payout_sent") {
+  if (notification.type === "payout_sent" || notification.type === "payout_account_updated") {
     return "/settings";
   }
   if (notification.type.startsWith("verification_")) {

@@ -37,6 +37,7 @@ export interface LoginRequestBody {
 interface JwtPayload {
   userId: string;
   role: UserRole;
+  sv: number;
 }
 
 interface AuthError extends Error {
@@ -73,6 +74,7 @@ const setAuthCookie = (res: Response, user: IUser): void => {
   const payload: JwtPayload = {
     userId: user._id.toString(),
     role: user.role,
+    sv: user.sessionVersion ?? 0,
   };
   const token = jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
 
@@ -128,7 +130,15 @@ export const signup = async (
   try {
     const { name, email, password, role, services, disciplines } = req.body;
 
-    if (!name || !email || !password || !role) {
+    if (
+      typeof name !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      !name.trim() ||
+      !email.trim() ||
+      !password ||
+      !role
+    ) {
       throw createAuthError("All fields are required", 400);
     }
 
@@ -204,7 +214,7 @@ export const login = async (
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
       throw createAuthError("Email and password are required", 400);
     }
 
@@ -383,7 +393,10 @@ export const updateMyPassword = async (
     }
     await assertCurrentPassword(user, req.body.currentPassword);
     user.passwordHash = await bcrypt.hash(newPassword, 12);
+    // Signs out every other session; this one gets a fresh cookie.
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     await user.save();
+    setAuthCookie(res, user);
     res.status(200).json(await toPublicUser(user));
   } catch (error: unknown) {
     next(error);

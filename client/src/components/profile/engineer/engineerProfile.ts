@@ -2,7 +2,8 @@ import { formatCurrency } from "../../../lib/format";
 import { type ProfileListing } from "../shared/profileTypes";
 import { type OwnVerificationStatus } from "../../verification/GetVerifiedLink";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../../lib/apiBase";
+export { API_BASE_URL };
 
 export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export const CERTIFICATE_TYPES = [...IMAGE_TYPES, "application/pdf"];

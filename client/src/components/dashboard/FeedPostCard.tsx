@@ -2,6 +2,7 @@ import { type ReactElement, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { RatingBadge } from "../RatingBadge";
+import { VerifiedBadge } from "../VerifiedBadge";
 import {
   CommentPanel,
   CommentToggleButton,
@@ -19,6 +20,8 @@ export interface FeedAuthor {
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
+  /** Checked by CivilHub; missing from older responses. */
+  verified?: boolean;
 }
 
 export interface FeedOriginalPost {
@@ -125,6 +128,7 @@ export function FeedPostCard({
             >
               {post.author.name}
             </Link>
+            {post.author.verified ? <VerifiedBadge compact className="ml-1 text-sm" /> : null}
             {isProviderRole(post.author.role) && (
               <RatingBadge
                 rating={post.author.rating ?? null}
@@ -222,7 +226,8 @@ export function FeedPostCard({
                 className="font-semibold text-white/80 transition-colors duration-200 hover:text-primary"
               >
                 {post.originalPost.author.name}
-              </Link>{" "}
+              </Link>
+              {post.originalPost.author.verified ? <VerifiedBadge compact className="ml-1" /> : null}{" "}
               •{" "}
               {formatRelativeTime(post.originalPost.createdAt)}
             </p>

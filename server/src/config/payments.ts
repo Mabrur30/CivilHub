@@ -43,5 +43,18 @@ export const getPaymentConfig = (): PaymentConfig => {
   };
 };
 
-export const isPaymentGatewayConfigured = (config = getPaymentConfig()): boolean =>
+/**
+ * In production the gateway mode must be chosen on purpose: left unset it
+ * would default to sandbox, where test cards "pay" for real bookings.
+ */
+export const assertPaymentModeChosen = (): void => {
+  const mode = process.env.SSLCOMMERZ_IS_SANDBOX?.trim();
+  if (process.env.NODE_ENV === "production" && mode !== "true" && mode !== "false") {
+    throw new Error(
+      'SSLCOMMERZ_IS_SANDBOX must be set to "true" or "false" in production',
+    );
+  }
+};
+
+export const isPaymentGatewayConfigured =(config = getPaymentConfig()): boolean =>
   Boolean(config.storeId && config.storePassword);

@@ -13,6 +13,7 @@ import { restrictedUserIds } from "../utils/accountStatus";
 import { blockedUserIds, isBlockedEitherWay } from "../utils/blocks";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
 import { isProviderRole } from "../utils/roles";
+import { STRIP_IMAGE_METADATA } from "../utils/cloudinaryUpload";
 
 interface PostError extends Error {
   statusCode: number;
@@ -39,10 +40,14 @@ interface PostParams {
   userId?: string;
 }
 
+/** What a post's author is loaded with; verifiedAt drives the Verified badge. */
+const AUTHOR_FIELDS = "name role verifiedAt";
+
 interface PopulatedUser {
   _id: Types.ObjectId;
   name: string;
   role: UserRole;
+  verifiedAt?: Date | null;
 }
 
 interface FeedPostAuthor {
@@ -52,6 +57,8 @@ interface FeedPostAuthor {
   profilePhotoUrl: string | null;
   rating: number | null;
   reviewCount: number;
+  /** Checked by CivilHub: shows the Verified badge. */
+  verified: boolean;
 }
 
 interface FeedPostOriginal {
@@ -267,6 +274,7 @@ const toFeedAuthor = (
     profilePhotoUrl: photoByUserId.get(userId) ?? null,
     rating: rating?.rating ?? null,
     reviewCount: rating?.reviewCount ?? 0,
+    verified: Boolean(user.verifiedAt),
   };
 };
 
@@ -342,6 +350,7 @@ export const createPost = async (
       const upload = await uploadBuffer(req.file.buffer, {
         folder: "civilhub/posts",
         resource_type: "image",
+        ...STRIP_IMAGE_METADATA,
       });
       imageUrl = upload.secure_url;
       imagePublicId = upload.public_id;
@@ -353,10 +362,14 @@ export const createPost = async (
       imageUrl,
       imagePublicId,
       likes: [],
+    }).catch(async (error: unknown) => {
+      // The post wasn't saved, so its image is deleted again.
+      if (imagePublicId) await deleteCloudinaryImage(imagePublicId).catch(() => undefined);
+      throw error;
     });
 
     const populated = await Post.findById(post._id)
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .exec();
 
     if (!populated) {
@@ -416,10 +429,10 @@ export const getFeed = async (
         // With a cursor, page numbers no longer apply.
         .skip(query.before ? 0 : (page - 1) * limit)
         .limit(limit)
-        .populate("author", "name role")
+        .populate("author", AUTHOR_FIELDS)
         .populate({
           path: "originalPost",
-          populate: { path: "author", select: "name role" },
+          populate: { path: "author", select: AUTHOR_FIELDS },
         })
         .exec(),
       Post.countDocuments({ author: { $in: objectIds } }),
@@ -506,6 +519,10 @@ export const createRepost = async (
         ? ((await Post.findById(shared.originalPost).exec()) ?? shared)
         : shared;
 
+    if (await isBlockedEitherWay(userId, originalPost.author.toString())) {
+      throw createPostError("You can't repost this post", 403);
+    }
+
     // One repost per person per post: a repeat returns the one they made.
     const existingRepost = await Post.findOne({
       author: userId,
@@ -520,10 +537,10 @@ export const createRepost = async (
         likes: [],
       }));
     const populated = await Post.findById(repost._id)
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .populate({
         path: "originalPost",
-        populate: { path: "author", select: "name role" },
+        populate: { path: "author", select: AUTHOR_FIELDS },
       })
       .exec();
     if (!populated) throw createPostError("Unable to load the repost", 500);
@@ -582,10 +599,10 @@ export const getUserPosts = async (
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate("author", "name role")
+        .populate("author", AUTHOR_FIELDS)
         .populate({
           path: "originalPost",
-          populate: { path: "author", select: "name role" },
+          populate: { path: "author", select: AUTHOR_FIELDS },
         })
         .exec(),
       Post.countDocuments({ author: userId }),
@@ -643,6 +660,14 @@ export const toggleLike = async (
 
     if (!postId || !Types.ObjectId.isValid(postId)) {
       throw createPostError("Post not found", 404);
+    }
+
+    const target = await Post.findById(postId).select("author").exec();
+    if (!target) {
+      throw createPostError("Post not found", 404);
+    }
+    if (await isBlockedEitherWay(userId, target.author.toString())) {
+      throw createPostError("You can't like this post", 403);
     }
 
     const liker = new Types.ObjectId(userId);
@@ -742,10 +767,10 @@ export const getPost = async (
       throw createPostError("Post not found", 404);
     }
     const post = await Post.findById(postId)
-      .populate("author", "name role")
+      .populate("author", AUTHOR_FIELDS)
       .populate({
         path: "originalPost",
-        populate: { path: "author", select: "name role" },
+        populate: { path: "author", select: AUTHOR_FIELDS },
       })
       .exec();
     if (!post || !hasLiveAuthor(post)) throw createPostError("Post not found", 404);

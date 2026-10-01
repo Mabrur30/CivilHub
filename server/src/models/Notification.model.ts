@@ -3,10 +3,13 @@ import { Document, Model, Schema, Types, model } from "mongoose";
 export type NotificationType =
   | "bid_accepted"
   | "bid_declined"
+  | "bid_invitation"
+  | "bid_invitation_answered"
   | "equipment_booking_request"
   | "equipment_booking_approved"
   | "equipment_booking_declined"
   | "equipment_booking_auto_declined"
+  | "equipment_booking_cancelled"
   | "equipment_booking_payment_received"
   | "equipment_pickup_confirmed"
   | "equipment_return_confirmed"
@@ -41,6 +44,7 @@ export type NotificationType =
   | "moderation_notice"
   /** CivilHub sent a payee what they'd earned. */
   | "payout_sent"
+  | "payout_account_updated"
   /** CivilHub refunded a payer. */
   | "refund_issued"
   /** Verification: approved, rejected, lapsed, or a licence about to expire. */
@@ -99,10 +103,13 @@ const notificationSchema = new Schema<INotification>(
       enum: [
         "bid_accepted",
         "bid_declined",
+        "bid_invitation",
+        "bid_invitation_answered",
         "equipment_booking_request",
         "equipment_booking_approved",
         "equipment_booking_declined",
         "equipment_booking_auto_declined",
+        "equipment_booking_cancelled",
         "equipment_booking_payment_received",
         "equipment_pickup_confirmed",
         "equipment_return_confirmed",
@@ -132,6 +139,7 @@ const notificationSchema = new Schema<INotification>(
         "customer_review_received",
         "moderation_notice",
         "payout_sent",
+        "payout_account_updated",
         "refund_issued",
         "verification_approved",
         "verification_rejected",

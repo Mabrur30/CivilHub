@@ -4,6 +4,7 @@ import { type CurrentUser } from "../../context/AuthContext";
 import {
   CONNECTION_ERROR,
   fetchMessages,
+  markConversationRead,
   resolveConversationWithUser,
   sendTextMessage,
 } from "./api";
@@ -43,6 +44,10 @@ export interface ChatThreadState {
   setActiveProjectId: (projectId: string | null) => void;
   /** Phone numbers and emails are masked until the pair has a hire. */
   contactsHidden: boolean;
+  /** Older messages exist before the earliest one loaded. */
+  hasEarlier: boolean;
+  isLoadingEarlier: boolean;
+  loadEarlier: () => Promise<void>;
   /** Resolves to an error message, or "" once the message is saved. */
   sendText: (content: string) => Promise<string>;
   addMessage: (message: ChatMessage) => void;
@@ -82,19 +87,26 @@ export function useChatThread(
     onLoadedRef.current = onLoaded;
   }, [onLoaded]);
 
+  const [hasEarlier, setHasEarlier] = useState<boolean>(false);
+  const [isLoadingEarlier, setIsLoadingEarlier] = useState<boolean>(false);
+
+  // Pages arrive separately (the newest, older history, new since the last
+  // poll), so each is merged into what's already loaded.
   const apply = useCallback((response: GetMessagesResponse): void => {
     setConversationId(response.conversationId);
     setOtherParticipant(response.otherParticipant);
     setProjects(toConversationProjects(response.projects));
     setContactsHidden(response.contactsHidden === true);
-    setMessages((current) =>
-      normalizeMessages([
-        ...response.messages,
-        ...current.filter((message) => message.isPending),
-      ]),
-    );
+    setMessages((current) => normalizeMessages([...current, ...response.messages]));
     onLoadedRef.current?.(response.conversationId);
   }, []);
+
+  // The oldest and newest saved messages, for paging back and polling forward.
+  const savedIds = useRef<{ oldest?: string; newest?: string }>({});
+  useEffect(() => {
+    const saved = messages.filter((message) => !message.isPending);
+    savedIds.current = { oldest: saved[0]?.id, newest: saved[saved.length - 1]?.id };
+  }, [messages]);
 
   useEffect(() => {
     // ThreadView is keyed by targetId, so state here always starts fresh.
@@ -106,6 +118,9 @@ export function useChatThread(
         if (isCancelled) return;
         if (first.status === "ok") {
           apply(first.data);
+          setHasEarlier(first.data.hasMore === true);
+          // Opening the thread is what marks it read.
+          void markConversationRead(first.data.conversationId).catch(() => undefined);
           return;
         }
         if (first.status === "forbidden") {
@@ -149,16 +164,45 @@ export function useChatThread(
     };
   }, [targetId, apply, navigate, requestedProjectId]);
 
+  // Polls only for what's new, and not at all while the tab is hidden.
   useEffect(() => {
     if (!conversationId) return;
-    const intervalId = window.setInterval(() => {
-      void fetchMessages(conversationId)
+    const poll = (): void => {
+      if (document.hidden) return;
+      void fetchMessages(conversationId, { after: savedIds.current.newest })
         .then((result) => {
-          if (result.status === "ok") apply(result.data);
+          if (result.status !== "ok") return;
+          apply(result.data);
+          const fromOthers = result.data.messages.some(
+            (message) => message.sender.userId !== currentUser?.id,
+          );
+          if (fromOthers) void markConversationRead(conversationId).catch(() => undefined);
         })
         .catch(() => undefined);
-    }, POLL_MS);
-    return () => window.clearInterval(intervalId);
+    };
+    const intervalId = window.setInterval(poll, POLL_MS);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [conversationId, apply, currentUser?.id]);
+
+  const loadEarlier = useCallback(async (): Promise<void> => {
+    const oldest = savedIds.current.oldest;
+    if (!conversationId || !oldest) return;
+    setIsLoadingEarlier(true);
+    try {
+      const result = await fetchMessages(conversationId, { before: oldest });
+      if (result.status === "ok") {
+        apply(result.data);
+        setHasEarlier(result.data.hasMore === true);
+      }
+    } catch {
+      // The button stays, so it can be tried again.
+    } finally {
+      setIsLoadingEarlier(false);
+    }
   }, [conversationId, apply]);
 
   const addMessage = useCallback((message: ChatMessage): void => {
@@ -229,6 +273,9 @@ export function useChatThread(
     activeProjectId,
     setActiveProjectId: setChosenProjectId,
     contactsHidden,
+    hasEarlier,
+    isLoadingEarlier,
+    loadEarlier,
     sendText,
     addMessage,
   };

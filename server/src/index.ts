@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import connectDB from "./config/db";
+import { assertPaymentModeChosen } from "./config/payments";
 import clientRouter from "./routes/client.routes";
 import errorHandler from "./middleware/errorHandler";
 import authRouter from "./routes/auth.routes";
@@ -33,11 +34,14 @@ import publicRouter from "./routes/public.routes";
 import { settleCaseReplyReminders } from "./utils/disputeCases";
 import { finalizeDueDecisions } from "./utils/disputeDecisions";
 import { getAdminSecret } from "./middleware/adminAuth.middleware";
-import { authLimiter, socialWriteLimiter } from "./middleware/rateLimit";
+import { authLimiter, passwordCheckLimiter, socialWriteLimiter } from "./middleware/rateLimit";
+import { assertUserSecretStrong } from "./middleware/auth.middleware";
+import { parseQueryString } from "./utils/queryParser";
 import { backfillCompletedProjectStatuses } from "./controllers/projectProgress.controller";
 import { tidyConnections } from "./controllers/network.controller";
 import { Payment } from "./models/Payment.model";
 import { settleDueDepositsQuietly } from "./utils/deposits";
+import { settleDueConfirmations } from "./utils/bookingConfirmations";
 import { settleVerificationExpiries } from "./utils/verification";
 import { settleApprovalReminders, settleFundingReminders } from "./utils/projectMoney";
 
@@ -45,6 +49,16 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT) || 5000;
+
+// Every query value is a single string; see parseQueryString.
+app.set("query parser", parseQueryString);
+
+// Behind a reverse proxy, how many hops to trust for the client's address.
+// Without it every visitor shares the proxy's IP, and so its rate limits.
+const trustProxy = Number(process.env.TRUST_PROXY ?? 0);
+if (Number.isInteger(trustProxy) && trustProxy > 0) {
+  app.set("trust proxy", trustProxy);
+}
 
 // The main site and the separate admin app both call this API.
 app.use(
@@ -74,6 +88,7 @@ app.get("/api/health", (_req: Request, res: Response) => {
 });
 
 app.use(["/api/auth/login", "/api/auth/signup"], authLimiter);
+app.use(["/api/auth/me/password", "/api/auth/me/email", "/api/payouts/me/account"], passwordCheckLimiter);
 app.use(
   ["/api/network", "/api/posts", "/api/comments", "/api/conversations", "/api/reports", "/api/blocks"],
   socialWriteLimiter,
@@ -117,6 +132,8 @@ const startServer = async (): Promise<void> => {
   } catch (error: unknown) {
     console.warn(`Admin dashboard disabled: ${(error as Error).message}`);
   }
+  assertPaymentModeChosen();
+  assertUserSecretStrong();
   await connectDB();
   // Payments recorded before the gateway had no status; they were all paid.
   await Payment.updateMany(
@@ -133,7 +150,12 @@ const startServer = async (): Promise<void> => {
   // ones; remind clients about hand-overs they haven't answered and phases
   // they haven't funded.
   const sweep = (): void => {
-    settleDueDepositsQuietly();
+    // Before deposits: an auto-confirmed return starts the deposit clock.
+    settleDueConfirmations()
+      .catch((error: unknown) => {
+        console.error("Rental confirmation sweep failed", error);
+      })
+      .finally(settleDueDepositsQuietly);
     settleVerificationExpiries().catch((error: unknown) => {
       console.error("Verification expiry sweep failed", error);
     });

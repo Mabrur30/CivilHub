@@ -19,6 +19,8 @@ export interface AuthenticatedRequest<ReqBody = unknown> extends Request<
 interface VerifiedJwtPayload extends jwt.JwtPayload {
   userId: string;
   role: UserRole;
+  /** The account's sessionVersion when issued; missing on older tokens, meaning 0. */
+  sv?: number;
 }
 
 interface AuthError extends Error {
@@ -48,6 +50,18 @@ const isVerifiedJwtPayload = (
   typeof payload !== "string" &&
   typeof payload.userId === "string" &&
   isUserRole(payload.role);
+
+/**
+ * Session tokens are only as safe as the secret that signs them. Production
+ * refuses to start with a short one; elsewhere it's a warning.
+ */
+export const assertUserSecretStrong = (): void => {
+  const secret = process.env.JWT_SECRET ?? "";
+  if (secret.length >= 32) return;
+  const message = "JWT_SECRET must be at least 32 random characters";
+  if (process.env.NODE_ENV === "production") throw new Error(message);
+  console.warn(`${message}; fine for development, not for production.`);
+};
 
 export const protect = async (
   req: Request,
@@ -80,7 +94,8 @@ export const protect = async (
 
     // A 7-day token outlives a suspension, so the account is checked each time.
     const standing = await getAccountStanding(decoded.userId);
-    if (!standing) {
+    // A password change ends every session issued before it.
+    if (!standing || (decoded.sv ?? 0) !== standing.sessionVersion) {
       throw createAuthError("Your session has expired. Please sign in again.");
     }
     if (standing.status !== "active") {

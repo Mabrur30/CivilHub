@@ -15,8 +15,7 @@ import { formatCurrency } from "../../../lib/format";
 import { moneyValue } from "../../../lib/money";
 import { CaseThread } from "../../disputes/CaseThread";
 import { DecisionNotice } from "../../disputes/DecisionNotice";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../../lib/apiBase";
 
 const REASONS = [
   { value: "quality", label: "The work isn't up to standard" },

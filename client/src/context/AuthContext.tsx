@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../lib/apiBase";
 
 /** Clients hire; engineers and organisations (companies) provide services. */
 export type UserRole = "client" | "engineer" | "organisation";
@@ -40,7 +41,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const authEndpoint = `${API_BASE_URL}/api/auth`;
 
 const isCurrentUser = (value: unknown): value is CurrentUser => {
@@ -70,6 +70,20 @@ const isCurrentUser = (value: unknown): value is CurrentUser => {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+const requestUrl = (input: RequestInfo | URL): string =>
+  typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+/**
+ * A 401 from the API means the session is gone (expired, or ended by a
+ * password change elsewhere). The sign-in endpoints answer 401 for a wrong
+ * password too, so they don't count.
+ */
+const isSessionLost = (input: RequestInfo | URL, response: Response): boolean => {
+  if (response.status !== 401) return false;
+  const url = requestUrl(input);
+  return url.startsWith(`${API_BASE_URL}/`) && !url.startsWith(`${authEndpoint}/`);
+};
 
 export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -104,6 +118,21 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
     };
 
     void loadCurrentUser();
+  }, []);
+
+  // Every page calls fetch directly, so the check sits on fetch itself. Once
+  // signed out here, protected pages send the person to sign in, and their
+  // polling stops as those pages unmount.
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (input, init) => {
+      const response = await originalFetch(input, init);
+      if (isSessionLost(input, response)) setCurrentUser(null);
+      return response;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
   }, []);
 
   const logout = async (): Promise<void> => {

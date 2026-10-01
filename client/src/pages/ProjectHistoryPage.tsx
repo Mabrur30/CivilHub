@@ -11,6 +11,7 @@ import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { dashboardBase as dashboardBaseFor } from "../lib/dashboardPaths";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface HistoryItem {
   id: string;
@@ -24,8 +25,6 @@ interface HistoryItem {
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const isHistoryItem = (value: unknown): value is HistoryItem => {
   if (typeof value !== "object" || value === null) return false;

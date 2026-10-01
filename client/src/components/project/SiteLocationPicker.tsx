@@ -5,8 +5,7 @@ import { SITE_FIELD_IDS, type SiteErrors, type SiteFormValue } from "../../lib/p
 import { type LatLng } from "../../lib/siteDetails";
 import { inputClassName, rowButtonClassName } from "../dashboard/ui/buttonStyles";
 import { SiteMap } from "../map/LazySiteMap";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 interface GeocodeResult {
   label: string;

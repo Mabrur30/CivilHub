@@ -28,6 +28,9 @@ import { finalizeDueDecisions } from "../utils/disputeDecisions";
 import { jpegWithExif } from "./helpers/exifJpeg";
 
 jest.mock("../utils/cloudinaryUpload", () => ({
+  // The real helpers, so they call the mocked uploads below.
+  uploadAllOrNone: jest.requireActual("../utils/cloudinaryUpload").uploadAllOrNone,
+  STRIP_IMAGE_METADATA: {},
   uploadBuffer: jest.fn(),
   deleteCloudinaryAsset: jest.fn().mockResolvedValue(undefined),
   deletePrivateAsset: jest.fn().mockResolvedValue(undefined),

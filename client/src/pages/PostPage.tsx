@@ -7,8 +7,7 @@ import { panelClassName } from "../components/dashboard/ui/buttonStyles";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { useAuth } from "../context/AuthContext";
 import { dashboardBase, isProviderRole } from "../lib/dashboardPaths";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../lib/apiBase";
 
 const isPost = (value: unknown): value is FeedPost =>
   typeof value === "object" &&

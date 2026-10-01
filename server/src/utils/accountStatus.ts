@@ -11,6 +11,8 @@ export interface AccountStanding {
   status: AccountStatus;
   suspendedUntil: Date | null;
   statusReason: string | null;
+  /** See IUser.sessionVersion. */
+  sessionVersion: number;
 }
 
 /** Mongo filter for accounts that are restricted right now. */
@@ -28,7 +30,7 @@ const restrictedNow = (): Record<string, unknown> => ({
  */
 export const getAccountStanding = async (userId: string): Promise<AccountStanding | null> => {
   if (!Types.ObjectId.isValid(userId)) return null;
-  const user = await User.findById(userId).select("status suspendedUntil statusReason").lean().exec();
+  const user = await User.findById(userId).select("status suspendedUntil statusReason sessionVersion").lean().exec();
   if (!user) return null;
   const status = user.status ?? "active";
   if (status === "suspended" && user.suspendedUntil && user.suspendedUntil <= new Date()) {
@@ -36,12 +38,13 @@ export const getAccountStanding = async (userId: string): Promise<AccountStandin
       { _id: userId, status: "suspended" },
       { $set: { status: "active", suspendedUntil: null, statusReason: null } },
     ).exec();
-    return { status: "active", suspendedUntil: null, statusReason: null };
+    return { status: "active", suspendedUntil: null, statusReason: null, sessionVersion: user.sessionVersion ?? 0 };
   }
   return {
     status,
     suspendedUntil: user.suspendedUntil ?? null,
     statusReason: user.statusReason ?? null,
+    sessionVersion: user.sessionVersion ?? 0,
   };
 };
 

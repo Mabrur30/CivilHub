@@ -49,6 +49,7 @@ import {
 } from "../lib/projectCriteria";
 import { type PrivateSite, type PublicSite, toSite } from "../lib/siteDetails";
 import { ProjectProblemPanel } from "../components/project/dispute/ProjectProblemPanel";
+import { API_BASE_URL } from "../lib/apiBase";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -201,8 +202,6 @@ interface ReviewEligibilityResponse {
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const statusLabels: Record<ProjectPhaseStatus, string> = {
   not_started: "Not started",

@@ -7,8 +7,7 @@ import {
 import { FormField } from "../dashboard/ui/FormField";
 import { ChoiceChips } from "../project/ChoiceChips";
 import { formatCurrency } from "../../lib/format";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 type PayoutMethod = "bkash" | "nagad" | "rocket" | "bank";
 
@@ -67,6 +66,7 @@ export function GettingPaidPanel(): ReactElement {
   const [form, setForm] = useState(EMPTY_FORM);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [currentPassword, setCurrentPassword] = useState<string>("");
   const [outcome, setOutcome] = useState<{ kind: "saved" | "error"; message: string } | null>(null);
 
   useEffect(() => {
@@ -117,7 +117,7 @@ export function GettingPaidPanel(): ReactElement {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, currentPassword }),
       });
       const body = (await response.json().catch(() => null)) as (PayoutAccount & { message?: string }) | null;
       if (!response.ok || !body) {
@@ -125,6 +125,7 @@ export function GettingPaidPanel(): ReactElement {
         return;
       }
       setData((current) => (current ? { ...current, account: body } : current));
+      setCurrentPassword("");
       setIsEditing(false);
       setOutcome({ kind: "saved", message: "Payout account saved." });
     } catch {
@@ -228,6 +229,19 @@ export function GettingPaidPanel(): ReactElement {
                   </FormField>
                 </div>
               ) : null}
+              <FormField id="payout-password" label="Your CivilHub password" hint="Needed to change where you're paid.">
+                <input
+                  id="payout-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(event) => {
+                    setCurrentPassword(event.target.value);
+                    setOutcome(null);
+                  }}
+                  autoComplete="current-password"
+                  className={inputClassName}
+                />
+              </FormField>
               <p className="text-xs text-white/45">Only the CivilHub team sees this. It never appears on your profile.</p>
               {outcome ? (
                 <p role={outcome.kind === "error" ? "alert" : "status"} className={`text-sm ${outcome.kind === "error" ? "text-rose-300" : "text-emerald-200"}`}>

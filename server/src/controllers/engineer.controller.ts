@@ -17,6 +17,7 @@ import {
 import { Organisation } from "../models/Organisation.model";
 import { Project } from "../models/Project.model";
 import { Review } from "../models/Review.model";
+import { STRIP_IMAGE_METADATA } from "../utils/cloudinaryUpload";
 
 interface EngineerError extends Error {
   statusCode: number;
@@ -876,6 +877,7 @@ export const uploadProfilePhoto = async (
     const result = await uploadBuffer(file.buffer, {
       folder: "civilhub/profile-photos",
       resource_type: "image",
+      ...STRIP_IMAGE_METADATA,
     });
 
     const oldPhotoPublicId = engineer.profilePhoto?.publicId;
@@ -913,6 +915,7 @@ export const uploadCertificate = async (
     const result = await uploadBuffer(file.buffer, {
       folder: "civilhub/certificates",
       resource_type: "auto",
+      ...(file.mimetype.startsWith("image/") ? STRIP_IMAGE_METADATA : {}),
     });
     engineer.certificates.push({
       title,
@@ -974,6 +977,7 @@ export const uploadPortfolioItem = async (
     const result = await uploadBuffer(file.buffer, {
       folder: "civilhub/portfolio",
       resource_type: "image",
+      ...STRIP_IMAGE_METADATA,
     });
     engineer.portfolio.push({
       title,

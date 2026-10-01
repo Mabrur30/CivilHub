@@ -2,7 +2,20 @@ import { type NextFunction, type Response } from "express";
 import { factsForUpload } from "../utils/evidence";
 import { type AppealView, type PendingDecisionView, finalizeDueDecisions, toAppealView } from "../utils/disputeDecisions";
 import { Types } from "mongoose";
-import { uploadBuffer } from "../utils/cloudinaryUpload";
+import {
+  STRIP_IMAGE_METADATA,
+  deleteCloudinaryAsset,
+  uploadAllOrNone,
+  uploadBuffer,
+} from "../utils/cloudinaryUpload";
+import {
+  CONFIRMATION_WAIT_HOURS,
+  STAGE_CONFIRMER,
+  STAGE_STATUSES,
+  autoConfirmAt,
+  completeStageFields,
+  type BookingStage,
+} from "../utils/bookingConfirmations";
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { CustomerReview } from "../models/CustomerReview.model";
 import {
@@ -23,6 +36,8 @@ import { Notification } from "../models/Notification.model";
 import { Payment, type IPayment } from "../models/Payment.model";
 import { describePaymentMethod, payeeShareNote } from "../services/payments";
 import { canRentEquipment } from "../utils/roles";
+import { getAccountStanding, isRestricted } from "../utils/accountStatus";
+import { isBlockedEitherWay } from "../utils/blocks";
 import { Review } from "../models/Review.model";
 import { formatTaka } from "../utils/money";
 import {
@@ -156,6 +171,12 @@ interface BookingViewResponse {
   returnConditionPhotos: BookingPhotoResponse[];
   returnConfirmedAt: string | null;
   returnConfirmedBy: "renter" | "owner" | null;
+  /**
+   * Set while a step marked done by the other side waits for the renter
+   * (pickup) or owner (return): when CivilHub will confirm it for them.
+   */
+  pickupAutoConfirmAt: string | null;
+  returnAutoConfirmAt: string | null;
   counterReports: ConditionReportResponse[];
   depositResolution: DepositResolutionStatus;
   depositClaimNotes: string | null;
@@ -568,17 +589,20 @@ const uploadConditionPhotos = async (
   }
 
   const uploadedAt = new Date();
-  return Promise.all(
-    files.map(async (file) => {
+  return uploadAllOrNone(
+    files,
+    async (file) => {
       const [upload, facts] = await Promise.all([
         uploadBuffer(file.buffer, {
           folder: "civilhub/equipment-booking",
           resource_type: "image",
+          ...STRIP_IMAGE_METADATA,
         }),
         factsForUpload(file, uploadedBy, uploadedAt),
       ]);
       return { url: upload.secure_url, publicId: upload.public_id, ...facts };
-    }),
+    },
+    (photo) => deleteCloudinaryAsset(photo.publicId, "image"),
   );
 };
 
@@ -691,6 +715,12 @@ const mapBookingRowsToResponse = async (
           ? row.returnConfirmedAt.toISOString()
           : null,
         returnConfirmedBy: roleOf(row, row.returnConfirmedBy),
+        pickupAutoConfirmAt: row.pickupConfirmedAt
+          ? null
+          : (autoConfirmAt(row.pickupAwaitingSince)?.toISOString() ?? null),
+        returnAutoConfirmAt: row.returnConfirmedAt
+          ? null
+          : (autoConfirmAt(row.returnAwaitingSince)?.toISOString() ?? null),
         counterReports: (row.counterReports ?? []).map((report) => ({
           stage: report.stage,
           role: report.role,
@@ -857,6 +887,12 @@ export const createBookingRequest = async (
 
     if (equipment.status !== "active") {
       throw createBookingError("This equipment listing is not active", 409);
+    }
+    if (await isBlockedEitherWay(renterId, equipment.owner.toString())) {
+      throw createBookingError("You can't book this listing", 403);
+    }
+    if (isRestricted(await getAccountStanding(equipment.owner.toString()))) {
+      throw createBookingError("This listing can't be booked right now", 409);
     }
 
     const startDate = parseDateField(req.body.startDate, "Start date");
@@ -1138,8 +1174,32 @@ export const respondToBookingRequest = async (
       throw createBookingError("These dates are no longer available", 409);
     }
 
+    const approved = await EquipmentBooking.findOneAndUpdate(
+      { _id: booking._id, status: "pending" },
+      { $set: { status: "approved" } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!approved) {
+      throw createBookingError("Only pending requests can be responded to", 409);
+    }
+    // Checked again now this booking holds its units: of two overlapping
+    // approvals racing, at least one sees the other here and backs out.
+    const stillFitsNow = await fitsCapacity(
+      equipmentId,
+      quantity,
+      booking.startDate,
+      booking.endDate,
+      booking.units ?? 1,
+      booking._id,
+    );
+    if (!stillFitsNow) {
+      await EquipmentBooking.updateOne(
+        { _id: booking._id, status: "approved" },
+        { $set: { status: "pending" } },
+      ).exec();
+      throw createBookingError("These dates are no longer available", 409);
+    }
     booking.status = "approved";
-    await booking.save();
 
     const pendingOnDates = await EquipmentBooking.find({
       equipment: equipmentId,
@@ -1204,7 +1264,7 @@ export const cancelBookingRequest = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const renterId = requireRenterUserId(req);
+    const userId = requireRenterUserId(req);
     const { bookingId } = getBookingParams(req);
 
     if (!bookingId || !Types.ObjectId.isValid(bookingId)) {
@@ -1216,23 +1276,66 @@ export const cancelBookingRequest = async (
       throw createBookingError("Booking request not found", 404);
     }
 
-    const bookingRenterId = toBookingUserId(booking.renter);
-    if (!bookingRenterId || bookingRenterId.toString() !== renterId) {
+    const role = roleOf(booking, userId);
+    const isRenter = toBookingUserId(booking.renter)?.toString() === userId;
+    const isOwner = toBookingUserId(booking.owner)?.toString() === userId;
+    if (!isRenter && !isOwner) {
       throw createBookingError(
         "You can only cancel your own booking request",
         403,
       );
     }
-
-    if (booking.status !== "pending") {
+    // A pending request is the renter's to withdraw; the owner declines it.
+    // Once approved, either side can call it off until the pickup starts.
+    if (booking.status === "pending" ? !isRenter : booking.status !== "approved") {
       throw createBookingError(
-        "Only pending booking requests can be cancelled",
+        booking.status === "pending"
+          ? "Decline the request instead"
+          : "Only bookings that haven't been picked up can be cancelled",
+        409,
+      );
+    }
+    if (booking.pickupAwaitingSince) {
+      throw createBookingError(
+        "The owner has marked this as handed over; confirm or wait for the pickup instead",
         409,
       );
     }
 
+    const cancelled = await EquipmentBooking.findOneAndUpdate(
+      { _id: booking._id, status: booking.status, pickupConfirmedAt: null, pickupAwaitingSince: null },
+      { $set: { status: "cancelled" } },
+      { returnDocument: "after" },
+    ).exec();
+    if (!cancelled) {
+      throw createBookingError("This booking changed meanwhile. Refresh and try again.", 409);
+    }
     booking.status = "cancelled";
-    await booking.save();
+
+    // Paid but never picked up: everything the renter paid goes back.
+    const paid = await Payment.find({
+      equipmentBooking: booking._id,
+      status: "paid",
+      refundDue: { $ne: true },
+    }).exec();
+    if (paid.length > 0) {
+      await Payment.updateMany(
+        { _id: { $in: paid.map((payment) => payment._id) } },
+        { $set: { refundDue: true } },
+      ).exec();
+    }
+    const refunded = paid.reduce((sum, payment) => sum + payment.amount, 0);
+
+    const equipmentId = toBookingEquipmentId(booking.equipment);
+    const title = normalizeBookingEquipmentTitle(booking);
+    const refundNote = refunded > 0 ? ` CivilHub will refund the ${formatTaka(refunded)} the renter paid.` : "";
+    await Notification.create({
+      recipient: getOtherPartyId(booking, userId),
+      type: "equipment_booking_cancelled",
+      message: `The ${role === "owner" ? "owner" : "renter"} cancelled the booking for ${title}.${refundNote}`,
+      ...(equipmentId ? { equipment: equipmentId } : {}),
+      equipmentBooking: booking._id,
+    });
 
     res
       .status(200)
@@ -1325,60 +1428,137 @@ export const applyBookingPayment = async (payment: IPayment): Promise<boolean> =
   return true;
 };
 
+/** Deletes photos uploaded for a confirmation that didn't go through. */
+const discardPhotos = async (photos: BookingConditionPhoto[]): Promise<void> => {
+  await Promise.all(
+    photos.map((photo) => deleteCloudinaryAsset(photo.publicId, "image").catch(() => undefined)),
+  );
+};
+
+/**
+ * Records one side's confirmation of a pickup or return. The renter confirms
+ * the pickup and the owner the return; when the other side marks it first,
+ * the step waits for the right side, or for CONFIRMATION_WAIT_HOURS.
+ */
+const confirmStage = async (
+  req: AuthenticatedRequest<ConfirmConditionBody>,
+  stage: BookingStage,
+): Promise<IEquipmentBooking> => {
+  const userId = requireRenterUserId(req);
+  const { bookingId } = getBookingParams(req);
+  if (!bookingId) {
+    throw createBookingError("Booking ID is required", 400);
+  }
+
+  const booking = await getBookingByIdOrFail(bookingId);
+  assertBookingParticipant(booking, userId);
+
+  const { from } = STAGE_STATUSES[stage];
+  if (booking.status !== from) {
+    throw createBookingError(
+      stage === "pickup"
+        ? "Pickup can only be confirmed for approved bookings"
+        : "Return can only be confirmed for active bookings",
+      409,
+    );
+  }
+  if (stage === "pickup" && booking.paymentStatus !== "paid") {
+    throw createBookingError("Payment must be completed before pickup", 409);
+  }
+  const confirmedAt = stage === "pickup" ? booking.pickupConfirmedAt : booking.returnConfirmedAt;
+  if (confirmedAt) {
+    throw createBookingError(
+      stage === "pickup" ? "Pickup has already been confirmed" : "Return has already been confirmed",
+      409,
+    );
+  }
+
+  const role = roleOf(booking, userId);
+  const confirmer = STAGE_CONFIRMER[stage];
+  const isConfirmer = role === confirmer;
+  const awaitingSince = (stage === "pickup" ? booking.pickupAwaitingSince : booking.returnAwaitingSince) ?? null;
+  if (!isConfirmer && awaitingSince) {
+    throw createBookingError(
+      `You've already marked the ${stage}; it's waiting for the ${confirmer} to confirm it.`,
+      409,
+    );
+  }
+
+  const files = Array.isArray(req.files) ? req.files : [];
+  const photos = await uploadConditionPhotos(files, userId);
+  const notes = req.body.conditionNotes?.trim() || undefined;
+  const now = new Date();
+  const ownRecord = {
+    [`${stage}ConditionNotes`]: notes ?? null,
+    [`${stage}ConditionPhotos`]: photos,
+    [`${stage}ConfirmedBy`]: new Types.ObjectId(userId),
+  };
+
+  let update: Record<string, unknown>;
+  if (!isConfirmer) {
+    // Marked done by the side that isn't the one to confirm it: wait for them.
+    update = { $set: { ...ownRecord, [`${stage}AwaitingSince`]: now } };
+  } else if (awaitingSince) {
+    // The other side's record is the main one; this side's goes alongside it.
+    update = {
+      $set: completeStageFields(stage, booking, now),
+      ...(notes || photos.length > 0
+        ? { $push: { counterReports: { stage, by: new Types.ObjectId(userId), role: confirmer, notes, photos, at: now } } }
+        : {}),
+    };
+  } else {
+    update = { $set: { ...ownRecord, ...completeStageFields(stage, booking, now) } };
+  }
+
+  const updated = await EquipmentBooking.findOneAndUpdate(
+    {
+      _id: booking._id,
+      status: from,
+      [`${stage}ConfirmedAt`]: null,
+      [`${stage}AwaitingSince`]: awaitingSince,
+    },
+    update,
+    { returnDocument: "after" },
+  ).exec();
+  if (!updated) {
+    await discardPhotos(photos);
+    throw createBookingError("This booking changed meanwhile. Refresh and try again.", 409);
+  }
+
+  const equipmentId = toBookingEquipmentId(booking.equipment);
+  const title = normalizeBookingEquipmentTitle(booking);
+  await Notification.create({
+    recipient: getOtherPartyId(booking, userId),
+    type: stage === "pickup" ? "equipment_pickup_confirmed" : "equipment_return_confirmed",
+    message: isConfirmer
+      ? `${stage === "pickup" ? "Pickup" : "Return"} confirmed for ${title}.`
+      : stage === "pickup"
+        ? `The owner marked ${title} as handed over to you. Confirm the pickup in the booking. If you don't within ${CONFIRMATION_WAIT_HOURS} hours, CivilHub will confirm it for you.`
+        : `The renter marked ${title} as returned. Confirm you have it back in the booking. If you don't within ${CONFIRMATION_WAIT_HOURS} hours, CivilHub will confirm it for you.`,
+    ...(equipmentId ? { equipment: equipmentId } : {}),
+    equipmentBooking: booking._id,
+  });
+  return updated;
+};
+
+const sendConfirmation = (booking: IEquipmentBooking, stage: BookingStage, res: Response): void => {
+  const confirmedAt = stage === "pickup" ? booking.pickupConfirmedAt : booking.returnConfirmedAt;
+  const awaitingSince = stage === "pickup" ? booking.pickupAwaitingSince : booking.returnAwaitingSince;
+  res.status(200).json({
+    success: true,
+    status: booking.status,
+    [`${stage}ConfirmedAt`]: confirmedAt ? confirmedAt.toISOString() : null,
+    autoConfirmAt: autoConfirmAt(awaitingSince)?.toISOString() ?? null,
+  });
+};
+
 export const confirmPickup = async (
   req: AuthenticatedRequest<ConfirmConditionBody>,
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireRenterUserId(req);
-    const { bookingId } = getBookingParams(req);
-    if (!bookingId) {
-      throw createBookingError("Booking ID is required", 400);
-    }
-
-    const booking = await getBookingByIdOrFail(bookingId);
-    assertBookingParticipant(booking, userId);
-
-    if (booking.status !== "approved") {
-      throw createBookingError(
-        "Pickup can only be confirmed for approved bookings",
-        409,
-      );
-    }
-
-    if (booking.paymentStatus !== "paid") {
-      throw createBookingError("Payment must be completed before pickup", 409);
-    }
-
-    if (booking.pickupConfirmedAt) {
-      throw createBookingError("Pickup has already been confirmed", 409);
-    }
-
-    const files = Array.isArray(req.files) ? req.files : [];
-    const photos = await uploadConditionPhotos(files, userId);
-
-    booking.pickupConditionNotes = req.body.conditionNotes?.trim() || undefined;
-    booking.pickupConditionPhotos = photos;
-    booking.pickupConfirmedAt = new Date();
-    booking.pickupConfirmedBy = new Types.ObjectId(userId);
-    booking.status = "in_progress";
-    await booking.save();
-
-    const equipmentId = toBookingEquipmentId(booking.equipment);
-    await Notification.create({
-      recipient: getOtherPartyId(booking, userId),
-      type: "equipment_pickup_confirmed",
-      message: `Pickup confirmed for ${normalizeBookingEquipmentTitle(booking)}.`,
-      ...(equipmentId ? { equipment: equipmentId } : {}),
-      equipmentBooking: booking._id,
-    });
-
-    res.status(200).json({
-      success: true,
-      status: booking.status,
-      pickupConfirmedAt: booking.pickupConfirmedAt.toISOString(),
-    });
+    sendConfirmation(await confirmStage(req, "pickup"), "pickup", res);
   } catch (error: unknown) {
     next(error);
   }
@@ -1390,50 +1570,7 @@ export const confirmReturn = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    const userId = requireRenterUserId(req);
-    const { bookingId } = getBookingParams(req);
-    if (!bookingId) {
-      throw createBookingError("Booking ID is required", 400);
-    }
-
-    const booking = await getBookingByIdOrFail(bookingId);
-    assertBookingParticipant(booking, userId);
-
-    if (booking.status !== "in_progress") {
-      throw createBookingError(
-        "Return can only be confirmed for active bookings",
-        409,
-      );
-    }
-
-    if (booking.returnConfirmedAt) {
-      throw createBookingError("Return has already been confirmed", 409);
-    }
-
-    const files = Array.isArray(req.files) ? req.files : [];
-    const photos = await uploadConditionPhotos(files, userId);
-
-    booking.returnConditionNotes = req.body.conditionNotes?.trim() || undefined;
-    booking.returnConditionPhotos = photos;
-    booking.returnConfirmedAt = new Date();
-    booking.returnConfirmedBy = new Types.ObjectId(userId);
-    booking.status = "completed";
-    await booking.save();
-
-    const equipmentId = toBookingEquipmentId(booking.equipment);
-    await Notification.create({
-      recipient: getOtherPartyId(booking, userId),
-      type: "equipment_return_confirmed",
-      message: `Return confirmed for ${normalizeBookingEquipmentTitle(booking)}.`,
-      ...(equipmentId ? { equipment: equipmentId } : {}),
-      equipmentBooking: booking._id,
-    });
-
-    res.status(200).json({
-      success: true,
-      status: booking.status,
-      returnConfirmedAt: booking.returnConfirmedAt.toISOString(),
-    });
+    sendConfirmation(await confirmStage(req, "return"), "return", res);
   } catch (error: unknown) {
     next(error);
   }
@@ -1542,9 +1679,10 @@ export const resolveDeposit = async (
       throw createBookingError("Resolution must be released or claimed", 400);
     }
 
+    let update: Record<string, unknown>;
     if (resolution === "claimed") {
       const claimNotes = req.body.claimNotes?.trim();
-      const claimAmount = Number(req.body.claimAmount);
+      const claimAmount = Math.round(Number(req.body.claimAmount) * 100) / 100;
       if (!claimNotes) {
         throw createBookingError(
           "Claim notes are required when claiming the deposit",
@@ -1560,18 +1698,42 @@ export const resolveDeposit = async (
           400,
         );
       }
-
-      booking.depositResolution = "claimed";
-      booking.depositClaimNotes = claimNotes;
-      booking.depositClaimAmount = claimAmount;
-      booking.depositClaimedAt = new Date();
+      // Past the deadline the deposit belongs to the renter, even if the
+      // hourly sweep hasn't released it yet.
+      const releaseAt = autoReleaseAt(booking);
+      if (releaseAt && releaseAt <= new Date()) {
+        throw createBookingError(
+          "The time to claim this deposit has passed; it's released to the renter.",
+          409,
+        );
+      }
+      update = {
+        $set: {
+          depositResolution: "claimed",
+          depositClaimNotes: claimNotes,
+          depositClaimAmount: claimAmount,
+          depositClaimedAt: new Date(),
+        },
+      };
     } else {
-      booking.depositResolution = "released";
-      booking.depositClaimNotes = undefined;
-      booking.depositClaimAmount = undefined;
+      update = {
+        $set: { depositResolution: "released" },
+        $unset: { depositClaimNotes: 1, depositClaimAmount: 1 },
+      };
     }
 
-    await booking.save();
+    // Only while still pending: the auto-release sweep may have got there first.
+    const resolved = await EquipmentBooking.findOneAndUpdate(
+      { _id: booking._id, status: "completed", depositResolution: "pending" },
+      update,
+      { returnDocument: "after" },
+    ).exec();
+    if (!resolved) {
+      throw createBookingError("Deposit has already been resolved", 409);
+    }
+    booking.depositResolution = resolved.depositResolution;
+    booking.depositClaimNotes = resolved.depositClaimNotes;
+    booking.depositClaimAmount = resolved.depositClaimAmount;
 
     const equipmentId = toBookingEquipmentId(booking.equipment);
     await Notification.create({

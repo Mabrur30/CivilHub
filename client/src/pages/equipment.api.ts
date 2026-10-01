@@ -4,8 +4,8 @@ import {
 } from "../components/profile/shared/profileTypes";
 import { toPlainAmount } from "../lib/money";
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../lib/apiBase";
+export { API_BASE_URL };
 
 export const EQUIPMENT_CATEGORIES = [
   "Excavator",
@@ -521,6 +521,12 @@ export interface EquipmentBookingBase {
   returnConditionPhotos: EquipmentBookingConditionPhoto[];
   returnConfirmedAt: string | null;
   returnConfirmedBy?: "renter" | "owner" | null;
+  /**
+   * Set while a step the other side marked done waits for the renter
+   * (pickup) or owner (return): when CivilHub confirms it for them.
+   */
+  pickupAutoConfirmAt?: string | null;
+  returnAutoConfirmAt?: string | null;
   /** The other side's own photos and notes of the pickup or return. */
   counterReports?: EquipmentConditionReport[];
   depositResolution: EquipmentDepositResolution;

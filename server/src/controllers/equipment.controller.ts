@@ -15,6 +15,8 @@ import {
 } from "../models/Equipment.model";
 import { EquipmentBooking } from "../models/EquipmentBooking.model";
 import { Engineer } from "../models/Engineer.model";
+import { isClaimSettled } from "../utils/deposits";
+import { restrictedUserIds } from "../utils/accountStatus";
 import { Review } from "../models/Review.model";
 import {
   assertCanListEquipment,
@@ -26,6 +28,7 @@ import {
   type ListingPricing,
   validateListingPricing,
 } from "../utils/equipmentPricing";
+import { STRIP_IMAGE_METADATA, uploadAllOrNone } from "../utils/cloudinaryUpload";
 
 interface EquipmentError extends Error {
   statusCode: number;
@@ -543,15 +546,17 @@ export const createEquipment = async (
     applyListingTerms(req.body, terms);
     assertValidTerms(terms);
 
-    const uploads = await Promise.all(
-      files.map((file) =>
+    const uploads = await uploadAllOrNone(
+      files,
+      (file) =>
         uploadBuffer(file.buffer, {
           folder: "civilhub/equipment",
           resource_type: "image",
+          ...STRIP_IMAGE_METADATA,
         }),
-      ),
+      (upload) => deleteCloudinaryImage(upload.public_id),
     );
-
+    // If the listing can't be saved, its photos are deleted again.
     const equipment = await Equipment.create({
       owner: ownerId,
       title,
@@ -563,6 +568,9 @@ export const createEquipment = async (
         url: item.secure_url,
         publicId: item.public_id,
       })),
+    }).catch(async (error: unknown) => {
+      await Promise.allSettled(uploads.map((upload) => deleteCloudinaryImage(upload.public_id)));
+      throw error;
     });
 
     const ownerSummary: OwnerSummary = {
@@ -738,6 +746,25 @@ export const deleteEquipment = async (
         409,
       );
     }
+    // A returned rental whose deposit is still being settled needs its listing.
+    const [depositOpen, claimed] = await Promise.all([
+      EquipmentBooking.exists({
+        equipment: equipment._id,
+        status: "completed",
+        securityDeposit: { $gt: 0 },
+        $or: [{ depositResolution: "pending" }, { "depositDispute.status": "open" }],
+      }),
+      EquipmentBooking.find({ equipment: equipment._id, status: "completed", depositResolution: "claimed" })
+        .select("depositResolution depositClaimedAt depositDispute counterReports")
+        .lean()
+        .exec(),
+    ]);
+    if (depositOpen || claimed.some((booking) => !isClaimSettled(booking))) {
+      throw createEquipmentError(
+        "A deposit on this listing hasn't been settled yet. Pause it instead, and delete it once the deposit is settled.",
+        409,
+      );
+    }
 
     await Promise.all(
       equipment.photos.map((photo) => deleteCloudinaryImage(photo.publicId)),
@@ -766,9 +793,14 @@ export const browseEquipment = async (
       Math.max(1, Number.parseInt(query.limit ?? "12", 10) || 12),
     );
 
+    // Listings from banned or suspended owners can't be booked, so they're hidden.
+    const restricted = await restrictedUserIds();
     const filter: Record<string, unknown> = {
       status: "active",
-      owner: { $ne: new Types.ObjectId(userId) },
+      owner: {
+        $ne: new Types.ObjectId(userId),
+        $nin: [...restricted].map((id) => new Types.ObjectId(id)),
+      },
     };
 
     if (query.category?.trim()) {
@@ -873,7 +905,7 @@ export const getEquipmentById = async (
   next: NextFunction,
 ): Promise<void> => {
   try {
-    requireRenterUser(req);
+    const viewerId = requireRenterUser(req);
     const { equipmentId } = getParams(req);
 
     if (!equipmentId || !Types.ObjectId.isValid(equipmentId)) {
@@ -892,6 +924,18 @@ export const getEquipmentById = async (
     if (!owner) {
       throw createEquipmentError("Unable to resolve equipment owner", 500);
     }
+
+    // A paused listing is the owner's to see, and its renters', for their
+    // bookings. The reason CivilHub paused it is only for the owner.
+    const isOwner = owner._id.toString() === viewerId;
+    if (
+      !isOwner &&
+      equipment.status !== "active" &&
+      !(await EquipmentBooking.exists({ equipment: equipment._id, renter: viewerId }))
+    ) {
+      throw createEquipmentError("Equipment listing not found", 404);
+    }
+    if (!isOwner) equipment.adminHold = null;
 
     const ownerId = owner._id;
     const [ownerPhotos, ownerRatings] = await Promise.all([

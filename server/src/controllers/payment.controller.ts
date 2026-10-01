@@ -7,6 +7,8 @@ import {
 import { type AuthenticatedRequest } from "../middleware/auth.middleware";
 import { Client } from "../models/Client.model";
 import { Engineer } from "../models/Engineer.model";
+import { EquipmentBooking } from "../models/EquipmentBooking.model";
+import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Notification } from "../models/Notification.model";
 import { Project } from "../models/Project.model";
 import {
@@ -26,6 +28,7 @@ import {
 } from "./projectProgress.controller";
 import {
   CHECKOUT_WINDOW_MS,
+  GATEWAY_MINIMUM,
   describePaymentMethod,
   newTranId,
   splitPayment,
@@ -51,10 +54,10 @@ const createPaymentError = (message: string, statusCode: number): PaymentError =
   return error;
 };
 
-/** SSLCommerz won't open a checkout for less than this. */
-const GATEWAY_MINIMUM = 10;
 /** How long to let the gateway report back on its own before asking it. */
 const RECONCILE_AFTER_MS = 60 * 1000;
+/** How long a payment can sit marked paid but not yet applied before a retry takes over. */
+const APPLY_RETRY_AFTER_MS = 60 * 1000;
 
 export type CheckoutPurpose = "advance" | "phase" | "full_remaining" | "equipment_booking";
 
@@ -232,38 +235,93 @@ const notifyRefundDue = async (payment: IPayment): Promise<void> => {
 };
 
 /**
+ * Whether an earlier, interrupted attempt already applied this payment. What
+ * a payment pays for is stamped with the payment's own paidAt.
+ */
+const wasAppliedEarlier = async (payment: IPayment): Promise<boolean> => {
+  const paidAt = payment.paidAt;
+  if (!paidAt) return false;
+  if (payment.type === "equipment_booking") {
+    return (await EquipmentBooking.exists({ _id: payment.equipmentBooking, paidAt })) !== null;
+  }
+  if (payment.phase && (await ProjectPhase.exists({ _id: payment.phase, paidAt })) !== null) {
+    return true;
+  }
+  return (
+    (await Project.exists({
+      _id: payment.project,
+      $or: [{ advancePaidAt: paidAt }, { fullPaymentPaidAt: paidAt }],
+    })) !== null
+  );
+};
+
+/** Applies a payment just marked paid, or flags it for a refund if nothing is owed. */
+const applyPaidPayment = async (payment: IPayment, isRetry: boolean): Promise<void> => {
+  const applied =
+    (payment.type === "equipment_booking"
+      ? await applyBookingPayment(payment)
+      : await applyProjectPayment(payment)) ||
+    (isRetry && (await wasAppliedEarlier(payment)));
+  if (!applied) {
+    await Payment.updateOne({ _id: payment._id }, { $set: { refundDue: true } }).exec();
+    await notifyRefundDue(payment);
+  }
+  await Payment.updateOne(
+    { _id: payment._id },
+    { $set: { applyState: applied ? "applied" : "refund_due" } },
+  ).exec();
+};
+
+/**
+ * Picks up a payment that was marked paid but whose apply step never
+ * finished (the server failed in between). Waits a little so it doesn't race
+ * an attempt that's still running.
+ */
+const claimStalledApply = (paymentId: Types.ObjectId): Promise<IPayment | null> =>
+  Payment.findOneAndUpdate(
+    {
+      _id: paymentId,
+      status: "paid",
+      applyState: "pending",
+      applyStartedAt: { $lte: new Date(Date.now() - APPLY_RETRY_AFTER_MS) },
+    },
+    { $set: { applyStartedAt: new Date() } },
+    { returnDocument: "after" },
+  ).exec();
+
+/**
  * Records a transaction SSLCommerz confirmed, once, and applies it. Replays
- * (the success redirect and the IPN both arrive) are no-ops. A payment we'd
- * marked failed or cancelled still settles: money received beats a hint.
+ * (the success redirect and the IPN both arrive) are no-ops, unless the first
+ * attempt stopped before applying it. A payment we'd marked failed or
+ * cancelled still settles: money received beats a hint.
  */
 const settlePayment = async (
   payment: IPayment,
   transaction: GatewayTransaction,
 ): Promise<void> => {
+  const now = new Date();
   const claimed = await Payment.findOneAndUpdate(
     { _id: payment._id, status: { $ne: "paid" } },
     {
       $set: {
         status: "paid",
-        paidAt: new Date(),
+        paidAt: now,
         valId: transaction.val_id,
         bankTranId: transaction.bank_tran_id,
         cardType: transaction.card_type,
+        applyState: "pending",
+        applyStartedAt: now,
       },
       $unset: { failureReason: 1 },
     },
     { returnDocument: "after" },
   ).exec();
-  if (!claimed) return;
-
-  const applied =
-    claimed.type === "equipment_booking"
-      ? await applyBookingPayment(claimed)
-      : await applyProjectPayment(claimed);
-  if (!applied) {
-    await Payment.updateOne({ _id: claimed._id }, { $set: { refundDue: true } }).exec();
-    await notifyRefundDue(claimed);
+  if (claimed) {
+    await applyPaidPayment(claimed, false);
+    return;
   }
+  const stalled = await claimStalledApply(payment._id);
+  if (stalled) await applyPaidPayment(stalled, true);
 };
 
 const markUnpaid = async (
@@ -370,17 +428,30 @@ export const gatewayIpn = async (req: Request, res: Response): Promise<void> => 
 /**
  * When nothing came back (tab closed, IPN can't reach a local server), ask
  * SSLCommerz directly. Past the checkout window, give up and expire it.
+ * A fail or cancel notice is only a hint (anyone can post one), so within the
+ * window those are checked too. A paid payment whose apply step was
+ * interrupted is finished here.
  */
 const reconcile = async (payment: IPayment): Promise<IPayment> => {
   const age = Date.now() - payment.createdAt.getTime();
-  if (payment.status !== "initiated" || age < RECONCILE_AFTER_MS) return payment;
+  const markedUnpaid = payment.status === "failed" || payment.status === "cancelled";
+  const shouldAsk =
+    age >= RECONCILE_AFTER_MS &&
+    (payment.status === "initiated" || (markedUnpaid && age <= CHECKOUT_WINDOW_MS));
+  if (!shouldAsk && payment.status !== "paid") return payment;
   try {
-    const transactions = await queryTransaction(payment.tranId as string);
-    const valid = transactions.find((item) => isValidFor(payment, item));
-    if (valid) {
-      await settlePayment(payment, valid);
-    } else if (age > CHECKOUT_WINDOW_MS) {
-      await markUnpaid(payment, "expired", "The checkout timed out");
+    if (payment.status === "paid") {
+      const stalled = await claimStalledApply(payment._id);
+      if (!stalled) return payment;
+      await applyPaidPayment(stalled, true);
+    } else {
+      const transactions = await queryTransaction(payment.tranId as string);
+      const valid = transactions.find((item) => isValidFor(payment, item));
+      if (valid) {
+        await settlePayment(payment, valid);
+      } else if (payment.status === "initiated" && age > CHECKOUT_WINDOW_MS) {
+        await markUnpaid(payment, "expired", "The checkout timed out");
+      }
     }
   } catch (error: unknown) {
     console.error("SSLCommerz reconciliation failed:", error);

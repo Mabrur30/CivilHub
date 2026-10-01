@@ -27,8 +27,7 @@ import { IncomingRequestsPanel } from "../components/network/IncomingRequestsPan
 import { SentRequestsPanel } from "../components/network/SentRequestsPanel";
 import { SuggestionsPanel } from "../components/network/SuggestionsPanel";
 import { type ConnectionUser, type NetworkUser, type PersonResult } from "../components/network/types";
-
-
+import { API_BASE_URL } from "../lib/apiBase";
 
 type EngineerSearchResult = PersonResult;
 
@@ -99,7 +98,6 @@ interface ErrorResponse {
   message?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const DEFAULT_SEARCH_LIMIT = 20;
 const FEED_PAGE_LIMIT = 10;
 const MAX_CONTENT_LENGTH = 2000;

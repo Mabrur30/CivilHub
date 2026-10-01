@@ -29,6 +29,7 @@ import { FileTypeIcon } from "../chat/MessageAttachmentView";
 import { API_BASE_URL, CONNECTION_ERROR, getErrorMessage } from "./api";
 import { type ChatMessage, isMessage } from "./types";
 import { type UserRole } from "../../context/AuthContext";
+import { isProviderRole } from "../../lib/dashboardPaths";
 
 interface ComposerProps {
   conversationId: string;
@@ -38,6 +39,8 @@ interface ComposerProps {
   /** Phone numbers and emails will be hidden until the pair has a hire. */
   contactsHidden?: boolean;
   viewerRole?: UserRole;
+  /** Voice messages need two providers, or a client and provider after a hire. */
+  recipientRole?: UserRole;
   sendText: (content: string) => Promise<string>;
   onSent: (message?: ChatMessage) => void;
 }
@@ -86,9 +89,17 @@ export function Composer({
   projectId,
   contactsHidden,
   viewerRole,
+  recipientRole,
   sendText,
   onSent,
 }: ComposerProps): ReactElement {
+  // contactsHidden marks a client and provider with no hire yet.
+  const isClientAndProvider =
+    (viewerRole === "client" && isProviderRole(recipientRole)) ||
+    (isProviderRole(viewerRole) && recipientRole === "client");
+  const canSendVoice =
+    (isProviderRole(viewerRole) && isProviderRole(recipientRole)) ||
+    (isClientAndProvider && !contactsHidden);
   const [draft, setDraft] = useState<string>("");
   const [isSending, setIsSending] = useState<boolean>(false);
   const [sendError, setSendError] = useState<string>("");
@@ -223,8 +234,9 @@ export function Composer({
     void send();
   };
 
+  // Enter that confirms a word in an input method (Bangla, for one) isn't a send.
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void send();
     }
@@ -381,42 +393,44 @@ export function Composer({
             >
               <PaperclipIcon className="h-5 w-5" aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              onClick={onToggleRecording}
-              disabled={
-                isUploading ||
-                recorder.status === "requesting" ||
-                Boolean(hasRecording) ||
-                Boolean(pendingFile)
-              }
-              className={
-                recorder.status === "recording"
-                  ? `${toolButton} bg-primary text-on-primary! hover:bg-glow!`
-                  : toolButton
-              }
-              aria-label={
-                recorder.status === "recording"
-                  ? "Stop recording"
-                  : "Record a voice message"
-              }
-              aria-pressed={recorder.status === "recording"}
-              title={
-                recorder.status === "recording"
-                  ? "Stop recording"
-                  : "Record a voice message (up to 5 minutes)"
-              }
-            >
-              {recorder.status === "recording" ? (
-                <StopIcon
-                  className="h-4 w-4"
-                  weight="fill"
-                  aria-hidden="true"
-                />
-              ) : (
-                <MicrophoneIcon className="h-5 w-5" aria-hidden="true" />
-              )}
-            </button>
+            {canSendVoice ? (
+              <button
+                type="button"
+                onClick={onToggleRecording}
+                disabled={
+                  isUploading ||
+                  recorder.status === "requesting" ||
+                  Boolean(hasRecording) ||
+                  Boolean(pendingFile)
+                }
+                className={
+                  recorder.status === "recording"
+                    ? `${toolButton} bg-primary text-on-primary! hover:bg-glow!`
+                    : toolButton
+                }
+                aria-label={
+                  recorder.status === "recording"
+                    ? "Stop recording"
+                    : "Record a voice message"
+                }
+                aria-pressed={recorder.status === "recording"}
+                title={
+                  recorder.status === "recording"
+                    ? "Stop recording"
+                    : "Record a voice message (up to 5 minutes)"
+                }
+              >
+                {recorder.status === "recording" ? (
+                  <StopIcon
+                    className="h-4 w-4"
+                    weight="fill"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <MicrophoneIcon className="h-5 w-5" aria-hidden="true" />
+                )}
+              </button>
+            ) : null}
             {composerError ? (
               <p className="ml-2 min-w-0 text-xs text-rose-300" role="alert">
                 {composerError}

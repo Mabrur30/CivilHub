@@ -18,6 +18,8 @@ export interface IPayoutAccount extends Document {
   bankName?: string;
   branch?: string;
   routingNumber?: string;
+  /** Held while an admin records a payout, so two can't both pass the "owed" check. */
+  payoutLockUntil?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +33,7 @@ const payoutAccountSchema = new Schema<IPayoutAccount>(
     bankName: { type: String, trim: true, maxlength: 120 },
     branch: { type: String, trim: true, maxlength: 120 },
     routingNumber: { type: String, trim: true, maxlength: 20 },
+    payoutLockUntil: { type: Date, default: null },
   },
   { timestamps: true },
 );

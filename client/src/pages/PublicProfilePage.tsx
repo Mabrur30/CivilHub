@@ -45,6 +45,7 @@ import { ProfileSafetyActions } from "../components/safety/ProfileSafetyActions"
 import { ImageLightbox } from "../components/dashboard/ImageLightbox";
 import { ConfirmDialog } from "../components/dashboard/ui/ConfirmDialog";
 import { MessageButton } from "../components/messages/MessageButton";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface BasePublicProfile {
   userId: string;
@@ -102,7 +103,6 @@ interface ProfileBackState {
   backLabel?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const PROFILE_POSTS_PAGE_LIMIT = 10;
 const MAX_CONTENT_LENGTH = 2000;
 
@@ -986,7 +986,6 @@ export function PublicProfilePage(): ReactElement {
       )}
     </article>
   );
-
 
   // "Invite to bid" for a client looking at an engineer or a company.
   const renderInvitePanel = (): ReactElement => (

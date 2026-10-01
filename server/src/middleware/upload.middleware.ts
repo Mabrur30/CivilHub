@@ -1,5 +1,6 @@
 import multer from "multer";
-import { type NextFunction, type Request, type Response } from "express";
+import { type NextFunction, type Request, type RequestHandler, type Response } from "express";
+import { describeType, matchesDeclaredType } from "../utils/fileSignature";
 
 interface UploadError extends Error {
   statusCode: number;
@@ -37,8 +38,32 @@ export const MESSAGE_AUDIO_MAX_SECONDS = 5 * 60;
 const getBaseMimeType = (mimeType: string): string =>
   mimeType.split(";")[0].trim().toLowerCase();
 
-const createUploader = (allowedTypes: string[], fileSize: number) =>
-  multer({
+/** Every file multer kept on the request, however the route collected them. */
+const uploadedFiles = (req: Request): Express.Multer.File[] => {
+  if (req.file) return [req.file];
+  if (Array.isArray(req.files)) return req.files;
+  return req.files ? Object.values(req.files).flat() : [];
+};
+
+/**
+ * After multer: each file's bytes must match the type its browser declared,
+ * so a program renamed to photo.jpg is refused before it's stored anywhere.
+ */
+const verifyUploadContents: RequestHandler = (req, _res, next) => {
+  const mismatch = uploadedFiles(req).find((file) => !matchesDeclaredType(file.buffer, file.mimetype));
+  next(
+    mismatch
+      ? createUploadError(`${mismatch.originalname || "That file"} doesn't look like ${describeType(mismatch.mimetype)}. Check the file and try again.`)
+      : undefined,
+  );
+};
+
+/**
+ * Like a multer instance, but each of .single/.array/.fields also checks the
+ * files' contents (verifyUploadContents). Routes use them exactly as before.
+ */
+const createUploader = (allowedTypes: string[], fileSize: number) => {
+  const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize },
     fileFilter: (_req, file, callback) => {
@@ -49,6 +74,12 @@ const createUploader = (allowedTypes: string[], fileSize: number) =>
       callback(null, true);
     },
   });
+  return {
+    single: (field: string): RequestHandler[] => [upload.single(field), verifyUploadContents],
+    array: (field: string, maxCount?: number): RequestHandler[] => [upload.array(field, maxCount), verifyUploadContents],
+    fields: (fields: multer.Field[]): RequestHandler[] => [upload.fields(fields), verifyUploadContents],
+  };
+};
 
 export const profilePhotoUpload = createUploader(imageTypes, 5 * 1024 * 1024);
 export const certificateUpload = createUploader(

@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "./apiBase";
 
 const CONNECTION_ERROR = "Unable to connect to CivilHub. Please try again.";
 
@@ -35,6 +35,8 @@ export interface PaymentResult {
   viewerRole: "payer" | "payee";
   /** True once the project this paid for is finished (its final payment). */
   projectCompleted?: boolean;
+  /** The project this paid for, if any. */
+  projectId?: string | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

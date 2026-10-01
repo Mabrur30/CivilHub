@@ -47,6 +47,7 @@ import {
 } from "../lib/projectForm";
 import { siteLabel } from "../lib/siteDetails";
 import { describeTimeline, todayIsoDate } from "../lib/timeline";
+import { API_BASE_URL } from "../lib/apiBase";
 
 interface PostProjectForm {
   title: string;
@@ -66,8 +67,6 @@ type PostProjectRouteState = Partial<PostProjectForm> & {
   site?: Partial<Pick<SiteFormValue, "district" | "area">>;
   requirements?: CriteriaFormValues;
 };
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const initialForm: PostProjectForm = {
   title: "",

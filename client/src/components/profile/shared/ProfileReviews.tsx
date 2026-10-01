@@ -13,8 +13,8 @@ import {
   type ProviderReview,
   type ProviderReviewsResponse,
 } from "./profileTypes";
+import { API_BASE_URL } from "../../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const REPLY_LIMIT = 500;
 
 type TabKey = "project" | "equipment" | "customer";

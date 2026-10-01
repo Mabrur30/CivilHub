@@ -7,8 +7,16 @@ import { ProjectPhase } from "../models/ProjectPhase.model";
 import { Project, type IProject } from "../models/Project.model";
 import { Review } from "../models/Review.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
-import { budgetLabel } from "../utils/money";
+import { budgetLabel, formatTaka } from "../utils/money";
+import { GATEWAY_MINIMUM } from "../services/payments";
+import { ADVANCE_SHARE } from "../utils/phasePayments";
+
+/** The smallest bid whose advance the gateway will still accept. */
+const MINIMUM_BID = Math.ceil(GATEWAY_MINIMUM / ADVANCE_SHARE);
 import { assertCanTakeProjects } from "../utils/roles";
+import { getAccountStanding, isRestricted } from "../utils/accountStatus";
+import { maskContactInfo } from "../utils/projectContact";
+import { isBlockedEitherWay } from "../utils/blocks";
 
 export interface SubmitBidRequestBody {
   projectId: string;
@@ -104,12 +112,21 @@ export const createBidForProject = async ({
   amount,
   message,
 }: CreateBidInput): Promise<CreatedBidResult> => {
+  if (amount < MINIMUM_BID) {
+    throw createBidError(
+      `Bids must be at least ${formatTaka(MINIMUM_BID)}, so the ${ADVANCE_SHARE * 100}% advance can be paid online.`,
+      400,
+    );
+  }
   const project = await Project.findOne({
     _id: projectId,
     status: "open_for_bids",
   }).exec();
   if (!project) {
     throw createBidError("Project is not open for bidding", 404);
+  }
+  if (project.client && (await isBlockedEitherWay(engineerUserId, project.client.toString()))) {
+    throw createBidError("You can't bid on this project", 403);
   }
 
   const existingBid = await Bid.findOne({
@@ -125,7 +142,8 @@ export const createBidForProject = async ({
     engineer: engineerUserId,
     project: project._id,
     amount,
-    message: message.trim(),
+    // A bid is always before any hire, so contact details stay hidden.
+    message: maskContactInfo(message.trim()).text,
     status: "pending",
   });
 
@@ -365,26 +383,82 @@ export const acceptBid = async (
       );
     }
 
-    bid.status = "accepted";
-    await bid.save();
+    const standing = await getAccountStanding(bid.engineer.toString());
+    if (!standing || isRestricted(standing)) {
+      throw createBidError(
+        "This engineer's account isn't active right now, so they can't be hired.",
+        409,
+      );
+    }
+
+    // Claimed atomically: two bids accepted at once can't both hire.
+    const hired = await Project.findOneAndUpdate(
+      { _id: project._id, status: "open_for_bids", assignedEngineer: null },
+      {
+        $set: {
+          assignedEngineer: bid.engineer,
+          status: "in-progress",
+          totalAgreedValue: bid.amount,
+          phasePlanStatus: "not_created",
+        },
+      },
+      { returnDocument: "after" },
+    ).exec();
+    if (!hired) {
+      throw createBidError(
+        "This project already has an assigned engineer",
+        409,
+      );
+    }
+    const accepted = await Bid.findOneAndUpdate(
+      { _id: bid._id, status: "pending" },
+      { $set: { status: "accepted" } },
+    ).exec();
+    if (!accepted) {
+      // The bid was withdrawn meanwhile: put the project back on the market.
+      await Project.updateOne(
+        { _id: project._id, assignedEngineer: bid.engineer, status: "in-progress" },
+        {
+          $set: { status: "open_for_bids", assignedEngineer: null },
+          $unset: { totalAgreedValue: 1 },
+        },
+      ).exec();
+      throw createBidError("Only pending bids can be accepted", 409);
+    }
+
+    const otherBids = await Bid.find({
+      project: project._id,
+      _id: { $ne: bid._id },
+      status: "pending",
+    })
+      .select("engineer")
+      .exec();
     await Bid.updateMany(
-      { project: project._id, _id: { $ne: bid._id }, status: "pending" },
+      { _id: { $in: otherBids.map((other) => other._id) }, status: "pending" },
       { $set: { status: "declined" } },
     ).exec();
-    project.assignedEngineer = bid.engineer;
-    project.status = "in-progress";
-    project.totalAgreedValue = bid.amount;
-    project.phasePlanStatus = "not_created";
-    await project.save();
+
+    const title = hired.title ?? hired.name ?? "this project";
     await Notification.create({
       recipient: bid.engineer,
       type: "bid_accepted",
-      message: `Your bid for ${project.title ?? project.name ?? "this project"} was accepted.`,
-      project: project._id,
+      message: `Your bid for ${title} was accepted.`,
+      project: hired._id,
       bid: bid._id,
     });
+    if (otherBids.length > 0) {
+      await Notification.insertMany(
+        otherBids.map((other) => ({
+          recipient: other.engineer,
+          type: "bid_declined",
+          message: `The client hired someone else for ${title}.`,
+          project: hired._id,
+          bid: other._id,
+        })),
+      );
+    }
 
-    res.status(200).json(project);
+    res.status(200).json(hired);
   } catch (error: unknown) {
     next(error);
   }

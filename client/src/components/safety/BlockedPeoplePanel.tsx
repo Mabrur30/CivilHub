@@ -2,8 +2,7 @@ import { type ReactElement, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { panelClassName, rowButtonClassName } from "../dashboard/ui/buttonStyles";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 interface BlockedPerson {
   userId: string;

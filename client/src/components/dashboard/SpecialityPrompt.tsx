@@ -3,8 +3,7 @@ import { type ReactElement, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { SpecialityChooser } from "../profile/shared/SpecialityChooser";
 import { panelClassName, primaryButtonBaseClassName } from "./ui/buttonStyles";
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 /**
  * Asks an engineer or project company that hasn't chosen a speciality to pick

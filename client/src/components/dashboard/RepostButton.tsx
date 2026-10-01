@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
+import { API_BASE_URL } from "../../lib/apiBase";
 
 interface RepostAuthor {
   userId: string;
@@ -21,8 +22,6 @@ interface RepostButtonProps {
 interface ErrorResponse {
   message?: string;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 
 const getErrorMessage = (value: unknown): string => {
   if (typeof value === "object" && value !== null) {

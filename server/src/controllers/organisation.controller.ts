@@ -10,7 +10,9 @@ import {
   type TeamSize,
 } from "../models/Organisation.model";
 import { User } from "../models/User.model";
-import { deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
+import { Bid } from "../models/Bid.model";
+import { Project } from "../models/Project.model";
+import { STRIP_IMAGE_METADATA, deleteCloudinaryAsset, uploadBuffer } from "../utils/cloudinaryUpload";
 import { onlyDisciplines, parseDisciplines } from "../utils/disciplines";
 import { requeueForReview } from "../utils/verification";
 
@@ -232,6 +234,26 @@ export const updateMyOrganisationProfile = async (
     const serviceAreas = optionalList(body.serviceAreas, "Service areas");
     const specialties = parseDisciplines(body.specialties);
 
+    // Dropping projects would lock the company out of work it's still doing.
+    if (
+      services &&
+      !services.includes("projects") &&
+      organisation.services?.includes("projects")
+    ) {
+      const [running, bidding] = await Promise.all([
+        Project.exists({ assignedEngineer: req.user.userId, status: "in-progress" }),
+        Bid.exists({ engineer: req.user.userId, status: "pending" }),
+      ]);
+      if (running || bidding) {
+        throw createOrganisationError(
+          running
+            ? "You still have projects in progress. Finish them before you stop taking on projects."
+            : "You still have open bids. Withdraw them before you stop taking on projects.",
+          409,
+        );
+      }
+    }
+
     const previousLicence = organisation.tradeLicenceNo ?? "";
     if (services) organisation.services = services;
     if (serviceAreas) organisation.serviceAreas = serviceAreas;
@@ -295,6 +317,7 @@ export const uploadOrganisationLogo = async (
     const result = await uploadBuffer(file.buffer, {
       folder: "civilhub/company-logos",
       resource_type: "image",
+      ...STRIP_IMAGE_METADATA,
     });
 
     const previous = organisation.logo;
@@ -335,6 +358,7 @@ export const uploadOrganisationPortfolioItem = async (
     const result = await uploadBuffer(file.buffer, {
       folder: "civilhub/portfolio",
       resource_type: "image",
+      ...STRIP_IMAGE_METADATA,
     });
     organisation.portfolio.push({
       title,

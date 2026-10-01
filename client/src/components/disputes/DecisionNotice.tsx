@@ -3,8 +3,8 @@ import { type ReactElement, useState } from "react";
 import { inputClassName, primaryButtonClassName, rowButtonClassName, secondaryButtonClassName } from "../dashboard/ui/buttonStyles";
 import { Dialog } from "../dashboard/ui/Dialog";
 import { FormField } from "../dashboard/ui/FormField";
+import { API_BASE_URL } from "../../lib/apiBase";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
 const APPEAL_MIN = 20;
 
 export interface DecisionNoticeProps {

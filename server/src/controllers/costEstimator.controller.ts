@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { Types } from "mongoose";
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
@@ -313,8 +314,9 @@ export const getLocations = async (_req: Request, res: Response): Promise<void> 
       modelMetrics: meta.metrics,
       datasetStats: meta.dataset,
     });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to fetch locations" });
+  } catch (error: unknown) {
+    console.error("Failed to fetch locations:", error);
+    res.status(500).json({ message: "Failed to fetch locations" });
   }
 };
 
@@ -365,8 +367,9 @@ export const predictCost = async (req: Request, res: Response): Promise<void> =>
     }
 
     res.json(predictionResult);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to predict cost" });
+  } catch (error: unknown) {
+    console.error("Failed to predict cost:", error);
+    res.status(500).json({ message: "Failed to predict cost" });
   }
 };
 
@@ -394,8 +397,9 @@ export const saveEstimate = async (req: Request, res: Response): Promise<void> =
 
     await estimateDoc.save();
     res.status(201).json(estimateDoc);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to save estimate" });
+  } catch (error: unknown) {
+    console.error("Failed to save estimate:", error);
+    res.status(500).json({ message: "Failed to save estimate" });
   }
 };
 
@@ -409,44 +413,48 @@ export const getUserEstimates = async (req: Request, res: Response): Promise<voi
 
     const estimates = await CostEstimate.find({ user: userId }).sort({ createdAt: -1 });
     res.json(estimates);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to retrieve estimates" });
+  } catch (error: unknown) {
+    console.error("Failed to retrieve estimates:", error);
+    res.status(500).json({ message: "Failed to retrieve estimates" });
   }
+};
+
+/**
+ * The signed-in user's own estimate, or null. Someone else's estimate, or a
+ * malformed id, reads as not found rather than revealing that it exists.
+ */
+const findOwnEstimate = async (req: Request) => {
+  const userId = req.user?.userId;
+  const id = req.params.id;
+  if (!userId || typeof id !== "string" || !Types.ObjectId.isValid(id)) return null;
+  return CostEstimate.findOne({ _id: id, user: userId });
 };
 
 export const getEstimateById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const estimate = await CostEstimate.findById(id);
+    const estimate = await findOwnEstimate(req);
     if (!estimate) {
       res.status(404).json({ message: "Estimate not found" });
       return;
     }
     res.json(estimate);
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to retrieve estimate" });
+  } catch (error: unknown) {
+    console.error("Failed to retrieve estimate:", error);
+    res.status(500).json({ message: "Failed to retrieve estimate" });
   }
 };
 
 export const deleteEstimate = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const userId = req.user?.userId;
-    const estimate = await CostEstimate.findById(id);
-
+    const estimate = await findOwnEstimate(req);
     if (!estimate) {
       res.status(404).json({ message: "Estimate not found" });
       return;
     }
-
-    if (estimate.user && estimate.user.toString() !== userId) {
-      res.status(403).json({ message: "Unauthorized to delete this estimate" });
-      return;
-    }
-
-    await CostEstimate.findByIdAndDelete(id);
+    await estimate.deleteOne();
     res.json({ message: "Estimate deleted successfully" });
-  } catch (error: any) {
-    res.status(500).json({ message: error.message || "Failed to delete estimate" });
+  } catch (error: unknown) {
+    console.error("Failed to delete estimate:", error);
+    res.status(500).json({ message: "Failed to delete estimate" });
   }
 };

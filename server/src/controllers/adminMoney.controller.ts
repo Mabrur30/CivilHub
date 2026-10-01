@@ -7,7 +7,7 @@ import { Payout } from "../models/Payout.model";
 import { PayoutAccount } from "../models/PayoutAccount.model";
 import { type IRefund, Refund, type RefundKind } from "../models/Refund.model";
 import { User } from "../models/User.model";
-import { describePaymentMethod, newTranId } from "../services/payments";
+import { describePaymentMethod } from "../services/payments";
 import { GatewayError, queryRefund, requestRefund } from "../services/sslcommerz";
 import { settleDueDeposits } from "../utils/deposits";
 import { getEarnings, getPayeeEarnings } from "../utils/earnings";
@@ -16,6 +16,9 @@ import { findRefundDue, getRefundsDue } from "../utils/refunds";
 import { PAGE_SIZE, escapeRegex, logAction, objectId, pageOf } from "./admin.controller";
 
 const toPaisa = (amount: number): number => Math.round(amount * 100);
+
+/** How long a payout may hold its payee's lock if the request dies midway. */
+const PAYOUT_LOCK_MS = 30 * 1000;
 
 const requireText = (value: unknown, label: string, max: number): string => {
   const text = typeof value === "string" ? value.trim() : "";
@@ -164,35 +167,55 @@ export const recordPayout = async (
     const reference = requireText(req.body.reference, "The transaction reference", 120);
     const note = optionalText(req.body.note, 500);
 
-    const [account, earnings] = await Promise.all([
-      PayoutAccount.findOne({ user: payeeId }).lean().exec(),
-      getPayeeEarnings(payeeId.toString()),
-    ]);
-    if (!account) {
+    if (!(await PayoutAccount.exists({ user: payeeId }))) {
       throw adminError("This payee hasn't added a payout account yet.", 409);
     }
-    if (toPaisa(amount) > toPaisa(earnings.owed)) {
-      throw adminError(
-        `That's more than they're owed right now (${formatTaka(earnings.owed)}).`,
-        409,
-      );
+    // One payout per payee at a time, so two can't both pass the "owed" check.
+    const now = new Date();
+    const account = await PayoutAccount.findOneAndUpdate(
+      { user: payeeId, $or: [{ payoutLockUntil: null }, { payoutLockUntil: { $lte: now } }] },
+      { $set: { payoutLockUntil: new Date(now.getTime() + PAYOUT_LOCK_MS) } },
+      { returnDocument: "after", timestamps: false },
+    )
+      .lean()
+      .exec();
+    if (!account) {
+      throw adminError("Another payout to this payee is being recorded. Try again in a moment.", 409);
     }
 
-    const payout = await Payout.create({
-      payee: payeeId,
-      amount: Math.round(amount * 100) / 100,
-      account: {
-        method: account.method,
-        accountName: account.accountName,
-        accountNumber: account.accountNumber,
-        bankName: account.bankName,
-        branch: account.branch,
-      },
-      reference,
-      note,
-      admin: req.admin.id,
-      paidAt: new Date(),
-    });
+    let payout;
+    let earnings;
+    try {
+      earnings = await getPayeeEarnings(payeeId.toString());
+      if (toPaisa(amount) > toPaisa(earnings.owed)) {
+        throw adminError(
+          `That's more than they're owed right now (${formatTaka(earnings.owed)}).`,
+          409,
+        );
+      }
+
+      payout = await Payout.create({
+        payee: payeeId,
+        amount: Math.round(amount * 100) / 100,
+        account: {
+          method: account.method,
+          accountName: account.accountName,
+          accountNumber: account.accountNumber,
+          bankName: account.bankName,
+          branch: account.branch,
+        },
+        reference,
+        note,
+        admin: req.admin.id,
+        paidAt: new Date(),
+      });
+    } finally {
+      await PayoutAccount.updateOne(
+        { user: payeeId },
+        { $set: { payoutLockUntil: null } },
+        { timestamps: false },
+      ).exec();
+    }
     await Notification.create({
       recipient: payeeId,
       type: "payout_sent",
@@ -268,6 +291,28 @@ const notifyRefund = (refund: IRefund, description: string): Promise<unknown> =>
     ...(refund.equipmentBooking ? { equipmentBooking: refund.equipmentBooking } : {}),
   });
 
+const isDuplicateKey = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { code?: unknown }).code === 11000;
+
+/** Creates the refund record, or refuses if this money is already being refunded. */
+const claimRefund = async (fields: Record<string, unknown>): Promise<IRefund> => {
+  try {
+    return await Refund.create(fields);
+  } catch (error: unknown) {
+    if (isDuplicateKey(error)) {
+      throw adminError("This is already being refunded. Refresh the queue.", 409);
+    }
+    throw error;
+  }
+};
+
+const markRefundFailed = async (refund: IRefund, reason: string): Promise<void> => {
+  await Refund.updateOne(
+    { _id: refund._id },
+    { $set: { status: "failed", failureReason: reason.slice(0, 500) }, $unset: { openKey: 1 } },
+  ).exec();
+};
+
 /**
  * Refunds one item from the queue, through SSLCommerz or by recording a
  * refund the admin already sent. The amount always comes from the queue,
@@ -301,11 +346,12 @@ export const issueRefund = async (
       equipmentBooking: payment.equipmentBooking,
       amount: due.amount,
       admin: req.admin.id,
+      openKey: `${kind}:${paymentId}`,
     };
 
     if (method === "manual") {
       const reference = requireText(req.body.reference, "The transaction reference", 120);
-      const refund = await Refund.create({
+      const refund = await claimRefund({
         ...base,
         method: "manual",
         status: "completed",
@@ -327,27 +373,31 @@ export const issueRefund = async (
     if (!due.canUseGateway || !payment.bankTranId) {
       throw adminError("SSLCommerz can't refund this payment automatically. Send it by hand and record the reference.", 409);
     }
+    // Claimed before asking the gateway, so a double-click can't send two.
+    const refund = await claimRefund({ ...base, method: "sslcommerz", status: "processing" });
     let result;
     try {
       result = await requestRefund({
         bankTranId: payment.bankTranId,
-        refundTransId: newTranId(),
+        // Fixed per refund, so the gateway itself ignores a repeated request.
+        refundTransId: `RF${refund._id.toString()}`,
         amount: due.amount,
         remarks: kind === "deposit" ? "CivilHub rental deposit refund" : "CivilHub refund of a duplicate payment",
       });
     } catch (error: unknown) {
+      await markRefundFailed(refund, error instanceof Error ? error.message : "Couldn't reach SSLCommerz.");
       if (error instanceof GatewayError) throw adminError(error.message, 422);
       throw error;
     }
 
-    const refund = await Refund.create({
-      ...base,
-      method: "sslcommerz",
-      status: result.status === "success" ? "completed" : result.status,
-      gatewayRefundId: result.refundRefId,
-      failureReason: result.status === "failed" ? (result.reason ?? "SSLCommerz refused the refund.") : undefined,
-      completedAt: result.status === "success" ? new Date() : undefined,
-    });
+    refund.status = result.status === "success" ? "completed" : result.status;
+    refund.gatewayRefundId = result.refundRefId;
+    if (result.status === "success") refund.completedAt = new Date();
+    if (result.status === "failed") {
+      refund.failureReason = result.reason ?? "SSLCommerz refused the refund.";
+      refund.openKey = undefined;
+    }
+    await refund.save();
     await logAction(req, "refund.gateway", {
       targetType: "refund",
       targetId: refund._id,
@@ -392,7 +442,11 @@ export const checkRefund = async (
     if (result.status !== "processing") {
       refund.status = result.status === "success" ? "completed" : "failed";
       if (refund.status === "completed") refund.completedAt = new Date();
-      else refund.failureReason = result.reason ?? "SSLCommerz cancelled the refund.";
+      else {
+        refund.failureReason = result.reason ?? "SSLCommerz cancelled the refund.";
+        // Back on the queue to try again.
+        refund.openKey = undefined;
+      }
       await refund.save();
       await logAction(req, "refund.check", {
         targetType: "refund",

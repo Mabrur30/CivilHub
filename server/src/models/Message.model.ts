@@ -106,6 +106,8 @@ const messageSchema = new Schema<IMessage>(
 );
 
 messageSchema.index({ conversation: 1, createdAt: 1 });
+// Paging a thread by id (getMessages: ?before= and ?after=).
+messageSchema.index({ conversation: 1, _id: -1 });
 
 export const Message: Model<IMessage> = model<IMessage>(
   "Message",

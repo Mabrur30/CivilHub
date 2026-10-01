@@ -26,6 +26,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "integration-test-secret";
 process.env.ADMIN_JWT_SECRET = "admin-integration-secret-that-is-long-enough";
 
 const ADMIN_PASSWORD = "correct horse battery staple";
+const ENGINEER_PASSWORD = "tanvir-site-password";
 
 let memoryServer: MongoMemoryServer;
 let app: Express;
@@ -151,7 +152,7 @@ const finishedRental = async (resolution: "pending" | "released" | "claimed", cl
 beforeAll(async () => {
   memoryServer = await MongoMemoryServer.create();
   await mongoose.connect(memoryServer.getUri());
-  await Promise.all([Admin.syncIndexes(), PayoutAccount.syncIndexes()]);
+  await Promise.all([Admin.syncIndexes(), PayoutAccount.syncIndexes(), Refund.syncIndexes()]);
   app = express();
   app.use(express.json());
   app.use(cookieParser());
@@ -174,7 +175,12 @@ beforeEach(async () => {
   );
   await Admin.create({ name: "Ops", email: "ops@civilhub.test", passwordHash: await bcrypt.hash(ADMIN_PASSWORD, 4) });
   client = await User.create({ name: "Nusrat Jahan", email: "c@test.dev", passwordHash: "x", role: "client" });
-  engineer = await User.create({ name: "Tanvir Alam", email: "e@test.dev", passwordHash: "x", role: "engineer" });
+  engineer = await User.create({
+    name: "Tanvir Alam",
+    email: "e@test.dev",
+    passwordHash: await bcrypt.hash(ENGINEER_PASSWORD, 4),
+    role: "engineer",
+  });
   owner = await User.create({ name: "Rahman Plant Hire", email: "o@test.dev", passwordHash: "x", role: "organisation" });
 });
 
@@ -201,13 +207,23 @@ describe("Earnings and payouts", () => {
       accountNumber: "12345",
     });
     expect(badWallet.status).toBe(400);
-    const saved = await as(engineer, request(app).put("/api/payouts/me/account")).send({
+    // Changing where the money goes needs the password, not just the session.
+    const noPassword = await as(engineer, request(app).put("/api/payouts/me/account")).send({
       method: "bkash",
       accountName: "Tanvir Alam",
       accountNumber: "01712-345678",
     });
+    expect(noPassword.status).toBe(403);
+
+    const saved = await as(engineer, request(app).put("/api/payouts/me/account")).send({
+      method: "bkash",
+      accountName: "Tanvir Alam",
+      accountNumber: "01712-345678",
+      currentPassword: ENGINEER_PASSWORD,
+    });
     expect(saved.status).toBe(200);
     expect(saved.body.accountNumber).toBe("01712345678");
+    expect(await Notification.countDocuments({ recipient: engineer._id, type: "payout_account_updated" })).toBe(1);
 
     const list = await agent.get("/api/admin/money/payees");
     expect(list.body.items[0]).toMatchObject({ payee: { name: "Tanvir Alam" }, owed: 45000, hasAccount: true });
@@ -359,5 +375,70 @@ describe("Payments ledger", () => {
     const byTran = await agent.get("/api/admin/money/payments?q=TRAN-RENTAL");
     expect(byTran.body.total).toBe(1);
     expect((await agent.get("/api/admin/money/payments?q=nobody")).body.total).toBe(0);
+  });
+});
+
+describe("Money moved twice at once", () => {
+  test("two refunds of the same payment at once send it once", async () => {
+    const payment = await paid({
+      type: "advance",
+      amount: 20000,
+      paidBy: client._id,
+      payee: engineer._id,
+      refundDue: true,
+      bankTranId: "BANK-DUP",
+      tranId: "TRAN-DUP",
+      description: "Advance for Duplex in Mirpur",
+    });
+    const agent = await signedInAdmin();
+    const body = { paymentId: payment._id.toString(), kind: "overpayment", method: "sslcommerz" };
+    const results = await Promise.all([
+      agent.post("/api/admin/money/refunds").send(body),
+      agent.post("/api/admin/money/refunds").send(body),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
+    expect(gateway.refundRequests).toHaveLength(1);
+    expect(gateway.refundRequests[0].get("refund_trans_id")).toMatch(/^RF[0-9a-f]{24}$/);
+    expect(await Refund.countDocuments({ status: { $ne: "failed" } })).toBe(1);
+  });
+
+  test("a refund the gateway refuses can be tried again", async () => {
+    const payment = await paid({
+      type: "advance",
+      amount: 20000,
+      paidBy: client._id,
+      refundDue: true,
+      bankTranId: "BANK-RETRY",
+      tranId: "TRAN-RETRY",
+    });
+    const agent = await signedInAdmin();
+    const body = { paymentId: payment._id.toString(), kind: "overpayment", method: "sslcommerz" };
+    gateway.refundReply = { APIConnect: "DONE", status: "failed", errorReason: "Try later" };
+    expect((await agent.post("/api/admin/money/refunds").send(body)).status).toBe(422);
+
+    gateway.refundReply = { APIConnect: "DONE", status: "success", refund_ref_id: "RFD-2" };
+    expect((await agent.post("/api/admin/money/refunds").send(body)).status).toBe(201);
+  });
+
+  test("two payouts at once can't add up to more than is owed", async () => {
+    await projectWithOnePhaseDone();
+    await PayoutAccount.create({
+      user: engineer._id,
+      method: "bkash",
+      accountName: "Tanvir Alam",
+      accountNumber: "01712345678",
+    });
+    const agent = await signedInAdmin();
+    const results = await Promise.all(
+      ["BK1", "BK2"].map((reference) =>
+        agent.post(`/api/admin/money/payees/${id(engineer)}/payouts`).send({ amount: 45000, reference }),
+      ),
+    );
+
+    expect(results.map((result) => result.status).sort()).toEqual([201, 409]);
+    expect(await Payout.countDocuments()).toBe(1);
+    // The lock is let go, so the next payout isn't blocked by it.
+    expect((await PayoutAccount.findOne({ user: engineer._id }).lean())?.payoutLockUntil).toBeNull();
   });
 });

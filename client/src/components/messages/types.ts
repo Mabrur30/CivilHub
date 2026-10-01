@@ -50,6 +50,8 @@ export interface GetMessagesResponse {
   /** Newest context first; missing from older servers. */
   projects?: unknown;
   contactsHidden?: boolean;
+  /** More messages remain before this page; missing from older servers. */
+  hasMore?: boolean;
 }
 
 export interface CreateConversationResponse {

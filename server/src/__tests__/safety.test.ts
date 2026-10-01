@@ -88,7 +88,7 @@ describe("Blocking", () => {
     // Nabila can't reach Tanvir any more, and neither can he reach her.
     expect((await as(nabila, request(app).post(`/api/network/${id(tanvir)}/request`))).status).toBe(403);
     expect((await as(tanvir, request(app).post(`/api/network/${id(nabila)}/request`))).status).toBe(403);
-    expect((await as(nabila, request(app).get(`/api/conversations/with/${id(tanvir)}`))).status).toBe(403);
+    expect((await as(nabila, request(app).post(`/api/conversations/with/${id(tanvir)}`))).status).toBe(403);
     const comment = await as(nabila, request(app).post("/api/comments")).send({ postId: post._id.toString(), content: "Hello?" });
     expect(comment.status).toBe(403);
 
