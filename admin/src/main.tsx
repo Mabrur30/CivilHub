@@ -5,6 +5,10 @@ import { App } from "./App";
 import { AuthProvider } from "./lib/auth";
 import "./index.css";
 
+const originalFetch = window.fetch.bind(window);
+window.fetch = (input, init) =>
+  originalFetch(input, { ...init, credentials: "include" });
+
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <BrowserRouter>

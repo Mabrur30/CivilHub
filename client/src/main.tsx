@@ -5,6 +5,10 @@ import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
 
+const originalFetch = window.fetch.bind(window);
+window.fetch = (input, init) =>
+  originalFetch(input, { ...init, credentials: "include" });
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>

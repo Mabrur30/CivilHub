@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5000";
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL?.trim() || "http://localhost:5000"
+).replace(/\/+$/, "");
 
 /** An error from the API, with its status so callers can spot a lost session. */
 export class ApiError extends Error {
