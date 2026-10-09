@@ -55,7 +55,7 @@ export const getAdminSecret = (): string => {
 export const adminCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  sameSite: process.env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
   path: ADMIN_COOKIE_PATH,
   maxAge: ADMIN_SESSION_HOURS * 60 * 60 * 1000,
 });

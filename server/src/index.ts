@@ -60,14 +60,17 @@ if (Number.isInteger(trustProxy) && trustProxy > 0) {
   app.set("trust proxy", trustProxy);
 }
 
+const allowedOrigins = [process.env.CLIENT_URL, process.env.ADMIN_URL]
+  .filter((origin): origin is string => Boolean(origin))
+  .map((origin) => origin.trim().replace(/\/+$/, ""));
+
 // The main site and the separate admin app both call this API.
 app.use(
   cors({
-    origin: [
-      process.env.CLIENT_URL || "http://localhost:5173",
-      process.env.ADMIN_URL || "http://localhost:5174",
-    ],
+    origin: allowedOrigins,
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
 app.use(express.json());
@@ -85,6 +88,10 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.get("/api/health", (_req: Request, res: Response) => {
   res.status(200).json({ status: "ok", message: "CivilHub API is running" });
+});
+
+app.get("/health", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok" });
 });
 
 app.use(["/api/auth/login", "/api/auth/signup"], authLimiter);

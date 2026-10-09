@@ -66,7 +66,7 @@ const getJwtSecret = (): string => {
 const getCookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  sameSite: process.env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
   maxAge: COOKIE_MAX_AGE,
 });
 
