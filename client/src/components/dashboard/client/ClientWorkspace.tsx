@@ -66,7 +66,7 @@ export function ClientWorkspaceProvider({
   useEffect(() => {
     void refresh();
   }, [refresh, pathname]);
-  useRealtime(["dashboard", "projects"], () => { void refresh({ silent: true }); }, { debounceMs: 1500 });
+  useRealtime(["dashboard", "projects"], () => { void refresh({ silent: true }); }, { debounceMs: 1500, minIntervalMs: 5000 });
   useVisibleInterval(() => { void refresh({ silent: true }); }, 60000);
 
   return (

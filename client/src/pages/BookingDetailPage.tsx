@@ -5,7 +5,10 @@ import {
   useEffect,
   useMemo,
   useState,
+  useCallback,
 } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { BackButton } from "../components/BackButton";
@@ -164,15 +167,14 @@ export function BookingDetailPage(): ReactElement {
   const [reviewError, setReviewError] = useState<string>("");
   const [reviewSuccess, setReviewSuccess] = useState<boolean>(false);
 
-  const loadBooking = async (): Promise<void> => {
+  const loadBooking = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
     if (!bookingId) {
-      setError("Booking ID is required.");
-      setIsLoading(false);
+      if (!silent) { setError("Booking ID is required."); setIsLoading(false); }
       return;
     }
 
-    setIsLoading(true);
-    setError("");
+    if (!silent) { setIsLoading(true); setError(""); }
 
     try {
       const item = await fetchEquipmentBookingById(bookingId);
@@ -191,15 +193,19 @@ export function BookingDetailPage(): ReactElement {
         return;
       }
 
-      setError(message);
+      if (!silent) setError(message);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, [bookingId, navigate, paths.bookings]);
 
   useEffect(() => {
     void loadBooking();
-  }, [bookingId]);
+  }, [loadBooking]);
+  useRealtime(["bookings"], () => { void loadBooking({ silent: true }); }, {
+    scopeMatch: (scope) => !scope.bookingId || scope.bookingId === bookingId,
+  });
+  useVisibleInterval(() => { void loadBooking({ silent: true }); }, 60000);
 
   useEffect(() => {
     const loadReviewEligibility = async (): Promise<void> => {

@@ -1,4 +1,6 @@
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
+import { useRealtime } from "../../realtime/useRealtime";
+import { useVisibleInterval } from "../../realtime/useVisibleInterval";
 import { Link } from "react-router-dom";
 import { Avatar } from "../Avatar";
 import { RatingBadge } from "../RatingBadge";
@@ -83,11 +85,11 @@ export function usePostComments({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
 
-  const loadComments = async (append = false): Promise<void> => {
+  const loadComments = useCallback(async (append = false, silent = false): Promise<void> => {
     const offset = append ? (nextOffset ?? 0) : 0;
     if (append) setIsLoadingMore(true);
-    else setIsLoading(true);
-    setError("");
+    else if (!silent) setIsLoading(true);
+    if (!silent) setError("");
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/posts/${postId}/comments?limit=${COMMENT_PAGE_SIZE}&offset=${offset}`,
@@ -95,7 +97,7 @@ export function usePostComments({
       );
       const body: unknown = await response.json();
       if (!response.ok || !Array.isArray(body)) {
-        setError(getErrorMessage(body));
+        if (!silent) setError(getErrorMessage(body));
         return;
       }
       const page = body as PostComment[];
@@ -107,19 +109,25 @@ export function usePostComments({
       const topLevel = page.filter((comment) => !comment.parentCommentId).length;
       setNextOffset(topLevel === COMMENT_PAGE_SIZE ? offset + COMMENT_PAGE_SIZE : null);
     } catch {
-      setError("Unable to load comments.");
+      if (!silent) setError("Unable to load comments.");
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (!silent) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
-  };
+  }, [nextOffset, postId]);
+  useRealtime(["comments"], () => { void loadComments(false, true); }, {
+    scopeMatch: (scope) => !scope.postId || scope.postId === postId,
+    enabled: isOpen,
+  });
+  useVisibleInterval(() => { void loadComments(false, true); }, 60000, isOpen);
 
   // A post's own page opens with its comments already showing.
   useEffect(() => {
     if (defaultOpen) void loadComments();
     // Only on first mount; later loads come from the toggle and "Show more".
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [defaultOpen, loadComments]);
 
   const toggleComments = (): void => {
     const nextOpen = !isOpen;

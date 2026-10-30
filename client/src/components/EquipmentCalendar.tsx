@@ -1,4 +1,6 @@
 import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import {
   fetchEquipmentAvailability,
   type EquipmentAvailability,
@@ -121,6 +123,17 @@ export function EquipmentCalendar({
       isCancelled = true;
     };
   }, [equipmentId, visibleMonth]);
+  const reloadAvailability = (): void => {
+    const month = visibleMonth.getMonth() + 1;
+    const year = visibleMonth.getFullYear();
+    void fetchEquipmentAvailability(equipmentId, month, year)
+      .then(setAvailability)
+      .catch(() => undefined);
+  };
+  useRealtime(["equipment-availability"], reloadAvailability, {
+    scopeMatch: (scope) => !scope.equipmentId || scope.equipmentId === equipmentId,
+  });
+  useVisibleInterval(reloadAvailability, 60000);
 
   const unitsFree = (day: Date): number =>
     availability.quantity -

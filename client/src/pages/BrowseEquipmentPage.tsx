@@ -1,5 +1,7 @@
 import { MagnifyingGlassIcon, MapPinIcon } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { Link } from "react-router-dom";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
 import { EquipmentThumb } from "../components/dashboard/equipment/EquipmentThumb";
@@ -179,11 +181,12 @@ export function BrowseEquipmentPage(): ReactElement {
     [category, debouncedSearch, location, minPrice, maxPrice],
   );
 
-  const loadPage = async (
+  const loadPage = useCallback(async (
     nextPage: number,
     mode: "replace" | "append",
+    silent: boolean = false,
   ): Promise<void> => {
-    if (mode === "replace") {
+    if (mode === "replace" && !silent) {
       setIsLoading(true);
       setError("");
     } else {
@@ -214,21 +217,27 @@ export function BrowseEquipmentPage(): ReactElement {
           : "Unable to load equipment listings.";
       // A failed "load more" keeps what is already on screen; only a failed
       // fresh search replaces the results with an error.
-      if (mode === "replace") {
+      if (mode === "replace" && !silent) {
         setError(message);
         setItems([]);
       } else {
         setLoadMoreError(message);
       }
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (!silent) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
-  };
+  }, [category, location, minPrice, maxPrice, debouncedSearch]);
 
   useEffect(() => {
     void loadPage(1, "replace");
-  }, [category, location, minPrice, maxPrice, debouncedSearch]);
+  }, [loadPage]);
+  useRealtime(["equipment-listings"], () => {
+    void loadPage(page, "replace", true);
+  });
+  useVisibleInterval(() => { void loadPage(page, "replace", true); }, 60000);
 
   const clearFilters = (): void => {
     setCategory("");

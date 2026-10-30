@@ -1,4 +1,6 @@
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { Link, useParams } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
@@ -54,60 +56,67 @@ export function EquipmentDetailPage(): ReactElement {
   const [replyText, setReplyText] = useState<string>("");
   const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
 
-  useEffect(() => {
-    const load = async (): Promise<void> => {
+  const load = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
       if (!equipmentId) {
-        setError("Equipment ID is required.");
-        setIsLoading(false);
+        if (!silent) { setError("Equipment ID is required."); setIsLoading(false); }
         return;
       }
 
-      setIsLoading(true);
-      setError("");
+      if (!silent) { setIsLoading(true); setError(""); }
 
       try {
         const response = await fetchEquipmentById(equipmentId);
         setItem(response);
-        setMainPhotoIndex(0);
+        if (!silent) setMainPhotoIndex(0);
       } catch (loadError: unknown) {
         const message =
           loadError instanceof Error
             ? loadError.message
             : "Unable to load this equipment listing.";
-        setError(message);
+        if (!silent) setError(message);
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
-
-    void load();
-  }, [equipmentId]);
-
+    }, [equipmentId]);
   useEffect(() => {
-    const loadReviews = async (): Promise<void> => {
+    void load();
+  }, [load]);
+
+  const loadReviews = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
       if (!equipmentId) {
-        setReviews(null);
+        if (!silent) setReviews(null);
         return;
       }
 
-      setIsLoadingReviews(true);
-      setReviewsError("");
+      if (!silent) { setIsLoadingReviews(true); setReviewsError(""); }
       try {
         const response = await fetchEquipmentReviews(equipmentId);
         setReviews(response);
       } catch (loadError: unknown) {
-        setReviewsError(
+        if (!silent) setReviewsError(
           loadError instanceof Error
             ? loadError.message
             : "Unable to load reviews.",
         );
       } finally {
-        setIsLoadingReviews(false);
+        if (!silent) setIsLoadingReviews(false);
       }
-    };
-
+    }, [equipmentId]);
+  useEffect(() => {
     void loadReviews();
-  }, [equipmentId]);
+  }, [loadReviews]);
+  useRealtime(["equipment-listings"], () => { void load({ silent: true }); }, {
+    scopeMatch: (scope) => !scope.equipmentId || scope.equipmentId === equipmentId,
+  });
+  useRealtime(["reviews"], () => { void loadReviews({ silent: true }); }, {
+    scopeMatch: (scope) => !scope.equipmentId || scope.equipmentId === equipmentId,
+  });
+  useVisibleInterval(() => {
+    void load({ silent: true });
+    void loadReviews({ silent: true });
+  }, 60000);
 
   if (isLoading) {
     return (

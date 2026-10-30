@@ -1,4 +1,6 @@
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { useNavigate, useParams } from "react-router-dom";
 import { BackButton } from "../components/BackButton";
 import { FeedPostCard, type FeedPost } from "../components/dashboard/FeedPostCard";
@@ -43,13 +45,10 @@ export function PostPage(): ReactElement {
     : dashboardBase(currentUser?.role);
   const backLabel = isProviderRole(currentUser?.role) ? "Back to My Network" : "Back to dashboard";
 
-  useEffect(() => {
+  const load = useCallback(async (silent = false): Promise<void> => {
     if (!postId) return;
     let active = true;
-    const load = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
-      setNotFound(false);
+      if (!silent) { setIsLoading(true); setError(""); setNotFound(false); }
       try {
         const response = await fetch(`${API_BASE_URL}/api/posts/${postId}`, {
           credentials: "include",
@@ -57,25 +56,27 @@ export function PostPage(): ReactElement {
         const body: unknown = await response.json();
         if (!active) return;
         if (response.status === 404) {
-          setNotFound(true);
+          if (!silent) setNotFound(true);
           return;
         }
         if (!response.ok || !isPost(body)) {
-          setError(errorOf(body, "Unable to load this post."));
+          if (!silent) setError(errorOf(body, "Unable to load this post."));
           return;
         }
         setPost(body);
       } catch {
-        if (active) setError("Unable to connect to CivilHub. Please try again.");
+        if (active && !silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        if (active) setIsLoading(false);
+        if (active && !silent) setIsLoading(false);
       }
-    };
+    }, [postId]);
+  useEffect(() => {
     void load();
-    return () => {
-      active = false;
-    };
-  }, [postId, retryKey]);
+  }, [load, retryKey]);
+  useRealtime(["comments", "feed"], () => { void load(true); }, {
+    scopeMatch: (scope) => !scope.postId || scope.postId === postId,
+  });
+  useVisibleInterval(() => { void load(true); }, 60000);
 
   const toggleLike = async (): Promise<void> => {
     if (!post) return;

@@ -237,7 +237,7 @@ export function EngineerOverviewPage(): ReactElement {
   useRealtime(["dashboard", "projects"], () => {
     void loadOverview({ silent: true });
     void loadProjects({ silent: true });
-  }, { debounceMs: 1500 });
+  }, { debounceMs: 1500, minIntervalMs: 5000 });
   useVisibleInterval(() => {
     void loadOverview({ silent: true });
     void loadProjects({ silent: true });

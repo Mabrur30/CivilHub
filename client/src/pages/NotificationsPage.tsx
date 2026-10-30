@@ -1,4 +1,6 @@
-import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
@@ -50,8 +52,8 @@ export function NotificationsPage(): ReactElement {
     [total],
   );
 
-  const loadNotifications = async (nextPage: number): Promise<void> => {
-    setIsLoading(true);
+  const loadNotifications = useCallback(async (nextPage: number, silent = false): Promise<void> => {
+    if (!silent) setIsLoading(true);
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/notifications?page=${nextPage}&limit=${PAGE_LIMIT}`,
@@ -62,7 +64,7 @@ export function NotificationsPage(): ReactElement {
       const body: unknown = await response.json();
 
       if (!response.ok || !isNotificationListResponse(body)) {
-        setError(getErrorMessage(body));
+        if (!silent) setError(getErrorMessage(body));
         return;
       }
 
@@ -73,15 +75,17 @@ export function NotificationsPage(): ReactElement {
       setPage(payload.page);
       setError("");
     } catch {
-      setError("Unable to connect to CivilHub. Please try again.");
+      if (!silent) setError("Unable to connect to CivilHub. Please try again.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadNotifications(1);
-  }, []);
+  }, [loadNotifications]);
+  useRealtime(["notifications"], () => { void loadNotifications(page, true); });
+  useVisibleInterval(() => { void loadNotifications(page, true); }, 60000);
 
   // Offline, the notification just shows as unread again on the next refresh.
   const markSingleRead = async (notificationId: string): Promise<void> => {

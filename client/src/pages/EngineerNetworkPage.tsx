@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import {
@@ -380,10 +382,12 @@ export function EngineerNetworkPage(): ReactElement {
     (profile?.connectionsCount ?? connections.length) + connectionDelta,
   );
 
-  const loadNetwork = async (): Promise<void> => {
-    setIsNetworkLoading(true);
-    setNetworkError("");
-    setActionError("");
+  const loadNetwork = async (silent = false): Promise<void> => {
+    if (!silent) {
+      setIsNetworkLoading(true);
+      setNetworkError("");
+      setActionError("");
+    }
 
     try {
       const [incomingResponse, sentResponse, connectionsResponse] =
@@ -413,7 +417,7 @@ export function EngineerNetworkPage(): ReactElement {
         !Array.isArray(incomingBody) ||
         !incomingBody.every(isNetworkUser)
       ) {
-        setNetworkError(
+        if (!silent) setNetworkError(
           getErrorMessage(incomingBody, "Unable to load incoming requests."),
         );
         return;
@@ -424,7 +428,7 @@ export function EngineerNetworkPage(): ReactElement {
         !Array.isArray(sentBody) ||
         !sentBody.every(isNetworkUser)
       ) {
-        setNetworkError(
+        if (!silent) setNetworkError(
           getErrorMessage(sentBody, "Unable to load sent requests."),
         );
         return;
@@ -435,7 +439,7 @@ export function EngineerNetworkPage(): ReactElement {
         !Array.isArray(connectionsBody) ||
         !connectionsBody.every(isConnectionUser)
       ) {
-        setNetworkError(
+        if (!silent) setNetworkError(
           getErrorMessage(connectionsBody, "Unable to load your connections."),
         );
         return;
@@ -446,9 +450,9 @@ export function EngineerNetworkPage(): ReactElement {
       setConnections(connectionsBody);
       setHasMoreConnections(connectionsBody.length === CONNECTIONS_PAGE_SIZE);
     } catch {
-      setNetworkError("Unable to connect to CivilHub. Please try again.");
+      if (!silent) setNetworkError("Unable to connect to CivilHub. Please try again.");
     } finally {
-      setIsNetworkLoading(false);
+      if (!silent) setIsNetworkLoading(false);
     }
   };
 
@@ -471,7 +475,7 @@ export function EngineerNetworkPage(): ReactElement {
     }
   };
 
-  const loadProjectCount = async (): Promise<void> => {
+  const loadProjectCount = async (silent = false): Promise<void> => {
     if (!currentUser?.role) return;
     if (currentUser.role === "organisation" && !canTakeProjects(currentUser)) {
       return;
@@ -494,17 +498,17 @@ export function EngineerNetworkPage(): ReactElement {
 
       setProjectCount(body.activeProjects);
     } catch {
-      setProjectCount(null);
+      if (!silent) setProjectCount(null);
     }
   };
 
-  const loadFeed = async (append: boolean): Promise<void> => {
+  const loadFeed = async (append: boolean, silent = false): Promise<void> => {
     if (append) {
       setIsFeedLoadingMore(true);
-    } else {
+    } else if (!silent) {
       setIsFeedLoading(true);
     }
-    setFeedError("");
+    if (!silent) setFeedError("");
 
     try {
       const response = await fetch(
@@ -516,7 +520,7 @@ export function EngineerNetworkPage(): ReactElement {
       const body: unknown = await response.json();
 
       if (!response.ok || !isFeedResponse(body)) {
-        setFeedError(
+        if (!silent) setFeedError(
           getErrorMessage(body, "Unable to load your feed right now."),
         );
         return;
@@ -524,17 +528,21 @@ export function EngineerNetworkPage(): ReactElement {
 
       const valid = (body.posts as unknown[]).filter(isFeedPost);
       setPosts((current) => {
-        if (!append) return valid;
+        if (!append && !silent) return valid;
         const seen = new Set(current.map((post) => post.id));
-        return [...current, ...valid.filter((post) => !seen.has(post.id))];
+        const incoming = new Map(valid.map((post) => [post.id, post]));
+        const updated = current.map((post) => incoming.get(post.id) ?? post);
+        return [...valid.filter((post) => !seen.has(post.id)), ...updated];
       });
       const next = (body as { nextCursor?: unknown }).nextCursor;
       setFeedCursor(typeof next === "string" ? next : null);
     } catch {
-      setFeedError("Unable to connect to CivilHub. Please try again.");
+      if (!silent) setFeedError("Unable to connect to CivilHub. Please try again.");
     } finally {
-      setIsFeedLoading(false);
-      setIsFeedLoadingMore(false);
+      if (!silent) {
+        setIsFeedLoading(false);
+        setIsFeedLoadingMore(false);
+      }
     }
   };
 
@@ -587,6 +595,18 @@ export function EngineerNetworkPage(): ReactElement {
 
     void run();
   }, [currentUser?.id, currentUser?.role]);
+  useRealtime(["network"], () => {
+    void loadNetwork(true);
+    void loadProjectCount(true);
+  });
+  useRealtime(["feed"], () => { void loadFeed(false, true); }, {
+    minIntervalMs: 5000,
+  });
+  useVisibleInterval(() => {
+    void loadNetwork(true);
+    void loadProjectCount(true);
+    void loadFeed(false, true);
+  }, 60000);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {

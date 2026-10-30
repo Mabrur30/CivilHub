@@ -47,7 +47,7 @@ export function useClientProjects(): ClientProjectsState {
   }, [load, reloadKey]);
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
-  useRealtime(["dashboard", "projects"], () => { void load({ silent: true }); }, { debounceMs: 1500 });
+  useRealtime(["dashboard", "projects"], () => { void load({ silent: true }); }, { debounceMs: 1500, minIntervalMs: 5000 });
   useVisibleInterval(() => { void load({ silent: true }); }, 60000);
   return { projects, isLoading, error, reload };
 }

@@ -57,6 +57,8 @@ import {
   type EquipmentStatus,
 } from "./equipment.api";
 import { useEquipmentPaths } from "../components/dashboard/equipment/paths";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const IMAGE_LIMIT = 5 * 1024 * 1024;
@@ -228,53 +230,65 @@ export function MyEquipmentPage(): ReactElement {
   const [editError, setEditError] = useState<string>("");
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
 
-  const loadMine = async (): Promise<void> => {
-    setIsLoading(true);
-    setListingsError("");
+  const loadMine = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
+    if (!silent) { setIsLoading(true); setListingsError(""); }
     try {
       setItems(await fetchMyEquipmentListings());
     } catch (loadError: unknown) {
-      setListingsError(
+      if (!silent) setListingsError(
         getMessage(loadError, "Unable to load your equipment listings."),
       );
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, []);
 
-  const loadIncomingBookings = async (): Promise<void> => {
-    setIsLoadingIncoming(true);
-    setIncomingError("");
+  const loadIncomingBookings = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
+    if (!silent) { setIsLoadingIncoming(true); setIncomingError(""); }
     try {
       setIncomingBookings(await fetchIncomingEquipmentBookings());
     } catch (loadError: unknown) {
-      setIncomingError(
+      if (!silent) setIncomingError(
         getMessage(loadError, "Unable to load booking requests."),
       );
     } finally {
-      setIsLoadingIncoming(false);
+      if (!silent) setIsLoadingIncoming(false);
     }
-  };
+  }, []);
 
-  const loadOwnerBookings = async (): Promise<void> => {
-    setIsLoadingOwnerBookings(true);
-    setOwnerBookingsError("");
+  const loadOwnerBookings = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
+    if (!silent) { setIsLoadingOwnerBookings(true); setOwnerBookingsError(""); }
     try {
       setOwnerBookings(await fetchOwnerEquipmentBookings());
     } catch (loadError: unknown) {
-      setOwnerBookingsError(
+      if (!silent) setOwnerBookingsError(
         getMessage(loadError, "Unable to load rentals of your equipment."),
       );
     } finally {
-      setIsLoadingOwnerBookings(false);
+      if (!silent) setIsLoadingOwnerBookings(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadMine();
     void loadIncomingBookings();
     void loadOwnerBookings();
-  }, []);
+  }, [loadMine, loadIncomingBookings, loadOwnerBookings]);
+  const refreshBookings = useCallback((): void => {
+    void loadIncomingBookings({ silent: true });
+    void loadOwnerBookings({ silent: true });
+  }, [loadIncomingBookings, loadOwnerBookings]);
+  useRealtime(["bookings", "equipment-listings"], () => {
+    void loadMine({ silent: true });
+    refreshBookings();
+  });
+  useVisibleInterval(() => {
+    void loadMine({ silent: true });
+    refreshBookings();
+  }, 60000);
 
   useEffect(() => {
     return () => {

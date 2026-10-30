@@ -491,8 +491,8 @@ export function ClientBidsPage(): ReactElement {
       } finally {
         if (isActive && !silent) setIsLoading(false);
       }
-  }, [reloadKey]);
-  useEffect(() => { void load(); }, [load]);
+  }, []);
+  useEffect(() => { void load(); }, [load, reloadKey]);
   useRealtime(["bids", "invitations"], () => { void load({ silent: true }); }, { debounceMs: 1500 });
   useVisibleInterval(() => { void load({ silent: true }); }, 60000);
 

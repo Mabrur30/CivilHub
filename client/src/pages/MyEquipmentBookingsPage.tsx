@@ -1,4 +1,6 @@
-import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 import { Link } from "react-router-dom";
 import { Avatar } from "../components/Avatar";
 import { EquipmentSectionTabs } from "../components/dashboard/EquipmentSectionTabs";
@@ -225,25 +227,27 @@ export function MyEquipmentBookingsPage(): ReactElement {
     message: string;
   } | null>(null);
 
-  const loadBookings = async (): Promise<void> => {
-    setIsLoading(true);
-    setError("");
+  const loadBookings = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
+    if (!silent) { setIsLoading(true); setError(""); }
     try {
       setItems(await fetchMyEquipmentBookings());
     } catch (loadError: unknown) {
-      setError(
+      if (!silent) setError(
         loadError instanceof Error
           ? loadError.message
           : "Unable to load your bookings.",
       );
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadBookings();
-  }, []);
+  }, [loadBookings]);
+  useRealtime(["bookings"], () => { void loadBookings({ silent: true }); });
+  useVisibleInterval(() => { void loadBookings({ silent: true }); }, 60000);
 
   const grouped = useMemo(() => {
     const mapping: Record<EquipmentBookingBucket, EquipmentMyBooking[]> = {
