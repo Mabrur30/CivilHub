@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App.tsx";
 import { AuthProvider } from "./context/AuthContext";
+import { RealtimeProvider } from "./realtime/RealtimeProvider";
 
 const originalFetch = window.fetch.bind(window);
 window.fetch = (input, init) =>
@@ -13,7 +14,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <RealtimeProvider>
+          <App />
+        </RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

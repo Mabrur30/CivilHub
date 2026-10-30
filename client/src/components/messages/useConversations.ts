@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "../../realtime/useRealtime";
+import { useVisibleInterval } from "../../realtime/useVisibleInterval";
 import {
   CONNECTION_ERROR,
   fetchConversations,
@@ -11,7 +13,7 @@ import {
   type InboxFilter,
 } from "./types";
 
-const POLL_MS = 8000;
+const FALLBACK_MS = 60000;
 
 export const matchesFilter = (
   conversation: ConversationSummary,
@@ -47,27 +49,32 @@ export function useConversations(): ConversationsState {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
 
-  const reload = useCallback(async (): Promise<void> => {
+  const reload = useCallback(async (silent = false): Promise<void> => {
     try {
       const result = await fetchConversations();
       if (!result.ok) {
-        setError(result.error);
+        if (!silent) setError(result.error);
         return;
       }
-      setError("");
+      if (!silent) setError("");
       setConversations(result.data);
     } catch {
-      setError(CONNECTION_ERROR);
+      if (!silent) setError(CONNECTION_ERROR);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void reload();
-    const intervalId = window.setInterval(() => void reload(), POLL_MS);
-    return () => window.clearInterval(intervalId);
   }, [reload]);
+
+  useRealtime(["conversations", "messages"], () => {
+    void reload(true);
+  });
+  useVisibleInterval(() => {
+    void reload(true);
+  }, FALLBACK_MS);
 
   const patch = useCallback(
     (id: string, changes: Partial<ConversationSummary>): void => {

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRealtime } from "../../realtime/useRealtime";
+import { useVisibleInterval } from "../../realtime/useVisibleInterval";
 import { useNavigate } from "react-router-dom";
 import { type CurrentUser } from "../../context/AuthContext";
 import {
@@ -17,7 +19,7 @@ import {
   toConversationProjects,
 } from "./types";
 
-const POLL_MS = 4000;
+const FALLBACK_MS = 30000;
 
 const normalizeMessages = (
   messages: OptimisticMessage[],
@@ -164,29 +166,42 @@ export function useChatThread(
     };
   }, [targetId, apply, navigate, requestedProjectId]);
 
-  // Polls only for what's new, and not at all while the tab is hidden.
+  const fetchNewMessages = useCallback((): void => {
+    if (!conversationId || document.hidden) return;
+    void fetchMessages(conversationId, { after: savedIds.current.newest })
+      .then((result) => {
+        if (result.status !== "ok") return;
+        apply(result.data);
+        const fromOthers = result.data.messages.some(
+          (message) => message.sender.userId !== currentUser?.id,
+        );
+        if (fromOthers) void markConversationRead(conversationId).catch(() => undefined);
+      })
+      .catch(() => {
+        if (import.meta.env.DEV) console.warn("Background message refresh failed");
+      });
+  }, [conversationId, apply, currentUser?.id]);
+
   useEffect(() => {
     if (!conversationId) return;
-    const poll = (): void => {
-      if (document.hidden) return;
-      void fetchMessages(conversationId, { after: savedIds.current.newest })
-        .then((result) => {
-          if (result.status !== "ok") return;
-          apply(result.data);
-          const fromOthers = result.data.messages.some(
-            (message) => message.sender.userId !== currentUser?.id,
-          );
-          if (fromOthers) void markConversationRead(conversationId).catch(() => undefined);
-        })
-        .catch(() => undefined);
+    const refreshWhenVisible = (): void => {
+      if (!document.hidden) fetchNewMessages();
     };
-    const intervalId = window.setInterval(poll, POLL_MS);
-    document.addEventListener("visibilitychange", poll);
-    return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", poll);
-    };
-  }, [conversationId, apply, currentUser?.id]);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () =>
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+  }, [conversationId, fetchNewMessages]);
+
+  useRealtime(
+    ["messages"],
+    fetchNewMessages,
+    {
+      scopeMatch: (scope) =>
+        !scope.conversationId || scope.conversationId === conversationId,
+      enabled: conversationId !== null,
+    },
+  );
+  useVisibleInterval(fetchNewMessages, FALLBACK_MS, conversationId !== null);
 
   const loadEarlier = useCallback(async (): Promise<void> => {
     const oldest = savedIds.current.oldest;

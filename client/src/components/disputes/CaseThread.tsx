@@ -3,9 +3,11 @@ import { type FormEvent, type ReactElement, useCallback, useEffect, useId, useRe
 import { inlineLinkClassName, inputClassName, primaryButtonClassName } from "../dashboard/ui/buttonStyles";
 import { API_BASE_URL } from "../../lib/apiBase";
 import { ErrorPanel } from "../dashboard/ui/StatePanels";
+import { useRealtime } from "../../realtime/useRealtime";
+import { useVisibleInterval } from "../../realtime/useVisibleInterval";
 
 /** CivilHub may reply while the page is open; checked this often. */
-const REFRESH_MS = 60_000;
+const FALLBACK_MS = 120_000;
 
 // Mirror the server's limits in CaseMessage.model.ts.
 const TEXT_LIMIT = 2000;
@@ -66,26 +68,31 @@ export function CaseThread({
 
   // No thread for this viewer (403/404) keeps the panel hidden; a failure to
   // load it says so, since a missed reply-by date matters.
-  const load = useCallback(async (): Promise<void> => {
+  const load = useCallback(async (silent = false): Promise<void> => {
     try {
       const response = await fetch(path, { credentials: "include" });
       const body: unknown = await response.json().catch(() => null);
       if (response.ok && isThread(body)) {
         setThread(body);
         setLoadFailed(false);
-      } else if (response.status >= 500) {
+      } else if (!silent && response.status >= 500) {
         setLoadFailed(true);
       }
     } catch {
-      setLoadFailed(true);
+      if (!silent) setLoadFailed(true);
     }
   }, [path]);
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), REFRESH_MS);
-    return () => window.clearInterval(timer);
   }, [load]);
+
+  useRealtime(["disputes"], () => {
+    void load(true);
+  });
+  useVisibleInterval(() => {
+    void load(true);
+  }, FALLBACK_MS);
 
   if (!thread) {
     return loadFailed ? (

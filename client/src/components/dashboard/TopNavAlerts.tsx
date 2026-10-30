@@ -17,6 +17,8 @@ import {
   type NotificationListResponse,
 } from "./notificationUtils";
 import { API_BASE_URL } from "../../lib/apiBase";
+import { useRealtime } from "../../realtime/useRealtime";
+import { useVisibleInterval } from "../../realtime/useVisibleInterval";
 
 interface TopNavAlertsProps {
   role: UserRole;
@@ -26,7 +28,7 @@ interface ErrorResponse {
   message?: string;
 }
 
-const POLL_MS = 9000;
+const FALLBACK_MS = 60000;
 const DROPDOWN_LIMIT = 8;
 
 const getErrorMessage = (value: unknown): string => {
@@ -171,14 +173,22 @@ export function TopNavAlerts({ role }: TopNavAlertsProps): ReactElement {
 
     void bootstrap();
 
-    const intervalId = window.setInterval(() => {
-      void refreshCounts();
-    }, POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
   }, [currentUser?.id]);
+
+  useRealtime(
+    ["notifications", "conversations"],
+    () => {
+      void refreshCounts();
+    },
+    { enabled: currentUser !== null },
+  );
+  useVisibleInterval(
+    () => {
+      void refreshCounts();
+    },
+    FALLBACK_MS,
+    currentUser !== null,
+  );
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent): void => {
