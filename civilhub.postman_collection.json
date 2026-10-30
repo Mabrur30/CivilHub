@@ -69,6 +69,23 @@
       ]
     },
     {
+      "name": "Realtime",
+      "item": [
+        {
+          "name": "Realtime stream",
+          "request": {
+            "method": "GET",
+            "description": "Opens an SSE stream using the civilhub_token cookie. Frames use event: invalidate, an id UUID, and JSON data such as {\"id\":\"<uuid>\",\"topics\":[\"bids\",\"dashboard\"],\"scope\":{\"projectId\":\"<mongoId>\"},\"createdAt\":\"<ISO-8601>\"}. Payloads hold ids only. 401 means no or invalid session; 403 means the account is not active.",
+            "url": {
+              "raw": "{{baseUrl}}/api/realtime/stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "realtime", "stream"]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Projects",
       "item": [
         {

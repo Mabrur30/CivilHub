@@ -44,6 +44,8 @@ import { settleDueDepositsQuietly } from "./utils/deposits";
 import { settleDueConfirmations } from "./utils/bookingConfirmations";
 import { settleVerificationExpiries } from "./utils/verification";
 import { settleApprovalReminders, settleFundingReminders } from "./utils/projectMoney";
+import realtimeRouter from "./realtime/realtime.routes";
+import { realtimeHub } from "./realtime/realtime.hub";
 
 dotenv.config();
 
@@ -76,6 +78,7 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use("/api/realtime", realtimeRouter);
 
 app.get("/", (_req: Request, res: Response) => {
   res.status(200).json({
@@ -130,6 +133,19 @@ app.use("/api/admin", adminRouter);
 app.use(errorHandler);
 
 const SWEEP_MS = 60 * 60 * 1000;
+let httpServer: ReturnType<typeof app.listen> | undefined;
+
+const shutdown = (): void => {
+  realtimeHub.closeAll();
+  if (httpServer) {
+    httpServer.close(() => process.exit(0));
+  } else {
+    process.exit(0);
+  }
+};
+
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
 
 const startServer = async (): Promise<void> => {
   // Admin routes can't work without their own secret; say so at start-up
@@ -149,7 +165,7 @@ const startServer = async (): Promise<void> => {
   ).exec();
   await backfillCompletedProjectStatuses();
   await tidyConnections();
-  app.listen(port, () => {
+  httpServer = app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });
   // Hourly housekeeping: remind owners about unsettled deposits and release
