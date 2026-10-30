@@ -185,10 +185,13 @@ export function MarketplaceBriefPage(): ReactElement {
       : null) ?? "To be agreed";
 
   const bidAction = !isOpen ? null : hasBid ? (
-    <p className="inline-flex items-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
+    <Link
+      to={`${base}/bids`}
+      className="inline-flex items-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60"
+    >
       <CheckIcon aria-hidden="true" className="h-4 w-4" />
-      Bid submitted
-    </p>
+      Edit your bid
+    </Link>
   ) : (
     <Link to={`${base}/marketplace?project=${brief.id}`} className={primaryButtonClassName}>
       Submit bid

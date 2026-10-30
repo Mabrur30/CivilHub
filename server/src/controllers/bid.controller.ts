@@ -24,6 +24,11 @@ export interface SubmitBidRequestBody {
   message: string;
 }
 
+export interface EditBidRequestBody {
+  amount: number;
+  message: string;
+}
+
 interface BidError extends Error {
   statusCode: number;
 }
@@ -43,6 +48,7 @@ interface ClientBidResponse {
   amount: number;
   message: string;
   submittedDate: string;
+  editedAt: string | null;
   status: "pending" | "accepted" | "declined";
   engineerPhotoUrl: string | null;
   engineerRating: number | null;
@@ -71,6 +77,9 @@ export interface EngineerBidResponse {
   status: "pending" | "accepted" | "declined";
   submittedDate: string;
   projectStatus: string;
+  message: string;
+  editedAt: string | null;
+  editCount: number;
 }
 
 interface CreateBidInput {
@@ -106,18 +115,38 @@ const extractUserId = (value: unknown): string => {
   return "";
 };
 
-export const createBidForProject = async ({
-  engineerUserId,
-  projectId,
-  amount,
-  message,
-}: CreateBidInput): Promise<CreatedBidResult> => {
+const validateBidFields = (
+  amount: unknown,
+  message: unknown,
+): { amount: number; message: string } => {
+  if (
+    typeof amount !== "number" ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    typeof message !== "string" ||
+    !message.trim()
+  ) {
+    throw createBidError(
+      "A positive bid amount and a message are required",
+      400,
+    );
+  }
   if (amount < MINIMUM_BID) {
     throw createBidError(
       `Bids must be at least ${formatTaka(MINIMUM_BID)}, so the ${ADVANCE_SHARE * 100}% advance can be paid online.`,
       400,
     );
   }
+  return { amount, message: maskContactInfo(message.trim()).text };
+};
+
+export const createBidForProject = async ({
+  engineerUserId,
+  projectId,
+  amount,
+  message,
+}: CreateBidInput): Promise<CreatedBidResult> => {
+  const validated = validateBidFields(amount, message);
   const project = await Project.findOne({
     _id: projectId,
     status: "open_for_bids",
@@ -143,7 +172,7 @@ export const createBidForProject = async ({
     project: project._id,
     amount,
     // A bid is always before any hire, so contact details stay hidden.
-    message: maskContactInfo(message.trim()).text,
+    message: validated.message,
     status: "pending",
   });
 
@@ -267,6 +296,7 @@ export const getBidsForMyProjects = async (
         amount: bid.amount,
         message: bid.message,
         submittedDate: bid.createdAt.toISOString(),
+        editedAt: bid.editedAt?.toISOString() ?? null,
         status: bid.status,
         engineerPhotoUrl: photos.get(engineerId) ?? null,
         engineerRating: rating ? Math.round(rating.rating * 10) / 10 : null,
@@ -330,10 +360,105 @@ export const getMyBids = async (
         status: bid.status,
         submittedDate: bid.createdAt.toISOString(),
         projectStatus: project.status,
+        message: bid.message,
+        editedAt: bid.editedAt?.toISOString() ?? null,
+        editCount: bid.editCount,
       };
     });
 
     res.status(200).json(response);
+  } catch (error: unknown) {
+    next(error);
+  }
+};
+
+export const editBid = async (
+  req: AuthenticatedRequest<EditBidRequestBody>,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    await assertCanTakeProjects(req.user);
+
+    const { bidId } = req.params as unknown as BidParams;
+    if (!Types.ObjectId.isValid(bidId)) {
+      throw createBidError("Bid not found", 404);
+    }
+
+    const existing = await Bid.findById(bidId)
+      .select("project amount message")
+      .exec();
+    if (!existing) {
+      throw createBidError("Bid not found", 404);
+    }
+
+    const project = await Project.findOne({
+      _id: existing.project,
+      status: "open_for_bids",
+    })
+      .select("_id title name client status")
+      .exec();
+    if (!project) {
+      throw createBidError("Project is not open for bidding", 409);
+    }
+
+    const validated = validateBidFields(req.body?.amount, req.body?.message);
+    const { amount, message: sanitizedMessage } = validated;
+    if (
+      existing.amount === amount &&
+      existing.message === sanitizedMessage
+    ) {
+      throw createBidError("No changes to save", 400);
+    }
+    if (!project.client) {
+      throw createBidError("This project has no client", 409);
+    }
+    const updated = await Bid.findOneAndUpdate(
+      {
+        _id: bidId,
+        engineer: req.user.userId,
+        status: "pending",
+        $or: [{ editCount: { $lt: 5 } }, { editCount: { $exists: false } }],
+      },
+      {
+        $set: { amount, message: sanitizedMessage, editedAt: new Date() },
+        $inc: { editCount: 1 },
+      },
+      { new: true, runValidators: true },
+    ).exec();
+
+    if (!updated) {
+      const current = await Bid.findById(bidId)
+        .select("engineer status editCount amount message project")
+        .lean()
+        .exec();
+      if (!current) throw createBidError("Bid not found", 404);
+      if (current.engineer.toString() !== req.user.userId) {
+        throw createBidError("You do not own this bid", 403);
+      }
+      if (typeof current.editCount === "number" && current.editCount >= 5) {
+        throw createBidError("This bid has reached the five-edit limit", 409);
+      }
+      throw createBidError("Only pending bids can be edited", 409);
+    }
+
+    await Notification.create({
+      recipient: project.client,
+      type: "bid_updated",
+      message: `The engineer edited their bid on ${project.title ?? project.name ?? "this project"}.`,
+      project: project._id,
+      bid: updated._id,
+    });
+
+    res.status(200).json({
+      id: updated._id.toString(),
+      projectId: updated.project.toString(),
+      amount: updated.amount,
+      message: updated.message,
+      status: updated.status,
+      editedAt: updated.editedAt?.toISOString() ?? null,
+      editCount: updated.editCount,
+    });
   } catch (error: unknown) {
     next(error);
   }

@@ -104,6 +104,7 @@ export type ActivityCategory =
   | "bookings";
 
 const categoryByType: Record<NotificationType, ActivityCategory> = {
+  bid_updated: "bids",
   bid_accepted: "bids",
   bid_declined: "bids",
   bid_invitation: "bids",

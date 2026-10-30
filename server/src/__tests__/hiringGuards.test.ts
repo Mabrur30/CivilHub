@@ -130,6 +130,7 @@ describe("Amounts too small to pay online", () => {
       amount: 40,
       message: "Cheap",
     });
+
     expect(tooSmall.status).toBe(400);
     expect(tooSmall.body.message).toMatch(/at least/);
 
@@ -161,6 +162,122 @@ describe("Amounts too small to pay online", () => {
     const submitted = await as(engineer, request(app).post(`${base}/phase-plan/submit`));
     expect(submitted.status).toBe(400);
     expect(submitted.body.message).toMatch(/Survey is too small/);
+  });
+});
+
+describe("Editing bids", () => {
+  test("owner edits a pending bid and notifies the client", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    const response = await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 110_000,
+      message: "Updated delivery plan",
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.amount).toBe(110_000);
+    expect(response.body.message).toBe("Updated delivery plan");
+    expect(response.body.editCount).toBe(1);
+    expect(response.body.editedAt).toEqual(expect.any(String));
+    expect(await Notification.countDocuments({ recipient: client._id, type: "bid_updated" })).toBe(1);
+  });
+
+  test("only the bid owner can edit", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    expect((await as(rival, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 110_000,
+      message: "Not mine",
+    })).status).toBe(403);
+    expect((await as(client, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 110_000,
+      message: "Not mine",
+    })).status).toBe(403);
+    expect((await request(app).patch(`/api/bids/${bid._id.toString()}`)).status).toBe(401);
+  });
+
+  test("closed or non-pending bids cannot be edited", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    await Project.updateOne({ _id: project._id }, { $set: { status: "in-progress" } });
+    expect((await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 110_000,
+      message: "Closed",
+    })).status).toBe(409);
+    await Project.updateOne({ _id: project._id }, { $set: { status: "open_for_bids" } });
+    await Bid.updateOne({ _id: bid._id }, { $set: { status: "accepted" } });
+    expect((await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 120_000,
+      message: "Accepted",
+    })).status).toBe(409);
+  });
+
+  test("an accepted bid cannot be edited and keeps its accepted values", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer, 125_000);
+    expect((await as(client, request(app).patch(`/api/bids/${bid._id.toString()}/accept`))).status).toBe(200);
+    const response = await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 140_000,
+      message: "Too late",
+    });
+    expect(response.status).toBe(409);
+    const saved = await Bid.findById(bid._id).exec();
+    expect(saved?.status).toBe("accepted");
+    expect(saved?.amount).toBe(125_000);
+  });
+
+  test("unchanged values do not update or notify, and the sixth edit is refused", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    const unchanged = await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: bid.amount,
+      message: bid.message,
+    });
+    expect(unchanged.status).toBe(400);
+    expect(await Notification.countDocuments({ type: "bid_updated" })).toBe(0);
+    for (let edit = 1; edit <= 5; edit += 1) {
+      expect((await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+        amount: 100_000 + edit,
+        message: `Edit ${edit}`,
+      })).status).toBe(200);
+    }
+    const sixth = await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 100_010,
+      message: "Edit six",
+    });
+    expect(sixth.status).toBe(409);
+    expect(await Notification.countDocuments({ type: "bid_updated" })).toBe(5);
+  });
+
+  test("forbidden fields are ignored", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    const response = await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send({
+      amount: 110_000,
+      message: "Allowed",
+      status: "accepted",
+      engineer: rival._id.toString(),
+      project: new mongoose.Types.ObjectId().toString(),
+    });
+    expect(response.status).toBe(200);
+    const saved = await Bid.findById(bid._id).exec();
+    expect(saved?.status).toBe("pending");
+    expect(saved?.engineer.toString()).toBe(engineer._id.toString());
+    expect(saved?.project.toString()).toBe(project._id.toString());
+  });
+
+  test("invalid values are rejected", async () => {
+    const project = await openProject();
+    const bid = await pendingBid(project._id, engineer);
+    for (const body of [
+      { amount: 0, message: "Invalid" },
+      { amount: 40, message: "Below minimum" },
+      { amount: 100_000, message: "" },
+      { amount: "100000", message: "Wrong type" },
+    ]) {
+      expect(
+        (await as(engineer, request(app).patch(`/api/bids/${bid._id.toString()}`)).send(body)).status,
+      ).toBe(400);
+    }
   });
 });
 

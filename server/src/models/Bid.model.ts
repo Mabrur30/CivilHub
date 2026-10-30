@@ -8,6 +8,8 @@ export interface IBid extends Document {
   amount: number;
   message: string;
   status: BidStatus;
+  editedAt?: Date;
+  editCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +43,14 @@ const bidSchema = new Schema<IBid>(
       enum: ["pending", "accepted", "declined"],
       default: "pending",
       required: true,
+    },
+    editedAt: {
+      type: Date,
+    },
+    editCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
   },
   { timestamps: true },

@@ -19,6 +19,8 @@ import { moneyValue } from "../lib/money";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { API_BASE_URL } from "../lib/apiBase";
 import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
+import { Dialog } from "../components/dashboard/ui/Dialog";
+import { BidForm } from "../components/bids/BidForm";
 
 interface EngineerBid {
   id: string;
@@ -30,6 +32,9 @@ interface EngineerBid {
   status: "pending" | "accepted" | "declined";
   submittedDate: string;
   projectStatus: string;
+  message: string;
+  editedAt: string | null;
+  editCount: number;
 }
 
 interface BidInvitation {
@@ -49,6 +54,14 @@ interface ErrorResponse {
   message?: string;
 }
 
+interface EditedBidResponse {
+  id: string;
+  amount: number;
+  message: string;
+  editedAt: string | null;
+  editCount: number;
+}
+
 type BidFilter = "all" | EngineerBid["status"];
 
 const isEngineerBid = (value: unknown): value is EngineerBid => {
@@ -66,6 +79,9 @@ const isEngineerBid = (value: unknown): value is EngineerBid => {
       bid.status === "declined") &&
     typeof bid.submittedDate === "string" &&
     typeof bid.projectStatus === "string"
+    && typeof bid.message === "string"
+    && (typeof bid.editedAt === "string" || bid.editedAt === null)
+    && typeof bid.editCount === "number"
   );
 };
 
@@ -333,7 +349,13 @@ function InvitationRow({
   );
 }
 
-function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
+function BidRow({
+  bid,
+  onEdit,
+}: {
+  bid: EngineerBid;
+  onEdit: () => void;
+}): ReactElement {
   const base = useDashboardBase();
   const isAccepted = bid.status === "accepted";
   const projectPath = `${base}/projects/${bid.projectId}`;
@@ -389,6 +411,19 @@ function BidRow({ bid }: { bid: EngineerBid }): ReactElement {
           projectId={bid.projectId}
           label="Message client"
         />
+        {bid.status === "pending" && bid.projectStatus === "open_for_bids" ? (
+          bid.editCount >= 5 ? (
+            <span className="text-xs text-white/45">Edit limit reached</span>
+          ) : (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded-full text-sm font-semibold text-primary transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-glow"
+            >
+              Edit bid
+            </button>
+          )
+        ) : null}
         {isAccepted ? (
           <Link
             to={projectPath}
@@ -422,6 +457,10 @@ export function EngineerBidsPage(): ReactElement {
     id: string;
     message: string;
   } | null>(null);
+  const [editingBid, setEditingBid] = useState<EngineerBid | null>(null);
+  const [editError, setEditError] = useState<string>("");
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string>("");
 
   useEffect(() => {
     const loadBids = async (): Promise<void> => {
@@ -555,6 +594,45 @@ export function EngineerBidsPage(): ReactElement {
     }
   };
 
+  const editBid = async (values: { amount: number; message: string }): Promise<void> => {
+    if (!editingBid) return;
+    setIsEditing(true);
+    setEditError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/bids/${editingBid.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        setEditError(getErrorMessage(body));
+        return;
+      }
+      const updated = body as EditedBidResponse;
+      setBids((current) =>
+        current.map((bid) =>
+          bid.id === updated.id
+            ? {
+                ...bid,
+                amount: updated.amount,
+                message: updated.message,
+                editedAt: updated.editedAt,
+                editCount: updated.editCount,
+              }
+            : bid,
+        ),
+      );
+      setEditingBid(null);
+      setSuccessMessage("Your bid was updated.");
+    } catch {
+      setEditError("Unable to connect to CivilHub. Please try again.");
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
   const countFor = (key: BidFilter): number =>
     key === "all"
       ? bids.length
@@ -578,6 +656,14 @@ export function EngineerBidsPage(): ReactElement {
           </Link>
         }
       />
+      {successMessage ? (
+        <p
+          role="status"
+          className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-5 py-3.5 text-sm font-semibold text-emerald-200"
+        >
+          {successMessage}
+        </p>
+      ) : null}
 
       {isLoading ? (
         <BidListSkeleton />
@@ -671,7 +757,14 @@ export function EngineerBidsPage(): ReactElement {
               {filteredBids.length > 0 ? (
                 <ul className="divide-y divide-white/10 border-t border-white/10">
                   {filteredBids.map((bid) => (
-                    <BidRow key={bid.id} bid={bid} />
+                    <BidRow
+                      key={bid.id}
+                      bid={bid}
+                      onEdit={() => {
+                        setEditingBid(bid);
+                        setEditError("");
+                      }}
+                    />
                   ))}
                 </ul>
               ) : (
@@ -683,6 +776,32 @@ export function EngineerBidsPage(): ReactElement {
           ) : null}
         </>
       )}
+      {editingBid ? (
+        <Dialog
+          title="Edit bid"
+          description={`${editingBid.projectTitle} for ${editingBid.clientName}`}
+          onClose={() => {
+            if (!isEditing) {
+              setEditingBid(null);
+              setEditError("");
+            }
+          }}
+          isBusy={isEditing}
+        >
+          <BidForm
+            initialValues={{
+              amount: editingBid.amount.toString(),
+              message: editingBid.message,
+            }}
+            clientName={editingBid.clientName}
+            submitLabel="Save changes"
+            busyLabel="Saving..."
+            error={editError}
+            isBusy={isEditing}
+            onSubmit={(values) => void editBid(values)}
+          />
+        </Dialog>
+      ) : null}
     </div>
   );
 }

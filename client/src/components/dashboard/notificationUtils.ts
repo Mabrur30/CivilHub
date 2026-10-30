@@ -2,6 +2,7 @@ import { equipmentPathsFor } from "./equipment/paths";
 import { type UserRole } from "../../context/AuthContext";
 import { dashboardBase } from "../../lib/dashboardPaths";
 export type NotificationType =
+  | "bid_updated"
   | "bid_accepted"
   | "bid_declined"
   | "bid_invitation"
@@ -93,6 +94,7 @@ export interface NotificationListResponse {
 }
 
 const notificationTypes: NotificationType[] = [
+  "bid_updated",
   "bid_accepted",
   "bid_declined",
   "bid_invitation",
@@ -219,6 +221,7 @@ export const mapNotificationTypeToActivityType = (
   if (type === "connection_post") return "review";
   if (type === "post_liked") return "bid";
   if (
+    type === "bid_updated" ||
     type === "equipment_booking_request" ||
     type === "equipment_booking_approved" ||
     type === "equipment_booking_declined" ||
@@ -296,7 +299,8 @@ export const getNotificationTargetPath = (
   }
 
   if (
-    (notification.type === "bid_accepted" ||
+    (notification.type === "bid_updated" ||
+      notification.type === "bid_accepted" ||
       notification.type === "bid_declined" ||
       notification.type === "project_phase_updated" ||
       notification.type === "phase_plan_submitted" ||
@@ -317,6 +321,9 @@ export const getNotificationTargetPath = (
       notification.type === "phase_funding_reminder") &&
     notification.projectId
   ) {
+    if (notification.type === "bid_updated") {
+      return `${dashboardBase(role)}/bids?project=${notification.projectId}`;
+    }
     return `${dashboardBase(role)}/projects/${notification.projectId}`;
   }
 

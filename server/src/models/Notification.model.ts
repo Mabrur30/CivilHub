@@ -1,6 +1,7 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
 export type NotificationType =
+  | "bid_updated"
   | "bid_accepted"
   | "bid_declined"
   | "bid_invitation"
@@ -101,6 +102,7 @@ const notificationSchema = new Schema<INotification>(
     type: {
       type: String,
       enum: [
+        "bid_updated",
         "bid_accepted",
         "bid_declined",
         "bid_invitation",

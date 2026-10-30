@@ -40,6 +40,7 @@ interface ClientBid {
   amount: number;
   message: string;
   submittedDate: string;
+  editedAt: string | null;
   status: BidStatus;
   engineerPhotoUrl: string | null;
   engineerRating: number | null;
@@ -75,6 +76,7 @@ const isClientBid = (value: unknown): value is ClientBid =>
   typeof value.amount === "number" &&
   typeof value.message === "string" &&
   typeof value.submittedDate === "string" &&
+  (typeof value.editedAt === "string" || value.editedAt === null) &&
   (value.status === "pending" ||
     value.status === "accepted" ||
     value.status === "declined") &&
@@ -234,6 +236,12 @@ function BidRow({ bid, project, onHire, onDecline }: BidRowProps): ReactElement 
                 {" "}
                 · bid {submitted ? submitted.toLowerCase() : formatDate(bid.submittedDate)}
               </span>
+              {bid.editedAt ? (
+                <span className="text-white/35">
+                  {" "}
+                  · edited {formatRelativeTime(bid.editedAt).toLowerCase() || formatDate(bid.editedAt)}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>

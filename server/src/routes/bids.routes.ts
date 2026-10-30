@@ -2,10 +2,12 @@ import { Router } from "express";
 import {
   acceptBid,
   declineBid,
+  editBid,
   getBidsForMyProjects,
   getMyBids,
   submitBid,
   type SubmitBidRequestBody,
+  type EditBidRequestBody,
 } from "../controllers/bid.controller";
 import {
   protect,
@@ -28,6 +30,10 @@ bidsRouter.patch("/:bidId/accept", protect, (req, res, next) =>
 
 bidsRouter.patch("/:bidId/decline", protect, (req, res, next) =>
   declineBid(req as AuthenticatedRequest, res, next),
+);
+
+bidsRouter.patch("/:bidId", protect, (req, res, next) =>
+  editBid(req as AuthenticatedRequest<EditBidRequestBody>, res, next),
 );
 
 bidsRouter.post("/", protect, (req, res, next) =>

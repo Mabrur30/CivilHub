@@ -214,6 +214,49 @@
               "path": ["api", "bids", "BID_OBJECT_ID", "decline"]
             }
           }
+        },
+        {
+          "name": "Edit Bid",
+          "request": {
+            "method": "PATCH",
+            "description": "Cookie-authenticated engineer request. Body: amount (number, positive and at least the create-bid minimum) and message (non-empty string). Unknown fields are ignored. 200 response: { id, projectId, amount, message, status, editedAt, editCount }. Errors: 400 validation or no changes, 401 unauthenticated, 403 not your bid, 404 missing bid, 409 non-pending/closed project or edit limit reached.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 130000,\n  \"message\": \"Updated scope and delivery plan for this brief.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bids/{{bidId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bids", "{{bidId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Edit bid returns 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Response has updated bid shape', function () {",
+                  "  var body = pm.response.json();",
+                  "  pm.expect(body).to.have.property('id');",
+                  "  pm.expect(body).to.have.property('projectId');",
+                  "  pm.expect(body).to.have.property('amount');",
+                  "  pm.expect(body).to.have.property('message');",
+                  "  pm.expect(body).to.have.property('status');",
+                  "  pm.expect(body).to.have.property('editedAt');",
+                  "  pm.expect(body).to.have.property('editCount');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

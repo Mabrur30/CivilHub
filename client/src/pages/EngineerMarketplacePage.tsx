@@ -1,11 +1,5 @@
 import { CheckIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
-import {
-  type FormEvent,
-  type ReactElement,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { formatRelativeTime } from "../components/dashboard/notificationUtils";
 import {
@@ -21,14 +15,13 @@ import { Dialog } from "../components/dashboard/ui/Dialog";
 import { PageHeader } from "../components/dashboard/ui/PageHeader";
 import { EmptyPanel, ErrorPanel } from "../components/dashboard/ui/StatePanels";
 import { countOf, formatDate } from "../lib/format";
-import { MoneyInput } from "../components/dashboard/ui/MoneyInput";
+import { BidForm } from "../components/bids/BidForm";
 import { BriefCard } from "../components/project/BriefCard";
 import { formatBudgetShort, moneyValue } from "../lib/money";
 import { describeTimeline } from "../lib/timeline";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { findCategory, useProjectCriteria } from "../lib/projectCriteria";
 import { API_BASE_URL } from "../lib/apiBase";
-import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 
 interface MarketplaceProject {
   id: string;
@@ -51,12 +44,6 @@ interface MarketplaceProject {
 
 interface BidForm {
   amount: string;
-  message: string;
-}
-
-interface SubmitBidRequestBody {
-  projectId: string;
-  amount: number;
   message: string;
 }
 
@@ -256,10 +243,13 @@ function BriefRow({
               View details
             </Link>
             {hasSubmittedBid ? (
-              <p className="flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60">
+              <Link
+                to={`${base}/bids`}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-white/5 px-5 py-3 text-sm font-semibold text-white/60"
+              >
                 <CheckIcon className="h-4 w-4" aria-hidden="true" />
-                Bid submitted
-              </p>
+                Edit your bid
+              </Link>
             ) : (
               <button
                 type="button"
@@ -441,26 +431,14 @@ export function EngineerMarketplacePage(): ReactElement {
     setBidError("");
   };
 
-  const submitBid = async (
-    event: FormEvent<HTMLFormElement>,
-  ): Promise<void> => {
-    event.preventDefault();
+  const submitBid = async (values: { amount: number; message: string }): Promise<void> => {
     if (!selectedProject) return;
-    const amount = moneyValue(bid.amount) ?? Number.NaN;
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setBidError("Enter a price greater than zero.");
-      return;
-    }
-    if (!bid.message.trim()) {
-      setBidError("Add a short message for the client.");
-      return;
-    }
     setBidError("");
     setIsSubmitting(true);
-    const requestBody: SubmitBidRequestBody = {
+    const requestBody = {
       projectId: selectedProject.id,
-      amount,
-      message: bid.message.trim(),
+      amount: values.amount,
+      message: values.message,
     };
     try {
       const response = await fetch(`${API_BASE_URL}/api/bids`, {
@@ -673,60 +651,15 @@ export function EngineerMarketplacePage(): ReactElement {
           onClose={closeBidDialog}
           isBusy={isSubmitting}
         >
-          <form onSubmit={submitBid} className="grid gap-5" noValidate>
-            <div className="grid gap-2">
-              <label
-                htmlFor="bid-amount"
-                className="text-sm font-semibold text-white/80"
-              >
-                Your price
-                <RequiredMark />
-              </label>
-              <MoneyInput
-                id="bid-amount"
-                value={bid.amount}
-                onChange={(value) => setBid({ ...bid, amount: value })}
-                describedBy={bidError ? "bid-error" : undefined}
-                autoFocus
-              />
-            </div>
-            <div className="grid gap-2">
-              <label
-                htmlFor="bid-message"
-                className="text-sm font-semibold text-white/80"
-              >
-                Message to {selectedProject.clientName}
-                <RequiredMark />
-              </label>
-              <textarea
-                id="bid-message"
-                rows={4}
-                value={bid.message}
-                onChange={(event) =>
-                  setBid({ ...bid, message: event.target.value })
-                }
-                aria-describedby={
-                  bidError ? "bid-message-help bid-error" : "bid-message-help"
-                }
-                className={`${inputClassName} resize-none`}
-              />
-              <p id="bid-message-help" className="text-xs text-white/45">
-                Why your team fits, your approach and a rough timeline.
-              </p>
-            </div>
-            {bidError ? (
-              <p id="bid-error" role="alert" className="text-sm text-rose-300">
-                {bidError}
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={`${primaryButtonBaseClassName} w-full`}
-            >
-              {isSubmitting ? "Submitting..." : "Submit bid"}
-            </button>
-          </form>
+          <BidForm
+            initialValues={bid}
+            clientName={selectedProject.clientName}
+            submitLabel="Submit bid"
+            busyLabel="Submitting..."
+            error={bidError}
+            isBusy={isSubmitting}
+            onSubmit={(values) => void submitBid(values)}
+          />
         </Dialog>
       ) : null}
     </div>
