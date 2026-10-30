@@ -1,5 +1,5 @@
 import { StarIcon } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { StatBand, type BandStat } from "../components/dashboard/overview/StatBand";
 import {
@@ -12,6 +12,8 @@ import { useAuth } from "../context/AuthContext";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { dashboardBase as dashboardBaseFor } from "../lib/dashboardPaths";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface HistoryItem {
   id: string;
@@ -161,21 +163,20 @@ export function ProjectHistoryPage(): ReactElement {
   const [error, setError] = useState<string>("");
   const [retryKey, setRetryKey] = useState<number>(0);
 
-  useEffect(() => {
-    const loadHistory = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
+  const loadHistory = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoading(true); setError(""); }
       try {
         const response = await fetch(`${API_BASE_URL}/api/projects/history`, {
           credentials: "include",
         });
         const body: unknown = await response.json();
         if (!response.ok) {
-          setError(getErrorMessage(body));
+          if (!silent) setError(getErrorMessage(body));
           return;
         }
         if (!Array.isArray(body) || !body.every(isHistoryItem)) {
-          setError("The project history returned by CivilHub is invalid.");
+          if (!silent) setError("The project history returned by CivilHub is invalid.");
           return;
         }
         setProjects(
@@ -185,14 +186,16 @@ export function ProjectHistoryPage(): ReactElement {
           ),
         );
       } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
-
+    }, []);
+  useEffect(() => {
     void loadHistory();
-  }, [retryKey]);
+  }, [loadHistory, retryKey]);
+  useRealtime(["dashboard", "projects"], () => { void loadHistory({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void loadHistory({ silent: true }); }, 60000);
 
   // This page serves both dashboards, so every label that names the other
   // side of the project follows the viewer's role.

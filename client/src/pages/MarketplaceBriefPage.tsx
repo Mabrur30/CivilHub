@@ -1,5 +1,5 @@
 import { CheckIcon } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BackButton } from "../components/BackButton";
 import { formatRelativeTime } from "../components/dashboard/notificationUtils";
@@ -26,6 +26,8 @@ import {
 import { type PrivateSite, type PublicSite, toSite } from "../lib/siteDetails";
 import { describeTimeline } from "../lib/timeline";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface ProjectBrief {
   id: string;
@@ -99,13 +101,11 @@ export function MarketplaceBriefPage(): ReactElement {
   const [notFound, setNotFound] = useState<boolean>(false);
   const [retryKey, setRetryKey] = useState<number>(0);
 
-  useEffect(() => {
+  const load = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
     if (!projectId) return;
     let active = true;
-    const load = async (): Promise<void> => {
-      setIsLoading(true);
-      setLoadError("");
-      setNotFound(false);
+      if (!silent) { setIsLoading(true); setLoadError(""); setNotFound(false); }
       try {
         const [briefResponse, bidsResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/projects/${projectId}/brief`, { credentials: "include" }),
@@ -114,12 +114,12 @@ export function MarketplaceBriefPage(): ReactElement {
         const body: unknown = await briefResponse.json();
         if (!active) return;
         if (briefResponse.status === 404) {
-          setNotFound(true);
+          if (!silent) setNotFound(true);
           return;
         }
         const parsed = toBrief(body);
         if (!briefResponse.ok || !parsed) {
-          setLoadError(getErrorMessage(body, "Unable to load this brief."));
+          if (!silent) setLoadError(getErrorMessage(body, "Unable to load this brief."));
           return;
         }
         setBrief(parsed);
@@ -135,16 +135,16 @@ export function MarketplaceBriefPage(): ReactElement {
           );
         }
       } catch {
-        if (active) setLoadError("Unable to connect to CivilHub. Please try again.");
+        if (active && !silent) setLoadError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        if (active) setIsLoading(false);
+        if (active && !silent) setIsLoading(false);
       }
-    };
+  }, [projectId]);
+  useEffect(() => {
     void load();
-    return () => {
-      active = false;
-    };
-  }, [projectId, retryKey]);
+  }, [load, retryKey]);
+  useRealtime(["bids", "invitations"], () => { void load({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void load({ silent: true }); }, 60000);
 
   const back = <BackButton to={`${base}/marketplace`} label="Back to Marketplace" />;
 

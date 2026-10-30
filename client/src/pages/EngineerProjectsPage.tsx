@@ -1,5 +1,5 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   panelClassName,
@@ -18,6 +18,8 @@ import {
 } from "../lib/projectProgress";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface ErrorResponse {
   message?: string;
@@ -189,10 +191,9 @@ export function EngineerProjectsPage(): ReactElement {
   const [error, setError] = useState<string>("");
   const [retryKey, setRetryKey] = useState<number>(0);
 
-  useEffect(() => {
-    const loadProjects = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
+  const loadProjects = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoading(true); setError(""); }
 
       try {
         const response = await fetch(
@@ -204,25 +205,27 @@ export function EngineerProjectsPage(): ReactElement {
         const body: unknown = await response.json();
 
         if (!response.ok) {
-          setError(getErrorMessage(body));
+          if (!silent) setError(getErrorMessage(body));
           return;
         }
 
         if (!Array.isArray(body) || !body.every(isProjectProgress)) {
-          setError("The project data returned by CivilHub is invalid.");
+          if (!silent) setError("The project data returned by CivilHub is invalid.");
           return;
         }
 
         setProjects(body);
       } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
-
+    }, []);
+  useEffect(() => {
     void loadProjects();
-  }, [retryKey]);
+  }, [loadProjects, retryKey]);
+  useRealtime(["dashboard", "projects"], () => { void loadProjects({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void loadProjects({ silent: true }); }, 60000);
 
   const urgentProjects = projects.filter(needsAttention);
   const laterProjects = projects.filter((project) => !needsAttention(project));

@@ -5,6 +5,8 @@ import {
   isClientProject,
 } from "./clientData";
 import { API_BASE_URL } from "../../../lib/apiBase";
+import { useRealtime } from "../../../realtime/useRealtime";
+import { useVisibleInterval } from "../../../realtime/useVisibleInterval";
 
 interface ClientProjectsState {
   projects: ClientProject[];
@@ -20,35 +22,32 @@ export function useClientProjects(): ClientProjectsState {
   const [error, setError] = useState<string>("");
   const [reloadKey, setReloadKey] = useState<number>(0);
 
-  useEffect(() => {
-    let isActive = true;
-    const load = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
+  const load = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
+    if (!silent) { setIsLoading(true); setError(""); }
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/projects/my-posted-projects`,
           { credentials: "include" },
         );
         const body: unknown = await response.json();
-        if (!isActive) return;
         if (!response.ok || !Array.isArray(body) || !body.every(isClientProject)) {
-          setError(getErrorMessage(body, "Unable to load your projects."));
+          if (!silent) setError(getErrorMessage(body, "Unable to load your projects."));
           return;
         }
         setProjects(body);
       } catch {
-        if (isActive) setError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        if (isActive) setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
+  }, []);
+  useEffect(() => {
     void load();
-    return () => {
-      isActive = false;
-    };
-  }, [reloadKey]);
+  }, [load, reloadKey]);
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
+  useRealtime(["dashboard", "projects"], () => { void load({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void load({ silent: true }); }, 60000);
   return { projects, isLoading, error, reload };
 }

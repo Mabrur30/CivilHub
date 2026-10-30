@@ -51,6 +51,8 @@ import {
 import { type PrivateSite, type PublicSite, toSite } from "../lib/siteDetails";
 import { ProjectProblemPanel } from "../components/project/dispute/ProjectProblemPanel";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 type ProjectPhaseStatus =
   | "not_started"
@@ -418,15 +420,15 @@ export function ProjectProgressPage(): ReactElement {
     [currentUser?.role, isCompleted],
   );
 
-  const loadData = async (): Promise<void> => {
+  const loadData = async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
     if (!projectId) {
       setError("Project ID is missing.");
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
-    setError("");
+    if (!silent) { setIsLoading(true); setError(""); }
 
     try {
       const [progressRes, planRes, reviewRes] = await Promise.all([
@@ -445,8 +447,7 @@ export function ProjectProgressPage(): ReactElement {
 
       if (!progressRes.ok) {
         const errorBody: unknown = await progressRes.json();
-        setError(getErrorMessage(errorBody));
-        setProjectProgress(null);
+        if (!silent) { setError(getErrorMessage(errorBody)); setProjectProgress(null); }
         return;
       }
 
@@ -461,7 +462,7 @@ export function ProjectProgressPage(): ReactElement {
         setPhasePlan(planData);
         // Reopening a saved or rejected draft continues from its phases
         // instead of an empty form.
-        if (planData.phasePlanStatus === "draft" && planData.phases.length > 0) {
+        if (!silent && planData.phasePlanStatus === "draft" && planData.phases.length > 0) {
           setPhasePlanFormData(
             planData.phases.map((phase) => ({
               ...phase,
@@ -478,16 +479,20 @@ export function ProjectProgressPage(): ReactElement {
         setReviewEligibility(null);
       }
     } catch {
-      setError("Unable to connect to CivilHub. Please try again.");
-      setProjectProgress(null);
+      if (!silent) { setError("Unable to connect to CivilHub. Please try again."); setProjectProgress(null); }
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
     void loadData();
   }, [currentUser?.role, projectId]);
+  useRealtime(["project-progress"], () => { void loadData({ silent: true }); }, {
+    debounceMs: 1500,
+    scopeMatch: (scope) => !scope.projectId || scope.projectId === projectId,
+  });
+  useVisibleInterval(() => { void loadData({ silent: true }); }, 60000);
 
   const handleUpdatePhase = async (
     phaseId: string,

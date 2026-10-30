@@ -30,6 +30,8 @@ import { RatingBadge } from "../components/RatingBadge";
 import { countOf, formatCurrency, formatDate } from "../lib/format";
 import { VerifiedBadge } from "../components/VerifiedBadge";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 type BidStatus = "pending" | "accepted" | "declined";
 
@@ -469,10 +471,10 @@ export function ClientBidsPage(): ReactElement {
   const [decisionError, setDecisionError] = useState<string>("");
   const [notice, setNotice] = useState<{ text: string; projectId: string | null } | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
     let isActive = true;
-    const load = async (): Promise<void> => {
-      setLoadError("");
+      if (!silent) setLoadError("");
       try {
         const response = await fetch(`${API_BASE_URL}/api/bids/my-projects-bids`, {
           credentials: "include",
@@ -480,21 +482,19 @@ export function ClientBidsPage(): ReactElement {
         const body: unknown = await response.json();
         if (!isActive) return;
         if (!response.ok || !Array.isArray(body) || !body.every(isProjectBids)) {
-          setLoadError(getErrorMessage(body, "Unable to load your bids."));
+          if (!silent) setLoadError(getErrorMessage(body, "Unable to load your bids."));
           return;
         }
         setProjects(body);
       } catch {
-        if (isActive) setLoadError("Unable to connect to CivilHub. Please try again.");
+        if (isActive && !silent) setLoadError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        if (isActive) setIsLoading(false);
+        if (isActive && !silent) setIsLoading(false);
       }
-    };
-    void load();
-    return () => {
-      isActive = false;
-    };
   }, [reloadKey]);
+  useEffect(() => { void load(); }, [load]);
+  useRealtime(["bids", "invitations"], () => { void load({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void load({ silent: true }); }, 60000);
 
   // Projects waiting on a decision open by default; a link to a specific
   // project (from the overview queue) opens and scrolls to that one.

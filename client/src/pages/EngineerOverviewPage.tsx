@@ -1,5 +1,5 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { type ReactElement, useEffect, useMemo, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ActivityFeedItem,
@@ -28,6 +28,8 @@ import { isProjectProgress, type ProjectProgress } from "../lib/projectProgress"
 import { getGreeting } from "../lib/greeting";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface EngineerOverview {
   activeProjects: number;
@@ -174,10 +176,9 @@ export function EngineerOverviewPage(): ReactElement {
   const { currentUser } = useAuth();
   const base = useDashboardBase();
 
-  useEffect(() => {
-    const loadOverview = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
+  const loadOverview = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoading(true); setError(""); }
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/dashboard/engineer/overview`,
@@ -186,27 +187,27 @@ export function EngineerOverviewPage(): ReactElement {
         const body: unknown = await response.json();
         const loaded = response.ok ? toEngineerOverview(body) : null;
         if (!loaded) {
-          setError(
+          if (!silent) setError(
             getErrorMessage(body, "Unable to load your dashboard overview."),
           );
           return;
         }
         setOverview(loaded);
       } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
+    }, []);
+  useEffect(() => {
     void loadOverview();
-  }, [retryKey]);
+  }, [loadOverview, retryKey]);
 
   // Loaded separately from the overview so a failure in one section never
   // blanks the other.
-  useEffect(() => {
-    const loadProjects = async (): Promise<void> => {
-      setIsLoadingProjects(true);
-      setProjectsError("");
+  const loadProjects = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoadingProjects(true); setProjectsError(""); }
       try {
         const response = await fetch(
           `${API_BASE_URL}/api/projects/my-projects`,
@@ -214,24 +215,33 @@ export function EngineerOverviewPage(): ReactElement {
         );
         const body: unknown = await response.json();
         if (!response.ok) {
-          setProjectsError(
+          if (!silent) setProjectsError(
             getErrorMessage(body, "Unable to load your projects."),
           );
           return;
         }
         if (!Array.isArray(body) || !body.every(isProjectProgress)) {
-          setProjectsError("The project data returned by CivilHub is invalid.");
+          if (!silent) setProjectsError("The project data returned by CivilHub is invalid.");
           return;
         }
         setProjects(body);
       } catch {
-        setProjectsError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setProjectsError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoadingProjects(false);
+        if (!silent) setIsLoadingProjects(false);
       }
-    };
+    }, []);
+  useEffect(() => {
     void loadProjects();
-  }, [projectsRetryKey]);
+  }, [loadProjects, projectsRetryKey]);
+  useRealtime(["dashboard", "projects"], () => {
+    void loadOverview({ silent: true });
+    void loadProjects({ silent: true });
+  }, { debounceMs: 1500 });
+  useVisibleInterval(() => {
+    void loadOverview({ silent: true });
+    void loadProjects({ silent: true });
+  }, 60000);
 
   const filteredActivity = useMemo(() => {
     if (!overview) return [];

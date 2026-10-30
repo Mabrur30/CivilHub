@@ -22,6 +22,8 @@ import { describeTimeline } from "../lib/timeline";
 import { useDashboardBase } from "../lib/dashboardPaths";
 import { findCategory, useProjectCriteria } from "../lib/projectCriteria";
 import { API_BASE_URL } from "../lib/apiBase";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface MarketplaceProject {
   id: string;
@@ -290,10 +292,9 @@ export function EngineerMarketplacePage(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedProjectId = searchParams.get("project");
 
-  useEffect(() => {
-    const loadProjects = async (): Promise<void> => {
-      setIsLoading(true);
-      setLoadError("");
+  const loadProjects = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoading(true); setLoadError(""); }
       try {
         const [projectsResponse, bidsResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/projects/open`),
@@ -311,7 +312,7 @@ export function EngineerMarketplacePage(): ReactElement {
           !parsedProjects ||
           parsedProjects.some((project) => project === null)
         ) {
-          setLoadError(
+          if (!silent) setLoadError(
             getErrorMessage(
               projectsBody,
               "Unable to load marketplace projects.",
@@ -324,7 +325,7 @@ export function EngineerMarketplacePage(): ReactElement {
           !Array.isArray(bidsBody) ||
           !bidsBody.every(isEngineerBidSummary)
         ) {
-          setLoadError(
+          if (!silent) setLoadError(
             getErrorMessage(bidsBody, "Unable to load your bid history."),
           );
           return;
@@ -332,13 +333,16 @@ export function EngineerMarketplacePage(): ReactElement {
         setProjects(parsedProjects as MarketplaceProject[]);
         setSubmittedProjectIds(new Set(bidsBody.map((bid) => bid.projectId)));
       } catch {
-        setLoadError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setLoadError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
+    }, []);
+  useEffect(() => {
     void loadProjects();
-  }, [retryKey]);
+  }, [loadProjects, retryKey]);
+  useRealtime(["marketplace"], () => { void loadProjects({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void loadProjects({ silent: true }); }, 60000);
 
   // A client profile links here with ?project=<id> so "Submit bid" there opens
   // the same dialog here. The param is dropped once handled, so closing the

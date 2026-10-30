@@ -1,5 +1,5 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { type FormEvent, type ReactElement, useEffect, useState } from "react";
+import { type FormEvent, type ReactElement, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageButton } from "../components/messages/MessageButton";
 import { formatRelativeTime } from "../components/dashboard/notificationUtils";
@@ -21,6 +21,8 @@ import { API_BASE_URL } from "../lib/apiBase";
 import { RequiredMark } from "../components/dashboard/ui/RequiredMark";
 import { Dialog } from "../components/dashboard/ui/Dialog";
 import { BidForm } from "../components/bids/BidForm";
+import { useRealtime } from "../realtime/useRealtime";
+import { useVisibleInterval } from "../realtime/useVisibleInterval";
 
 interface EngineerBid {
   id: string;
@@ -462,10 +464,9 @@ export function EngineerBidsPage(): ReactElement {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
 
-  useEffect(() => {
-    const loadBids = async (): Promise<void> => {
-      setIsLoading(true);
-      setError("");
+  const loadBids = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+      const silent = options?.silent === true;
+      if (!silent) { setIsLoading(true); setError(""); }
       try {
         const [bidsResponse, invitationsResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/api/bids/my-bids`, {
@@ -484,7 +485,7 @@ export function EngineerBidsPage(): ReactElement {
           !Array.isArray(bidsBody) ||
           !bidsBody.every(isEngineerBid)
         ) {
-          setError(getErrorMessage(bidsBody));
+          if (!silent) setError(getErrorMessage(bidsBody));
           return;
         }
 
@@ -493,20 +494,23 @@ export function EngineerBidsPage(): ReactElement {
           !Array.isArray(invitationsBody) ||
           !invitationsBody.every(isBidInvitation)
         ) {
-          setError(getErrorMessage(invitationsBody));
+          if (!silent) setError(getErrorMessage(invitationsBody));
           return;
         }
 
         setBids(bidsBody);
         setInvitations(invitationsBody);
       } catch {
-        setError("Unable to connect to CivilHub. Please try again.");
+        if (!silent) setError("Unable to connect to CivilHub. Please try again.");
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
-    };
+    }, []);
+  useEffect(() => {
     void loadBids();
-  }, [retryKey]);
+  }, [loadBids, retryKey]);
+  useRealtime(["bids", "invitations"], () => { void loadBids({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void loadBids({ silent: true }); }, 60000);
 
   const declineInvitation = async (invitationId: string): Promise<void> => {
     setActiveInvitationId(invitationId);

@@ -14,13 +14,15 @@ import {
   parseClientOverview,
 } from "./clientData";
 import { API_BASE_URL } from "../../../lib/apiBase";
+import { useRealtime } from "../../../realtime/useRealtime";
+import { useVisibleInterval } from "../../../realtime/useVisibleInterval";
 
 interface ClientWorkspaceValue {
   overview: ClientOverview | null;
   isLoading: boolean;
   error: string;
   /** Re-reads the overview after the client decides something. */
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 const ClientWorkspaceContext = createContext<ClientWorkspaceValue | null>(null);
@@ -36,7 +38,8 @@ export function ClientWorkspaceProvider({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (options?: { silent?: boolean }): Promise<void> => {
+    const silent = options?.silent === true;
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/dashboard/client/overview`,
@@ -45,15 +48,15 @@ export function ClientWorkspaceProvider({
       const body: unknown = await response.json();
       const parsed = response.ok ? parseClientOverview(body) : null;
       if (!parsed) {
-        setError(getErrorMessage(body, "Unable to load your dashboard."));
+        if (!silent) setError(getErrorMessage(body, "Unable to load your dashboard."));
         return;
       }
       setOverview(parsed);
       setError("");
     } catch {
-      setError("Unable to connect to CivilHub. Please try again.");
+      if (!silent) setError("Unable to connect to CivilHub. Please try again.");
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -63,6 +66,8 @@ export function ClientWorkspaceProvider({
   useEffect(() => {
     void refresh();
   }, [refresh, pathname]);
+  useRealtime(["dashboard", "projects"], () => { void refresh({ silent: true }); }, { debounceMs: 1500 });
+  useVisibleInterval(() => { void refresh({ silent: true }); }, 60000);
 
   return (
     <ClientWorkspaceContext.Provider
