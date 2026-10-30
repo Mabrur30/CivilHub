@@ -16,6 +16,7 @@ import { Review } from "../models/Review.model";
 import { User, type UserRole } from "../models/User.model";
 import { getProfilePhotoMap } from "../utils/profilePhotos";
 import { isProviderRole } from "../utils/roles";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 export type ConnectionViewStatus =
   | "not_connected"
@@ -172,6 +173,10 @@ export const sendConnectionRequest = async (
       recipient: new Types.ObjectId(targetUserId),
       status: "pending",
     });
+    realtimeHub.emitToUsers(
+      [connection.requester.toString(), connection.recipient.toString()],
+      ["network", "dashboard"],
+    );
     const requester = await User.findById(userId).select("name").exec();
     await Notification.create({
       recipient: connection.recipient,
@@ -179,6 +184,7 @@ export const sendConnectionRequest = async (
       message: `${requester?.name ?? "Someone"} wants to connect with you.`,
       connection: connection._id,
     });
+    realtimeHub.emitToUser(connection.requester.toString(), ["network", "dashboard"]);
     res
       .status(201)
       .json({ id: connection._id.toString(), status: connection.status });
@@ -207,6 +213,10 @@ const acceptConnection = async (connection: IConnection): Promise<void> => {
     message: `${accepter?.name ?? "Someone"} accepted your connection request.`,
     connection: connection._id,
   });
+  realtimeHub.emitToUsers(
+    [connection.requester.toString(), connection.recipient.toString()],
+    ["network", "dashboard"],
+  );
 };
 
 export const getIncomingRequests = async (
@@ -333,6 +343,10 @@ export const declineConnectionRequest = async (
       throw createNetworkError("Incoming connection request not found", 404);
     connection.status = "declined";
     await connection.save();
+    realtimeHub.emitToUsers(
+      [connection.requester.toString(), connection.recipient.toString()],
+      ["network", "dashboard"],
+    );
     res
       .status(200)
       .json({ id: connection._id.toString(), status: connection.status });
@@ -487,6 +501,10 @@ export const removeConnection = async (
     await Connection.deleteOne({ _id: connection._id }).exec();
     // A withdrawn request shouldn't linger in the other person's alerts.
     await Notification.deleteMany({ connection: connection._id, type: "connection_request" }).exec();
+    realtimeHub.emitToUsers(
+      [connection.requester.toString(), connection.recipient.toString()],
+      ["network", "dashboard"],
+    );
     res.status(200).json({ removed: true, previousStatus: previous });
   } catch (error: unknown) {
     next(error);

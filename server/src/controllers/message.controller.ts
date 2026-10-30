@@ -28,6 +28,7 @@ import {
 } from "../utils/projectContact";
 import { type IConversation } from "../models/Conversation.model";
 import { isBlockedEitherWay } from "../utils/blocks";
+import { realtimeHub } from "../realtime/realtime.hub";
 import { STRIP_IMAGE_METADATA } from "../utils/cloudinaryUpload";
 
 interface MessageError extends Error {
@@ -992,6 +993,13 @@ export const markConversationRead = async (
       userId,
     );
     await markConversationMessagesRead(conversation._id, userId);
+    realtimeHub.emitToUsers(
+      conversation.participants
+        .map((participant) => participant.toString())
+        .filter((participant) => participant !== userId),
+      ["conversations", "messages"],
+      { conversationId: conversation._id.toString() },
+    );
 
     res.status(200).json({ id: conversation._id.toString(), unreadCount: 0 });
   } catch (error: unknown) {

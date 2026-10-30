@@ -29,6 +29,7 @@ import {
   validateListingPricing,
 } from "../utils/equipmentPricing";
 import { STRIP_IMAGE_METADATA, uploadAllOrNone } from "../utils/cloudinaryUpload";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 interface EquipmentError extends Error {
   statusCode: number;
@@ -572,6 +573,14 @@ export const createEquipment = async (
       await Promise.allSettled(uploads.map((upload) => deleteCloudinaryImage(upload.public_id)));
       throw error;
     });
+    realtimeHub.emitToRole(
+      ["engineer", "organisation", "client"],
+      ["equipment-listings"],
+      { equipmentId: equipment._id.toString() },
+    );
+    realtimeHub.emitToUser(ownerId, ["dashboard"], {
+      equipmentId: equipment._id.toString(),
+    });
 
     const ownerSummary: OwnerSummary = {
       userId: ownerId,
@@ -706,6 +715,14 @@ export const updateEquipment = async (
     Object.assign(equipment, terms);
 
     await equipment.save();
+    realtimeHub.emitToRole(
+      ["engineer", "organisation", "client"],
+      ["equipment-listings"],
+      { equipmentId: equipment._id.toString() },
+    );
+    realtimeHub.emitToUser(ownerId, ["dashboard"], {
+      equipmentId: equipment._id.toString(),
+    });
 
     const ownerSummary: OwnerSummary = {
       userId: ownerId,
@@ -771,6 +788,16 @@ export const deleteEquipment = async (
     );
 
     await equipment.deleteOne();
+    realtimeHub.emitToRole(
+      ["engineer", "organisation", "client"],
+      ["equipment-listings"],
+      { equipmentId: equipment._id.toString() },
+    );
+    realtimeHub.emitToRole(
+      ["engineer", "organisation", "client"],
+      ["equipment-availability"],
+      { equipmentId: equipment._id.toString() },
+    );
 
     res.status(200).json({ message: "Equipment listing deleted" });
   } catch (error: unknown) {

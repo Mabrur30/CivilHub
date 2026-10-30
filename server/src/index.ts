@@ -137,9 +137,15 @@ let httpServer: ReturnType<typeof app.listen> | undefined;
 
 const shutdown = (): void => {
   realtimeHub.closeAll();
+  const forceExit = setTimeout(() => process.exit(0), 10_000);
+  forceExit.unref();
   if (httpServer) {
-    httpServer.close(() => process.exit(0));
+    httpServer.close(() => {
+      clearTimeout(forceExit);
+      process.exit(0);
+    });
   } else {
+    clearTimeout(forceExit);
     process.exit(0);
   }
 };

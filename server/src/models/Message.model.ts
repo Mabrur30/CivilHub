@@ -1,4 +1,6 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
+import { Conversation } from "./Conversation.model";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 export type MessageType = "text" | "file" | "audio";
 
@@ -108,6 +110,32 @@ const messageSchema = new Schema<IMessage>(
 messageSchema.index({ conversation: 1, createdAt: 1 });
 // Paging a thread by id (getMessages: ?before= and ?after=).
 messageSchema.index({ conversation: 1, _id: -1 });
+
+const newMessages = new WeakSet<object>();
+
+messageSchema.pre("save", function () {
+  if (this.isNew) newMessages.add(this);
+});
+
+messageSchema.post("save", async function (message) {
+  if (!newMessages.has(message)) return;
+  newMessages.delete(message);
+  try {
+    const conversation = await Conversation.findById(message.conversation)
+      .select("participants")
+      .lean()
+      .exec();
+    const senderId = message.sender.toString();
+    const recipients = (conversation?.participants ?? [])
+      .map((participant) => participant.toString())
+      .filter((participant) => participant !== senderId);
+    realtimeHub.emitToUsers(recipients, ["conversations", "messages"], {
+      conversationId: message.conversation.toString(),
+    });
+  } catch (error: unknown) {
+    console.error("Failed to emit message realtime event", error);
+  }
+});
 
 export const Message: Model<IMessage> = model<IMessage>(
   "Message",

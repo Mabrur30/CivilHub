@@ -1,6 +1,7 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 import { type DisputeAppeal, type DisputeStage, disputeAppealSchema } from "./ProjectDispute.model";
 import { type EvidenceFacts, evidenceFactFields } from "../utils/evidence";
+import { emitBookingRealtime } from "../realtime/bookingRealtime";
 
 export type EquipmentBookingStatus =
   | "pending"
@@ -317,6 +318,23 @@ equipmentBookingSchema.index(
   { "depositDispute.stage": 1, "depositDispute.pendingDecision.appealDeadline": 1 },
   { sparse: true },
 );
+
+equipmentBookingSchema.post("save", function (booking) {
+  try {
+    emitBookingRealtime(booking);
+  } catch (error: unknown) {
+    console.error("Failed to emit booking realtime event", error);
+  }
+});
+
+equipmentBookingSchema.post("findOneAndUpdate", function (booking) {
+  if (!booking) return;
+  try {
+    emitBookingRealtime(booking);
+  } catch (error: unknown) {
+    console.error("Failed to emit booking realtime event", error);
+  }
+});
 
 export const EquipmentBooking: Model<IEquipmentBooking> =
   model<IEquipmentBooking>("EquipmentBooking", equipmentBookingSchema);

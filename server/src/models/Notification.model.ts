@@ -1,4 +1,7 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
+import { realtimeHub } from "../realtime/realtime.hub";
+import { NOTIFICATION_TOPICS } from "../realtime/notificationTopics";
+import { type RealtimeScope } from "../realtime/realtime.types";
 
 export type NotificationType =
   | "bid_updated"
@@ -72,6 +75,25 @@ export type NotificationType =
   | "dispute_appeal_decided"
   /** The other side added their own pickup or return photos to a rental. */
   | "equipment_condition_report";
+
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  "bid_updated", "bid_accepted", "bid_declined", "bid_invitation", "bid_invitation_answered",
+  "equipment_booking_request", "equipment_booking_approved", "equipment_booking_declined",
+  "equipment_booking_auto_declined", "equipment_booking_cancelled", "equipment_booking_payment_received",
+  "equipment_pickup_confirmed", "equipment_return_confirmed", "equipment_deposit_released",
+  "equipment_deposit_claimed", "equipment_deposit_disputed", "equipment_deposit_decided",
+  "equipment_deposit_reminder", "connection_accepted", "connection_request", "new_message",
+  "connection_post", "post_liked", "project_phase_updated", "phase_plan_submitted",
+  "phase_plan_approved", "phase_plan_rejected", "advance_payment_received", "phase_payment_received",
+  "full_payment_received", "review_received", "review_reply", "comment_received", "post_reposted",
+  "payment_refund_due", "project_completed", "customer_review_received", "moderation_notice",
+  "payout_sent", "payout_account_updated", "refund_issued", "verification_approved",
+  "verification_rejected", "verification_lapsed", "verification_expiring", "project_dispute_opened",
+  "project_dispute_resolved", "project_cancellation_proposed", "project_cancellation_declined",
+  "project_cancelled", "phase_approval_reminder", "phase_funding_reminder", "dispute_message",
+  "dispute_reply_reminder", "dispute_decided", "dispute_appealed", "dispute_appeal_decided",
+  "equipment_condition_report",
+];
 
 export interface INotification extends Document {
   recipient: Types.ObjectId;
@@ -217,6 +239,52 @@ const notificationSchema = new Schema<INotification>(
 );
 
 notificationSchema.index({ recipient: 1, createdAt: -1 });
+
+const newNotifications = new WeakSet<object>();
+
+notificationSchema.pre("save", function () {
+  if (this.isNew) newNotifications.add(this);
+});
+
+const notificationScope = (notification: INotification): RealtimeScope => ({
+  ...(notification.project ? { projectId: notification.project.toString() } : {}),
+  ...(notification.bid ? { bidId: notification.bid.toString() } : {}),
+  ...(notification.equipment ? { equipmentId: notification.equipment.toString() } : {}),
+  ...(notification.equipmentBooking
+    ? { bookingId: notification.equipmentBooking.toString() }
+    : {}),
+  ...(notification.conversation
+    ? { conversationId: notification.conversation.toString() }
+    : {}),
+  ...(notification.post ? { postId: notification.post.toString() } : {}),
+});
+
+const emitNotification = (notification: INotification): void => {
+  try {
+    realtimeHub.emitToUser(
+      notification.recipient.toString(),
+      NOTIFICATION_TOPICS[notification.type],
+      notificationScope(notification),
+    );
+  } catch (error: unknown) {
+    console.error("Failed to emit notification realtime event", error);
+  }
+};
+
+notificationSchema.post("save", function (notification) {
+  if (newNotifications.has(notification)) {
+    newNotifications.delete(notification);
+    emitNotification(notification);
+  }
+});
+
+notificationSchema.post("insertMany", function (...args: unknown[]) {
+    const result = args.find((arg): arg is INotification[] => Array.isArray(arg));
+    if (!result) return;
+    for (const notification of result) {
+      emitNotification(notification);
+    }
+});
 
 export const Notification: Model<INotification> = model<INotification>(
   "Notification",

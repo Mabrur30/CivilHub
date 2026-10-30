@@ -33,6 +33,7 @@ import {
   type IEquipmentBooking,
 } from "../models/EquipmentBooking.model";
 import { Notification } from "../models/Notification.model";
+import { emitBookingRealtime } from "../realtime/bookingRealtime";
 import { Payment, type IPayment } from "../models/Payment.model";
 import { describePaymentMethod, payeeShareNote } from "../services/payments";
 import { canRentEquipment } from "../utils/roles";
@@ -1197,6 +1198,7 @@ export const respondToBookingRequest = async (
         { _id: booking._id, status: "approved" },
         { $set: { status: "pending" } },
       ).exec();
+      emitBookingRealtime(booking);
       throw createBookingError("These dates are no longer available", 409);
     }
     booking.status = "approved";
@@ -1240,6 +1242,7 @@ export const respondToBookingRequest = async (
           }),
         ),
       );
+      overlappingPending.forEach(emitBookingRealtime);
     }
 
     await Notification.create({

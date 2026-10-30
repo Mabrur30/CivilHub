@@ -28,6 +28,7 @@ import {
   getPhaseAmountsDue,
   getRemainingBalance,
 } from "../utils/phasePayments";
+import { realtimeHub } from "../realtime/realtime.hub";
 import { budgetLabel, formatTaka } from "../utils/money";
 import { assertCanTakeProjects } from "../utils/roles";
 import { BD_DISTRICTS } from "../utils/bdLocations";
@@ -460,6 +461,7 @@ export const createProject = async (
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
     };
+    realtimeHub.emitToRole(["engineer", "organisation"], ["marketplace"]);
 
     res.status(201).json(response);
   } catch (error: unknown) {

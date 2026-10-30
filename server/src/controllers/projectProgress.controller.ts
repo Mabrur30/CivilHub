@@ -51,6 +51,7 @@ import {
 } from "../utils/projectSite";
 import { type ProjectRequirements } from "../utils/projectCriteria";
 import { projectLockReason } from "../utils/projectMoney";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 interface ProjectProgressError extends Error {
   statusCode: number;
@@ -1462,6 +1463,11 @@ export const applyProjectPayment = async (
       message,
       project: project._id,
     });
+    realtimeHub.emitToUsers(
+      [payment.paidBy.toString(), project.assignedEngineer.toString()],
+      ["project-progress", "bookings", "dashboard"],
+      { projectId: project._id.toString() },
+    );
   }
 
   // After the payment notice, so "project complete" is the newest one.

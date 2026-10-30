@@ -1,6 +1,7 @@
 import { Equipment } from "../models/Equipment.model";
 import { EquipmentBooking, type IEquipmentBooking } from "../models/EquipmentBooking.model";
 import { Notification } from "../models/Notification.model";
+import { emitBookingRealtime } from "../realtime/bookingRealtime";
 import { formatTaka } from "./money";
 
 /**
@@ -86,6 +87,13 @@ export const settleDueDeposits = async (now: Date = new Date()): Promise<{ remin
 
   // A rental with no deposit has nothing to settle. Older ones were left
   // pending, which kept both sides from reviewing.
+  const releasedWithoutDeposit = await EquipmentBooking.find(
+    {
+      status: "completed",
+      depositResolution: "pending",
+      $or: [{ securityDeposit: { $lte: 0 } }, { securityDeposit: { $exists: false } }],
+    },
+  ).exec();
   await EquipmentBooking.updateMany(
     {
       status: "completed",
@@ -94,6 +102,7 @@ export const settleDueDeposits = async (now: Date = new Date()): Promise<{ remin
     },
     { $set: { depositResolution: "released" } },
   ).exec();
+  releasedWithoutDeposit.forEach(emitBookingRealtime);
 
   const toRelease =await EquipmentBooking.find(unsettledReturnedBefore(addDays(now, -DEPOSIT_AUTO_RELEASE_DAYS)))
     .select("_id")

@@ -8,6 +8,7 @@ import { User } from "../models/User.model";
 import { isBlockedEitherWay } from "../utils/blocks";
 import { Notification } from "../models/Notification.model";
 import { formatTaka } from "../utils/money";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 const nameOf = async (userId: unknown): Promise<string> =>
   (await User.findById(userId).select("name").lean().exec())?.name ?? "Someone";
@@ -236,6 +237,9 @@ export const createBidInvitation = async (
       message: `${await nameOf(clientUserId)} invited you to bid on ${getProjectTitle(project)}.`,
       project: project._id,
     });
+    realtimeHub.emitToUser(clientUserId, ["invitations"], {
+      projectId: project._id.toString(),
+    });
 
     res.status(201).json({
       id: invitation._id.toString(),
@@ -358,6 +362,10 @@ export const acceptBidInvitation = async (
       project: project._id,
       bid: bid._id,
     });
+    realtimeHub.emitToUser(engineerUserId, ["invitations"], {
+      projectId: project._id.toString(),
+      bidId: bid._id.toString(),
+    });
 
     res.status(200).json({
       invitation: {
@@ -422,6 +430,9 @@ export const declineBidInvitation = async (
       type: "bid_invitation_answered",
       message: `${await nameOf(engineerUserId)} declined your invitation to bid on ${declinedProject ? getProjectTitle(declinedProject) : "your project"}.`,
       project: invitation.project,
+    });
+    realtimeHub.emitToUser(engineerUserId, ["invitations"], {
+      projectId: invitation.project.toString(),
     });
 
     res.status(200).json({

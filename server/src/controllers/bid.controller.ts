@@ -17,6 +17,7 @@ import { assertCanTakeProjects } from "../utils/roles";
 import { getAccountStanding, isRestricted } from "../utils/accountStatus";
 import { maskContactInfo } from "../utils/projectContact";
 import { isBlockedEitherWay } from "../utils/blocks";
+import { realtimeHub } from "../realtime/realtime.hub";
 
 export interface SubmitBidRequestBody {
   projectId: string;
@@ -175,6 +176,11 @@ export const createBidForProject = async ({
     message: validated.message,
     status: "pending",
   });
+  if (project.client) {
+    realtimeHub.emitToUser(project.client.toString(), ["bids", "dashboard"], {
+      projectId: project._id.toString(),
+    });
+  }
 
   return { bid, project };
 };
